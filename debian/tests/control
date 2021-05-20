@@ -1,0 +1,30 @@
+## system-core
+
+Test-Command: adb version
+Depends: adb
+
+Test-Command: adb help
+Depends: adb
+
+Test-Command: adb kill-server && adb devices
+Depends: adb
+Restrictions: allow-stderr
+
+Test-Command: adb keygen key.txt && ls -l key.txt* && rm key.txt*
+Depends: adb
+Restrictions: allow-stderr
+
+Test-Command: fastboot --version
+Depends: fastboot
+
+Test-Command: fastboot devices
+Depends: fastboot
+
+## development
+
+Test-Command: etc1tool development/tools/templates/ic_launcher_ldpi.png --encode && etc1tool development/tools/templates/ic_launcher_ldpi.pkm --decode
+
+## art
+
+Test-Command: 2>&1 dmtracedump |  grep 'Turn on HTML output'
+Depends: dmtracedump

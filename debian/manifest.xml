@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+  <remote  name="aosp"
+           fetch="https://android.googlesource.com/" />
+  <default revision="refs/tags/platform-tools-29.0.6"
+           remote="aosp"
+           sync-j="4" />
+
+   <project path="art" name="platform/art" groups="pdk" />
+   <project path="dalvik" name="platform/dalvik" groups="pdk-cw-fs,pdk-fs" />
+   <project path="development" name="platform/development" groups="developers,pdk-cw-fs,pdk-fs" />
+   <project path="external/boringssl" name="platform/external/boringssl" groups="pdk" />
+   <project path="external/selinux" name="platform/external/selinux" groups="pdk" />
+   <project path="external/libunwind" name="platform/external/libunwind" groups="pdk" />
+   <project path="external/avb" name="platform/external/avb" groups="pdk" />
+   <project path="frameworks/native" name="platform/frameworks/native" groups="pdk" />
+   <project path="libnativehelper" name="platform/libnativehelper" groups="pdk" />
+   <project path="system/core" name="platform/system/core" groups="pdk" />
+   <project path="system/extras" name="platform/system/extras" groups="pdk" />
+   <project path="system/tools/mkbootimg" name="platform/system/tools/mkbootimg" groups="pdk" />
+
+</manifest>

@@ -1,0 +1,47 @@
+Description: Fix python interpreter name
+Forwarded: not-needed
+diff --git a/art/runtime/interpreter/mterp/common/gen_setup.py b/art/runtime/interpreter/mterp/common/gen_setup.py
+index 2684ab2..ac0606b 100644
+--- a/art/runtime/interpreter/mterp/common/gen_setup.py
++++ b/art/runtime/interpreter/mterp/common/gen_setup.py
+@@ -19,7 +19,7 @@
+ # the templated snippets. Those define all the helper functions used below.
+ 
+ import sys, re
+-from cStringIO import StringIO
++from io import StringIO
+ 
+ out = StringIO()  # File-like in-memory buffer.
+ handler_size_bytes = "MTERP_HANDLER_SIZE"
+diff --git a/art/runtime/interpreter/mterp/gen_mterp.py b/art/runtime/interpreter/mterp/gen_mterp.py
+index 5d25955..8534e99 100755
+--- a/art/runtime/interpreter/mterp/gen_mterp.py
++++ b/art/runtime/interpreter/mterp/gen_mterp.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ #
+ # Copyright (C) 2016 The Android Open Source Project
+ #
+@@ -15,7 +15,7 @@
+ # limitations under the License.
+ 
+ import sys, re, os
+-from cStringIO import StringIO
++from io import StringIO
+ 
+ SCRIPT_DIR = os.path.dirname(sys.argv[0])
+ # This file is included verbatim at the start of the in-memory python script.
+@@ -37,9 +37,9 @@ def getOpcodeList():
+   opcode_fp.close()
+ 
+   if len(opcodes) != NUM_PACKED_OPCODES:
+-    print "ERROR: found %d opcodes in Interp.h (expected %d)" \
+-        % (len(opcodes), NUM_PACKED_OPCODES)
+-    raise SyntaxError, "bad opcode count"
++    print("ERROR: found %d opcodes in Interp.h (expected %d)" \
++        % (len(opcodes), NUM_PACKED_OPCODES))
++    raise SyntaxError("bad opcode count")
+   return opcodes
+ 
+ indent_re = re.compile(r"^%( *)")

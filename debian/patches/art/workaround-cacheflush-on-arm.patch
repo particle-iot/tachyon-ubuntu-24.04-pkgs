@@ -1,0 +1,16 @@
+Description: Workaround cacheflush on arm
+Forwarded: not-needed
+--- a/art/libartbase/base/utils.cc
++++ b/art/libartbase/base/utils.cc
+@@ -76,7 +76,10 @@ static constexpr size_t kMaxFlushAttempts = 4;
+ int CacheFlush(uintptr_t start, uintptr_t limit) {
+   // The signature of cacheflush(2) seems to vary by source. On ARM the system call wrapper
+   //    (bionic/SYSCALLS.TXT) has the form: int cacheflush(long start, long end, long flags);
+-  int r = cacheflush(start, limit, kCacheFlushFlags);
++//  int r = cacheflush(start, limit, kCacheFlushFlags);
++//This is only for ARM
++//Workaround/skip cacheflush until we find the real replacement
++  int r = 0;
+   if (r == -1) {
+     CHECK_NE(errno, EINVAL);
+   }

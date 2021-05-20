@@ -1,0 +1,7 @@
+To download upstream sources (approx 1GB), you will need some additional tools
+locally (repo v2 is available in buster-backports).
+
+  ```
+  $ sudo apt install maven-repo-helper javahelper repo
+  $ debian/rules get-orig-source
+  ```

@@ -1,0 +1,236 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/pkg-info.mk
+
+## Security Hardening
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CFLAGS_MAINT_APPEND = -fPIC
+export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG
+export DEB_CXXFLAGS_MAINT_APPEND = -fPIC
+export DEB_LDFLAGS_MAINT_APPEND = -fPIC
+
+## For get-orig-source
+export DEB_SOURCE
+export DEB_VERSION_UPSTREAM
+
+export DEB_HOST_MULTIARCH
+
+## system/core
+export DEB_HOST_MULTIARCH
+export DEB_VERSION
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-29.0.6/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 29.0.6
+
+ifneq (, $(shell which clang))
+  export CC=clang
+  export CXX=clang++
+endif
+
+%:
+	dh $@ --with bash-completion
+
+get-orig-source:
+	debian/scripts/get-orig-source
+
+## system/core
+
+s/core/lib%.a: debian/system/core/lib%.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+debian/manpages/system/core/%.1: debian/manpages/system/core/%.1.md
+	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
+
+s/core/libcrypto_utils.a: debian/system/core/libcrypto_utils.mk e/boringssl/libcrypto.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libadb.a: debian/system/core/libadb.mk s/core/libcutils.a s/core/libbase.a s/core/libcrypto_utils.a e/boringssl/libcrypto.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libbacktrace.a: debian/system/core/libbacktrace.mk s/core/libcutils.a s/core/libbase.a s/core/liblog.a e/libunwind/libunwind.a art/libdexfile_support.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libbase.a: debian/system/core/libbase.mk s/core/liblog.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libcutils.a: debian/system/core/libcutils.mk s/core/liblog.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libutils.a: debian/system/core/libutils.mk s/core/liblog.a s/core/libcutils.a s/core/libbacktrace.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/libziparchive.a: debian/system/core/libziparchive.mk s/core/liblog.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/adb: debian/system/core/adb.mk s/core/libadb.a s/core/libcutils.a s/core/libbase.a debian/manpages/system/core/adb.1
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/core/fastboot: debian/system/core/fastboot.mk s/core/libziparchive.a s/core/libsparse.a s/core/libbase.a s/core/libcutils.a s/core/libadb.a e/boringssl/libcrypto.a s/extras/libext4_utils.a debian/manpages/system/core/fastboot.1
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS = \
+  s/core/adb \
+  s/core/fastboot \
+  s/core/libadb.a \
+  s/core/libbacktrace.a \
+  s/core/libbase.a \
+  s/core/libcrypto_utils.a \
+  s/core/libcutils.a \
+  s/core/liblog.a \
+  s/core/libsparse.a \
+  s/core/libutils.a \
+  s/core/libziparchive.a \
+
+# Whatever depends on BoringSSL must be disabled on MIPS
+NON_MIPS_COMPONENTS = s/core/adb s/core/libadb.a s/core/libcrypto_utils.a s/core/fastboot
+ifneq ($(filter mips mipsel mips64el,$(DEB_HOST_ARCH)),)
+  COMPONENTS := $(filter-out $(NON_MIPS_COMPONENTS),$(COMPONENTS))
+endif
+
+# Most components only support ARM, x86 and MIPS, but some can be built
+# on all architectures.
+COMPONENTS_ANY_ARCH = \
+  s/core/libbase.a \
+  s/core/libcutils.a \
+  s/core/liblog.a \
+  s/core/libsparse.a \
+
+ifeq ($(filter amd64 i386 armel armhf arm64 mips mipsel mips64el,$(DEB_HOST_ARCH)),)
+  COMPONENTS := $(filter $(COMPONENTS_ANY_ARCH), $(COMPONENTS))
+endif
+
+## development
+
+debian/manpages/development/%.1: debian/manpages/development/%.1.md
+	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
+
+development/etc1tool: debian/development/etc1tool.mk debian/manpages/development/etc1tool.1 f/native/libETC1.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += development/etc1tool
+
+## art
+
+debian/out/art/%.1: art/%
+	help2man -N -n "Dex Tool" --no-discard-stderr --version-string="$(DEB_VERSION)" \
+		-o $@ debian/out/$<
+
+art/dmtracedump: debian/art/dmtracedump.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libdexfile_support.a: debian/art/libdexfile_support.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libsigchain.a: debian/art/libsigchain.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libdexfile_external.a: debian/art/libdexfile_external.mk art/libart.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libart.a: debian/art/libart.mk debian/out/art/asm_defines.h art/libsigchain.a s/core/libbacktrace.a s/core/libziparchive.a art/libnativeloader.a art/libnativebridge.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libnativebridge.a:  debian/art/libnativebridge.mk s/core/liblog.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+art/libnativeloader.a: debian/art/libnativeloader.mk art/libnativebridge.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+# Only for debug purpose to build standalone object
+debian/out/art/asm_defines.h debian/out/art/operator_out.cc: debian/art/libart.mk
+	dh_auto_build --buildsystem=makefile -- --file=$< $@
+debian/out/art/mterp.S: debian/art/libart.mk debian/out/art debian/out/art/asm_defines.h
+	dh_auto_build --buildsystem=makefile -- --file=$< $@
+art/runtime/%.a art/libartbase/%.a art/libdexfile/%.a debian/out/art/%.a: debian/art/libart.mk
+	dh_auto_build --buildsystem=makefile -- --file=$< $@
+
+# MIPS is left out because ART only supports MIPSr6 while Debian is by default MIPSr2
+ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
+  COMPONENTS += \
+    art/dmtracedump \
+    art/libdexfile_external.a \
+    art/libdexfile_support.a \
+    art/libnativebridge.a \
+    art/libnativeloader.a \
+    debian/out/art/dmtracedump.1 \
+
+endif
+
+## frameworks/native
+
+f/native/libETC1.a: debian/frameworks/native/libETC1.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+ifneq ($(filter amd64 i386 armel armhf arm64 mips mipsel mips64el,$(DEB_HOST_ARCH)),)
+  COMPONENTS += f/native/libETC1.a
+endif
+
+## external/boringssl
+
+e/boringssl/libcrypto.a: debian/external/boringssl/libcrypto.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+e/boringssl/libssl.a: debian/external/boringssl/libssl.mk e/boringssl/libcrypto.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += e/boringssl/libcrypto.a
+
+## external/libunwind
+
+e/libunwind/libunwind.a: debian/external/libunwind/libunwind.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += e/libunwind/libunwind.a
+
+## external/selinux
+
+e/selinux/libsepol.a: debian/external/selinux/libsepol.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+e/selinux/libselinux.a: debian/external/selinux/libselinux.mk e/selinux/libsepol.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += e/selinux/libsepol.a e/selinux/libselinux.a
+
+## system/extras
+
+s/extras/libext4_utils.a: debian/system/extras/libext4_utils.mk e/selinux/libselinux.a s/core/libsparse.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+s/extras/libfec.a: debian/system/extras/libfec.mk e/selinux/libselinux.a s/core/libsparse.a s/core/libbase.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += s/extras/libext4_utils.a
+
+## libnativehelper
+
+libnativehelper/libnativehelper.a: debian/libnativehelper/libnativehelper.mk s/core/liblog.a
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += libnativehelper/libnativehelper.a
+
+## dalvik
+
+dalvik/hprof-conv: debian/dalvik/hprof-conv.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
+COMPONENTS += dalvik/hprof-conv
+
+override_dh_auto_build-arch: $(COMPONENTS)
+
+override_dh_auto_test:
+	echo ignore tests using upstream build system
+
+override_dh_auto_install:
+	echo ignore upstream build system install procedure
+
+override_dh_auto_clean:
+	dh_auto_clean
+
+override_dh_shlibdeps:
+	dh_shlibdeps
+
+override_dh_gencontrol:
+	dh_gencontrol
+	dh_gencontrol -padb -- -v1:$(DEB_VERSION)
+	dh_gencontrol -pfastboot -- -v1:$(DEB_VERSION)

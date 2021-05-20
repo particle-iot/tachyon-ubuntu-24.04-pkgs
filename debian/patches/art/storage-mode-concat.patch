@@ -1,0 +1,13 @@
+Description: Fix concatenation of storage_mode string.
+Forwarded: not-needed
+--- a/art/runtime/image.cc
++++ b/art/runtime/image.cc
+@@ -172,7 +172,7 @@ bool ImageHeader::Block::Decompress(uint8_t* out_ptr,
+     }
+     default: {
+       if (error_msg != nullptr) {
+-        *error_msg = (std::ostringstream() << "Invalid image format " << storage_mode_).str();
++        *error_msg = "Invalid image format " + storage_mode_;
+       }
+       return false;
+     }

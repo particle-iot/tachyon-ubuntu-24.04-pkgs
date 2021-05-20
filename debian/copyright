@@ -1,0 +1,1140 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0
+Upstream-Contact: https://source.android.com/compatibility/contact-us.html
+Comment: Files excluded should be kept in sync with d/orig.excludes
+Files-Excluded: *.a
+                *.apk
+                *.data
+                *.dll
+                *.exe
+                *.jar
+                *.o
+                *.so
+                *.tgz
+                *.tar.gz
+                *.vdex
+                *.zip
+                development/host/windows/usb/api/AdbWinApi.rc
+                development/host/windows/usb/api/Resource.h
+                development/host/windows/usb/winusb/AdbWinUsbApi.rc
+                development/host/windows/usb/winusb/Resource.h
+                development/perftests
+                development/prebuilt
+                development/samples
+                system/core/libunwindstack/tests
+                system/extras/simpleperf
+                external/avb/examples
+                external/selinux/mcstrans/share/examples
+
+Files: *
+Copyright: 2019, Kai-Chung Yan (殷啟聰)
+           2021, Chirayu Desai
+License: Apache-2.0
+
+Files: external/boringssl/*
+Copyright: 1998-2011, The OpenSSL Project
+License: OpenSSL and SSLeay
+
+Files: external/boringssl/src/crypto/asn1/*
+       external/boringssl/src/crypto/base64/base64.c
+       external/boringssl/src/crypto/bio/*
+       external/boringssl/src/crypto/bn_extra/*
+       external/boringssl/src/crypto/buf/*
+       external/boringssl/src/crypto/cipher_extra/cipher_extra.c
+       external/boringssl/src/crypto/cipher_extra/derive_key.c
+       external/boringssl/src/crypto/cipher_extra/e_null.c
+       external/boringssl/src/crypto/cipher_extra/e_rc2.c
+       external/boringssl/src/crypto/cipher_extra/e_rc4.c
+       external/boringssl/src/crypto/cipher_extra/internal.h
+       external/boringssl/src/crypto/conf/conf.c
+       external/boringssl/src/crypto/conf/conf_def.h
+       external/boringssl/src/crypto/cpu-intel.c
+       external/boringssl/src/crypto/dh/check.c
+       external/boringssl/src/crypto/dh/dh_test.cc
+       external/boringssl/src/crypto/dh/dh.c
+       external/boringssl/src/crypto/digest_extra/digest_extra.c
+       external/boringssl/src/crypto/dsa/dsa_test.cc
+       external/boringssl/src/crypto/dsa/dsa.c
+       external/boringssl/src/crypto/err/err.c
+       external/boringssl/src/crypto/evp/evp_asn1.c
+       external/boringssl/src/crypto/evp/evp_ctx.c
+       external/boringssl/src/crypto/evp/evp.c
+       external/boringssl/src/crypto/evp/internal.h
+       external/boringssl/src/crypto/evp/sign.c
+       external/boringssl/src/crypto/ex_data.c
+       external/boringssl/src/crypto/fipsmodule/bn/*
+       external/boringssl/src/crypto/fipsmodule/cipher/cipher.c
+       external/boringssl/src/crypto/fipsmodule/cipher/e_des.c
+       external/boringssl/src/crypto/fipsmodule/cipher/internal.h
+       external/boringssl/src/crypto/fipsmodule/des/des.c
+       external/boringssl/src/crypto/fipsmodule/des/internal.h
+       external/boringssl/src/crypto/fipsmodule/digest/digest.c
+       external/boringssl/src/crypto/fipsmodule/digest/digests.c
+       external/boringssl/src/crypto/fipsmodule/digest/internal.h
+       external/boringssl/src/crypto/fipsmodule/hmac/hmac.c
+       external/boringssl/src/crypto/fipsmodule/md4/md4.c
+       external/boringssl/src/crypto/fipsmodule/md5/md5.c
+       external/boringssl/src/crypto/fipsmodule/rsa/internal.h
+       external/boringssl/src/crypto/fipsmodule/rsa/rsa_impl.c
+       external/boringssl/src/crypto/fipsmodule/rsa/rsa.c
+       external/boringssl/src/crypto/fipsmodule/sha/sha1-altivec.c
+       external/boringssl/src/crypto/fipsmodule/sha/sha1.c
+       external/boringssl/src/crypto/fipsmodule/sha/sha256.c
+       external/boringssl/src/crypto/fipsmodule/sha/sha512.c
+       external/boringssl/src/crypto/hmac_extra/*
+       external/boringssl/src/crypto/internal.h
+       external/boringssl/src/crypto/lhash/lhash.c
+       external/boringssl/src/crypto/mem.c
+       external/boringssl/src/crypto/obj/*
+       external/boringssl/src/crypto/pem/*
+       external/boringssl/src/crypto/rc4/rc4.c
+       external/boringssl/src/crypto/rsa_extra/*
+       external/boringssl/src/crypto/stack/stack.c
+       external/boringssl/src/crypto/thread.c
+       external/boringssl/src/crypto/x509/*
+       external/boringssl/src/decrepit/bio/base64_bio.c
+       external/boringssl/src/decrepit/blowfish/blowfish.c
+       external/boringssl/src/decrepit/cast/cast_tables.c
+       external/boringssl/src/decrepit/cast/cast.c
+       external/boringssl/src/decrepit/cast/internal.h
+       external/boringssl/src/decrepit/des/cfb64ede.c
+       external/boringssl/src/decrepit/macros.h
+       external/boringssl/src/decrepit/rc4/rc4_decrepit.c
+       external/boringssl/src/decrepit/ripemd/internal.h
+       external/boringssl/src/decrepit/ripemd/ripemd.c
+       external/boringssl/src/decrepit/rsa/rsa_decrepit.c
+       external/boringssl/src/decrepit/ssl/ssl_decrepit.c
+       external/boringssl/src/include/openssl/asn1.h
+       external/boringssl/src/include/openssl/base64.h
+       external/boringssl/src/include/openssl/bio.h
+       external/boringssl/src/include/openssl/blowfish.h
+       external/boringssl/src/include/openssl/bn.h
+       external/boringssl/src/include/openssl/buf.h
+       external/boringssl/src/include/openssl/cast.h
+       external/boringssl/src/include/openssl/cipher.h
+       external/boringssl/src/include/openssl/conf.h
+       external/boringssl/src/include/openssl/cpu.h
+       external/boringssl/src/include/openssl/des.h
+       external/boringssl/src/include/openssl/dh.h
+       external/boringssl/src/include/openssl/digest.h
+       external/boringssl/src/include/openssl/dsa.h
+       external/boringssl/src/include/openssl/err.h
+       external/boringssl/src/include/openssl/evp.h
+       external/boringssl/src/include/openssl/ex_data.h
+       external/boringssl/src/include/openssl/hmac.h
+       external/boringssl/src/include/openssl/lhash.h
+       external/boringssl/src/include/openssl/md4.h
+       external/boringssl/src/include/openssl/md5.h
+       external/boringssl/src/include/openssl/mem.h
+       external/boringssl/src/include/openssl/nid.h
+       external/boringssl/src/include/openssl/obj.h
+       external/boringssl/src/include/openssl/pem.h
+       external/boringssl/src/include/openssl/rc4.h
+       external/boringssl/src/include/openssl/ripemd.h
+       external/boringssl/src/include/openssl/rsa.h
+       external/boringssl/src/include/openssl/sha.h
+       external/boringssl/src/include/openssl/ssl.h
+       external/boringssl/src/include/openssl/ssl3.h
+       external/boringssl/src/include/openssl/stack.h
+       external/boringssl/src/include/openssl/thread.h
+       external/boringssl/src/include/openssl/tls1.h
+       external/boringssl/src/include/openssl/type_check.h
+       external/boringssl/src/include/openssl/x509_vfy.h
+       external/boringssl/src/include/openssl/x509.h
+       external/boringssl/src/ssl/*
+Copyright: 1995-1998, Eric Young <eay@cryptsoft.com>
+License: SSLeay
+
+Files:
+       external/boringssl/crypto_test_data.cc
+       external/boringssl/err_data.c
+       external/boringssl/rules.mk
+       external/boringssl/src/.clang-format
+       external/boringssl/src/.github/*
+       external/boringssl/src/.gitignore
+       external/boringssl/src/BUILDING.md
+       external/boringssl/src/CMakeLists.txt
+       external/boringssl/src/CONTRIBUTING.md
+       external/boringssl/src/FUZZING.md
+       external/boringssl/src/INCORPORATING.md
+       external/boringssl/src/PORTING.md
+       external/boringssl/src/README.md
+       external/boringssl/src/STYLE.md
+       external/boringssl/src/codereview.settings
+       external/boringssl/src/crypto/asn1/asn1_test.cc
+       external/boringssl/src/crypto/base64/base64_test.cc
+       external/boringssl/src/crypto/bio/bio_test.cc
+       external/boringssl/src/crypto/bio/socket_helper.c
+       external/boringssl/src/crypto/bn_extra/bn_asn1.c
+       external/boringssl/src/crypto/bytestring/*
+       external/boringssl/src/crypto/chacha/*
+       external/boringssl/src/crypto/cipher_extra/aead_test.cc
+       external/boringssl/src/crypto/cipher_extra/e_aesctrhmac.c
+       external/boringssl/src/crypto/cipher_extra/e_aesgcmsiv.c
+       external/boringssl/src/crypto/cipher_extra/e_chacha20poly1305.c
+       external/boringssl/src/crypto/cipher_extra/e_tls.c
+       external/boringssl/src/crypto/cipher_extra/test/nist_cavp/make_cavp.go
+       external/boringssl/src/crypto/cmac/cmac_test.cc
+       external/boringssl/src/crypto/compiler_test.cc
+       external/boringssl/src/crypto/conf/internal.h
+       external/boringssl/src/crypto/cpu-aarch64-linux.c
+       external/boringssl/src/crypto/cpu-arm-linux.c
+       external/boringssl/src/crypto/cpu-arm.c
+       external/boringssl/src/crypto/cpu-ppc64le.c
+       external/boringssl/src/crypto/crypto.c
+       external/boringssl/src/crypto/curve25519/*
+       external/boringssl/src/crypto/digest_extra/digest_test.cc
+       external/boringssl/src/crypto/engine/*
+       external/boringssl/src/crypto/err/err_data_generate.go
+       external/boringssl/src/crypto/err/err_test.cc
+       external/boringssl/src/crypto/evp/evp_extra_test.cc
+       external/boringssl/src/crypto/evp/p_ed25519.c
+       external/boringssl/src/crypto/evp/p_ed25519_asn1.c
+       external/boringssl/src/crypto/evp/pbkdf_test.cc
+       external/boringssl/src/crypto/evp/scrypt_test.cc
+       external/boringssl/src/crypto/fipsmodule/aes/aes_test.cc
+       external/boringssl/src/crypto/fipsmodule/aes/internal.h
+       external/boringssl/src/crypto/fipsmodule/bcm.c
+       external/boringssl/src/crypto/fipsmodule/bn/check_bn_tests.go
+       external/boringssl/src/crypto/fipsmodule/cipher/aead.c
+       external/boringssl/src/crypto/fipsmodule/delocate.h
+       external/boringssl/src/crypto/fipsmodule/ec/ec_test.cc
+       external/boringssl/src/crypto/fipsmodule/ec/p224-64.c
+       external/boringssl/src/crypto/fipsmodule/ec/p256-x86_64_test.cc
+       external/boringssl/src/crypto/fipsmodule/is_fips.c
+       external/boringssl/src/crypto/fipsmodule/modes/polyval.c
+       external/boringssl/src/crypto/fipsmodule/rand/*
+       external/boringssl/src/crypto/hkdf/*
+       external/boringssl/src/crypto/lhash/lhash_test.cc
+       external/boringssl/src/crypto/obj/obj_test.cc
+       external/boringssl/src/crypto/obj/objects.go
+       external/boringssl/src/crypto/pkcs7/*
+       external/boringssl/src/crypto/pkcs8/pkcs12_test.cc
+       external/boringssl/src/crypto/pkcs8/pkcs8_test.cc
+       external/boringssl/src/crypto/poly1305/*
+       external/boringssl/src/crypto/pool/*
+       external/boringssl/src/crypto/rand_extra/*
+       external/boringssl/src/crypto/refcount_*.c
+       external/boringssl/src/crypto/test/*
+       external/boringssl/src/crypto/thread_*.c
+       external/boringssl/src/crypto/x509/internal.h
+       external/boringssl/src/crypto/x509/x509_test.cc
+       external/boringssl/src/decrepit/evp/*
+       external/boringssl/src/decrepit/obj/*
+       external/boringssl/src/decrepit/x509/*
+       external/boringssl/src/include/openssl/aead.h
+       external/boringssl/src/include/openssl/asn1_mac.h
+       external/boringssl/src/include/openssl/buffer.h
+       external/boringssl/src/include/openssl/bytestring.h
+       external/boringssl/src/include/openssl/chacha.h
+       external/boringssl/src/include/openssl/cmac.h
+       external/boringssl/src/include/openssl/crypto.h
+       external/boringssl/src/include/openssl/curve25519.h
+       external/boringssl/src/include/openssl/dtls1.h
+       external/boringssl/src/include/openssl/engine.h
+       external/boringssl/src/include/openssl/hkdf.h
+       external/boringssl/src/include/openssl/is_boringssl.h
+       external/boringssl/src/include/openssl/obj_mac.h
+       external/boringssl/src/include/openssl/objects.h
+       external/boringssl/src/include/openssl/opensslconf.h
+       external/boringssl/src/include/openssl/opensslv.h
+       external/boringssl/src/include/openssl/ossl_typ.h
+       external/boringssl/src/include/openssl/pkcs12.h
+       external/boringssl/src/include/openssl/pkcs7.h
+       external/boringssl/src/include/openssl/poly1305.h
+       external/boringssl/src/include/openssl/pool.h
+       external/boringssl/src/include/openssl/rand.h
+       external/boringssl/src/include/openssl/safestack.h
+       external/boringssl/src/include/openssl/srtp.h
+       external/boringssl/src/ssl/CMakeLists.txt
+       external/boringssl/src/ssl/ssl_aead_ctx.cc
+       external/boringssl/src/ssl/ssl_buffer.cc
+       external/boringssl/src/ssl/ssl_test.cc
+       external/boringssl/src/ssl/ssl_versions.cc
+       external/boringssl/src/ssl/test/*
+       external/boringssl/src/ssl/tls13_both.cc
+       external/boringssl/src/ssl/tls13_client.cc
+       external/boringssl/src/ssl/tls13_enc.cc
+       external/boringssl/src/ssl/tls13_server.cc
+       external/boringssl/src/tool/*
+       external/boringssl/src/util/*
+Copyright: 2014-2017, Google Inc.
+License: ISC
+
+Files: external/boringssl/src/crypto/cipher_extra/asm/aes128gcmsiv-x86_64.pl
+Copyright: 2017, Shay Gueron
+           2017, Google Inc
+License: ISC
+
+Files: external/boringssl/AndroidTest.xml
+       external/boringssl/sources.bp
+       external/boringssl/sources.mk
+Copyright: 2017, The Android Open Source Project
+License: Apache-2.0
+
+Files: external/boringssl/src/ssl/test/runner/curve25519/*
+       external/boringssl/src/ssl/test/runner/alert.go
+       external/boringssl/src/ssl/test/runner/cipher_suites.go
+       external/boringssl/src/ssl/test/runner/common.go
+       external/boringssl/src/ssl/test/runner/conn.go
+       external/boringssl/src/ssl/test/runner/dtls.go
+       external/boringssl/src/ssl/test/runner/handshake_client.go
+       external/boringssl/src/ssl/test/runner/handshake_messages.go
+       external/boringssl/src/ssl/test/runner/handshake_server.go
+       external/boringssl/src/ssl/test/runner/key_agreement.go
+       external/boringssl/src/ssl/test/runner/packet_adapter.go
+       external/boringssl/src/ssl/test/runner/prf.go
+       external/boringssl/src/ssl/test/runner/sign.go
+       external/boringssl/src/ssl/test/runner/ticket.go
+       external/boringssl/src/ssl/test/runner/tls.go
+Copyright: 2012-2016, The Go Authors
+License: BSD-3-clause
+
+Files: external/boringssl/src/util/bot/go/*
+       external/boringssl/src/util/bot/vs_toolchain.py
+Copyright: 2014, The Chromium Authors
+License: BSD-3-clause
+
+Files: external/boringssl/src/crypto/fipsmodule/bn/asm/rsaz-avx2.pl
+       external/boringssl/src/crypto/fipsmodule/bn/rsaz_exp.c
+       external/boringssl/src/crypto/fipsmodule/bn/rsaz_exp.h
+Copyright: 2012, Intel Corporation
+License: BSD-3-clause
+
+Files: external/boringssl/src/crypto/fipsmodule/ec/asm/p256-x86_64-asm.pl
+       external/boringssl/src/crypto/fipsmodule/ec/p256-x86_64-table.h
+       external/boringssl/src/crypto/fipsmodule/ec/p256-x86_64.*
+Copyright: 2014-2015, Intel Corporation
+License: ISC
+
+Files: external/boringssl/src/crypto/x509v3/v3_pci.c
+       external/boringssl/src/crypto/x509v3/v3_pcia.c
+Copyright: 2004, Kungliga Tekniska Högskolan
+License: BSD-3-clause
+
+Files: external/boringssl/src/include/openssl/ecdh.h
+Copyright: 2002, Sun Microsystems
+           2000-2002, The OpenSSL Project
+License: OpenSSL
+
+Files: external/boringssl/src/crypto/fipsmodule/bn/montgomery_inv.c
+Copyright: 2016, Brian Smith
+License: ISC
+
+Files: external/boringssl/src/crypto/cipher_extra/asm/chacha20_poly1305_x86_64.pl
+Copyright: 2015, CloudFlare Ltd
+License: ISC
+
+Files: debian/*
+Copyright: 2018, Saif Abdul Cassim <saif.15@cse.mrt.ac.lk>
+           2016, Kai-Chung Yan (殷啟聰) <seamlikok@gmail.com>
+           2015, Laszlo Boszormenyi (GCS) <gcs@debian.org>
+           2015, Hans-Christoph Steiner <hans@eds.org>
+License: MIT
+
+Files: external/selinux/*
+Copyright: 2004-2005, Trusted Computer Solutions, Inc.
+           2003-2008, Tresys Technology, LLC
+           2005-2013, Red Hat Inc.
+License: GPL-2
+
+Files: external/selinux/libselinux/*
+Copyright: N/A
+License: public-domain
+
+Files: external/selinux/checkpolicy/parse_util.*
+       external/selinux/libsemanage/*
+       external/selinux/libsepol/*
+Copyright: 2004-2005, Trusted Computer Solutions, Inc.
+           2003-2008, Tresys Technology, LLC
+           2005-2007, Red Hat Inc.
+License: LGPL-2.1
+
+Files: external/libunwind/*
+Copyright: 2001-2005 Hewlett-Packard Co.
+           2007 David Mosberger-Tang
+License: MIT
+
+Files: external/libunwind/android/*
+Copyright: 2014 The Android Open Source Project
+License: Apache-2.0
+
+Files: external/libunwind/src/arm/*
+Copyright: 2008 CodeSourcery
+License: MIT
+
+Files: external/libunwind/src/mi/strerror.c
+Copyright: 2004 BEA Systems
+License: MIT
+
+Files: external/libunwind/src/mips/*
+Copyright: 2008 CodeSourcery
+License: MIT
+
+Files: external/libunwind/src/ppc*/*
+Copyright: 2006-2007 IBM
+License: MIT
+
+Files: external/libunwind/src/ptrace/_UPT_access_*
+Copyright: 2003-2005 Hewlett-Packard Co
+           2010 Konstantin Belousov <kib@freebsd.org>
+License: MIT
+
+Files: external/libunwind/src/unwind/GetIPInfo.c
+Copyright: 2009 Red Hat
+License: MIT
+
+Files: external/libunwind/src/x86/getcontext-linux.S
+Copyright: 2009 Google, Inc
+License: MIT
+
+Files: external/libunwind/src/x86_64/*context.S
+Copyright: 2008 Google, Inc
+           2010 Konstantin Belousov <kib@freebsd.org>
+License: MIT
+
+Files: external/libunwind/tests/Gtest-nomalloc.c
+Copyright: 2009, 2011 Google, Inc
+License: MIT
+
+Files: external/libunwind/tests/Gtest-trace.c
+Copyright: 2010, 2011 by FERMI NATIONAL ACCELERATOR LABORATORY
+License: MIT
+
+Files: external/libunwind/tests/Ltest-cxx-exceptions.cxx
+Copyright: 2010 stefan.demharter@gmx.net
+           2010 arun.sharma@google.com
+License: MIT
+
+Files: debian/include/external/libunwind/*
+Copyright: 2013-2014, Igor Pavlov
+License: public-domain
+
+Files: libnativehelper/*
+Copyright: 2005-2014, The Android Open Source Project
+License: Apache-2.0
+
+Files: system/core/*
+Copyright: 2005-2014, The Android Open Source Project
+License: Apache-2.0
+
+Files: debian/bash-completion/system/core/*
+Copyright: 2009, Matt Brubeck
+License: MIT
+
+Files: system/core/fastboot/*.cpp
+       system/core/fastboot/*.h
+       system/core/libcutils/arch-mips/android_memset.c
+       system/core/libcutils/socket_inaddr_any_server_windows.cpp
+       system/core/libcutils/socket_network_client_windows.cpp
+       system/core/libcutils/sockets.cpp
+       system/core/libcutils/sockets_windows.cpp
+       system/core/libpixelflinger/arch-arm64/col32cb16blend.S
+       system/core/libpixelflinger/arch-arm64/t32cb16blend.S
+       system/core/libpixelflinger/codeflinger/Arm64Assembler.cpp
+       system/core/libpixelflinger/codeflinger/Arm64Assembler.h
+       system/core/libpixelflinger/codeflinger/Arm64Disassembler.cpp
+       system/core/libpixelflinger/codeflinger/Arm64Disassembler.h
+       system/core/libpixelflinger/tests/arch-arm64/*
+       system/core/libpixelflinger/tests/arch-mips/*
+       system/core/libpixelflinger/tests/arch-mips64/*
+       system/core/libpixelflinger/tests/gglmul/gglmul_test.cpp
+Copyright: 2008-2016, The Android Open Source Project
+License: BSD-2-clause
+
+Files: system/core/libcutils/include/cutils/ashmem.h
+       system/core/liblog/logger.h
+Copyright: 2007-2014, The Android Open Source Project
+License: Apache-2.0 or GPL-2
+
+Files: system/core/libpixelflinger/codeflinger/armreg.h
+       system/core/libpixelflinger/codeflinger/disassem.c
+       system/core/libpixelflinger/codeflinger/disassem.h
+Copyright: 1998-2001, Ben Harris
+           1994-1996, Mark Brinicombe
+           1994, Brini
+           1997, Causality Limited
+License: BSD-4-clause
+
+Files: system/core/libpixelflinger/codeflinger/mips_opcode.h
+       system/core/libpixelflinger/codeflinger/mips_disassem.c
+       system/core/libpixelflinger/codeflinger/mips_disassem.h
+       system/core/libpixelflinger/codeflinger/mips64_disassem.c
+       system/core/libpixelflinger/codeflinger/mips64_disassem.h
+Copyright: 1987-1994, The Regents of the University of California
+License: BSD-3-clause
+
+Files: system/core/libsparse/sparse_crc32.cpp
+Copyright: 1986, Gary S. Brow
+License: BSD-2-clause
+
+Files: system/core/debuggerd/libdebuggerd/test/sys/system_properties.h
+Copyright: 2015, The Android Open Source Project
+License: BSD-2-clause
+
+Files: system/core/libcutils/arch-arm64/android_memset.S
+Copyright: 2012, Linaro Limited
+License: BSD-3-clause
+
+Files: system/core/libcutils/strlcpy.c
+Copyright: 1998, Todd C. Miller <Todd.Miller@courtesan.com>
+License: MIT
+
+Files: development/*
+Copyright: 2005-2016, The Android Open Source Project
+           2008-2012, Google Inc.
+           1995-1996, Carnegie-Mellon University.
+License: Apache-2.0
+
+Files: art/*
+Copyright: 2005-2018, The Android Open Source Project
+License: Apache-2.0
+
+Files: debian/include/art/dlmalloc/*
+Copyright: N/A
+License: public-domain
+
+Files: frameworks/native/*
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/cmds/bugreportz/bugreportz.h
+Copyright: 2009, 2016, Google Inc.
+License: Apache-2.0
+
+Files: frameworks/native/cmds/rawbu/backup.cpp
+Copyright: 2008-2010, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/cmds/servicemanager/*
+Copyright: 2008-2010, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/headers/media_plugin/media/openmax/*
+Copyright: 1998-2009, PacketVideo
+License: Apache-2.0
+
+Files: frameworks/native/headers/media_plugin/media/openmax/OMX_AsString.h
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/headers/media_plugin/media/openmax/OMX_AudioExt.h
+  frameworks/native/headers/media_plugin/media/openmax/OMX_IndexExt.h
+  frameworks/native/headers/media_plugin/media/openmax/OMX_VideoExt.h
+Copyright: 2010, The Khronos Group Inc.
+License: Expat
+
+Files: frameworks/native/include/OWNERS
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/libs/input/InputTransport.cpp
+Copyright: 2008-2010, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/OWNERS
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/include/*
+Copyright: 2007-2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/opengl/include/EGL/Platform.h
+  frameworks/native/opengl/include/EGL/eglext_angle.h
+Copyright: 2015, 2017, The ANGLE Project Authors.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/include/ETC1/*
+Copyright: 2009, 2016, Google Inc.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/include/GLES/*
+Copyright: 2008-2017, The Khronos Group Inc.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/include/GLES/NOTICE
+Copyright: 2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/opengl/include/GLES/gl.h
+  frameworks/native/opengl/include/GLES/glext.h
+Copyright: 2007-2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/opengl/include/GLES2/NOTICE
+Copyright: 2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/opengl/include/GLES2/gl2platform.h
+Copyright: 2008-2017, The Khronos Group Inc.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/include/GLES3/NOTICE
+Copyright: 2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/opengl/include/GLES3/gl3platform.h
+Copyright: 2008-2017, The Khronos Group Inc.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/EGL/*
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/EGL/GLES_layers.md
+  frameworks/native/opengl/libs/EGL/egl_entries.in
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/ETC1/*
+Copyright: 2009, 2016, Google Inc.
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/GLES2/gl2.cpp
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/GLES_CM/gl.cpp
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/libs/egl_impl.h
+  frameworks/native/opengl/libs/hooks.h
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/specs/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/angeles/*
+Copyright: 2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/angeles/app-linux.cpp
+Copyright: 2004, 2005, Jetro Lauha
+License: Expat
+
+Files: frameworks/native/opengl/tests/filter/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gl2_jni/jni/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gl_basic/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gl_jni/jni/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gl_perf/fragment_shaders.cpp
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gl_perfapp/jni/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/gldual/jni/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/testPauseResume/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/testPauseResume/src/*
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/testViewport/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/testViewport/src/*
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tests/tritex/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/gen
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/specs/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/stubs/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/stubs/egl/EGL14cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/egl/EGL15cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/egl/EGLExtcHeader.cpp
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/stubs/gles11/GLES10ExtcHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES10cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES11ExtcHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES11cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES20cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES30cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES31ExtcHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES31cHeader.cpp
+  frameworks/native/opengl/tools/glgen/stubs/gles11/GLES32cHeader.cpp
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/stubs/jsr239/*
+Copyright: 2005-2019, The Android Open Source Project
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen/stubs/jsr239/glGetString.cpp
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/opengl/tools/glgen2/registry/*
+Copyright: 2007-2017, The Khronos Group Inc.
+License: Khronos
+
+Files: frameworks/native/services/batteryservice/include/batteryservice/BatteryServiceConstants.h
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/bufferhub/BufferNode.cpp
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/bufferhub/include/bufferhub/BufferNode.h
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/bufferhub/tests/*
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/displayservice/OWNERS
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/inputflinger/OWNERS
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/sensorservice/OWNERS
+Copyright: 2008-2017, The Khronos Group Inc.
+  2008-2016, Google Inc.
+  2005-2017, The Android Open Source Project
+  2004, 2005, Jetro Lauha
+License: Apache-2.0
+
+Files: frameworks/native/services/surfaceflinger/CompositionEngine/include/compositionengine/impl/*
+Copyright: 2015, 2016, Valve Corporation
+  2015, 2016, The Khronos Group Inc.
+  2015, 2016, LunarG, Inc.
+  2015, 2016, Google, Inc.
+License: Apache-2.0
+
+Files: system/extras/*
+Copyright: 2005-2015, The Android Open Source Project
+License: Apache-2.0
+
+Files: system/extras/ANRdaemon/ANRdaemon.cpp
+       system/extras/cpustats/cpustats.c
+Copyright: 2012-2015, The Android Open Source Project
+License: BSD-3-clause
+
+Files: system/extras/tests/directiotest/directiotest.c
+Copyright: 2010, Garmin Ltd. or its subsidiaries
+License: Apache-2.0
+
+Files: dalvik/*
+Copyright: 2005-2015, The Android Open Source Project
+           2006, Google Inc.
+           2005-2006, Intel Corporation
+           2005-2006, RSA Data Security Inc.
+           2005-2006, Caldera International Inc.
+License: Apache-2.0
+
+License: Apache-2.0
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ .
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ .
+ On Debian systems, the full text of the Apache License, Version 2.0
+ can be found in the file `/usr/share/common-licenses/Apache-2.0'.
+
+License: OpenSSL
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+ 3. All advertising materials mentioning features or use of this
+    software must display the following acknowledgment:
+    "This product includes software developed by the OpenSSL Project
+    for use in the OpenSSL Toolkit. (http://www.openssl.org/)"
+ 4. The names "OpenSSL Toolkit" and "OpenSSL Project" must not be used to
+    endorse or promote products derived from this software without
+    prior written permission. For written permission, please contact
+    openssl-core@openssl.org.
+ 5. Products derived from this software may not be called "OpenSSL"
+    nor may "OpenSSL" appear in their names without prior written
+    permission of the OpenSSL Project.
+ 6. Redistributions of any form whatsoever must retain the following
+    acknowledgment:
+    "This product includes software developed by the OpenSSL Project
+    for use in the OpenSSL Toolkit (http://www.openssl.org/)"
+ .
+ THIS SOFTWARE IS PROVIDED BY THE OpenSSL PROJECT ``AS IS'' AND ANY
+ EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE OpenSSL PROJECT OR
+ ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: ISC
+ Permission to use, copy, modify, and/or distribute this software for any
+ purpose with or without fee is hereby granted, provided that the above
+ copyright notice and this permission notice appear in all copies.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+ SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+ OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.
+
+License: SSLeay
+ This library is free for commercial and non-commercial use as long as
+ the following conditions are adhered to.  The following conditions
+ apply to all code found in this distribution, be it the RC4, RSA,
+ lhash, DES, etc., code; not just the SSL code.  The SSL documentation
+ included with this distribution is covered by the same copyright terms
+ except that the holder is Tim Hudson (tjh@cryptsoft.com).
+ .
+ Copyright remains Eric Young's, and as such any Copyright notices in
+ the code are not to be removed.
+ If this package is used in a product, Eric Young should be given attribution
+ as the author of the parts of the library used.
+ This can be in the form of a textual message at program startup or
+ in documentation (online or textual) provided with the package.
+ .
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ 3. All advertising materials mentioning features or use of this software
+    must display the following acknowledgement:
+    "This product includes cryptographic software written by
+     Eric Young (eay@cryptsoft.com)"
+    The word 'cryptographic' can be left out if the routines from the library
+    being used are not cryptographic related :-).
+ 4. If you include any Windows specific code (or a derivative thereof) from
+    the apps directory (application code) you must include an acknowledgement:
+    "This product includes software written by Tim Hudson (tjh@cryptsoft.com)"
+ .
+ THIS SOFTWARE IS PROVIDED BY ERIC YOUNG ``AS IS'' AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ SUCH DAMAGE.
+ .
+ The licence and distribution terms for any publically available version or
+ derivative of this code cannot be changed.  i.e. this code cannot simply be
+ copied and put under another distribution licence
+ [including the GNU General Public Licence.]
+
+License: BSD-3-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are
+ met:
+ .
+    * Redistributions of source code must retain the above copyright
+ notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+ copyright notice, this list of conditions and the following disclaimer
+ in the documentation and/or other materials provided with the
+ distribution.
+    * Neither the name of Google Inc. nor the names of its
+ contributors may be used to endorse or promote products derived from
+ this software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: public-domain
+ The person or persons who have associated work with this document (the
+ "Dedicator" or "Certifier") hereby either (a) certifies that, to the best of
+ his knowledge, the work of authorship identified is in the public domain of the
+ country from which the work is published, or (b) hereby dedicates whatever
+ copyright the dedicators holds in the work of authorship identified below (the
+ "Work") to the public domain. A certifier, moreover, dedicates any copyright
+ interest he may have in the associated work, and for these purposes, is
+ described as a "dedicator" below.
+ .
+ A certifier has taken reasonable steps to verify the copyright status of this
+ work. Certifier recognizes that his good faith efforts may not shield him from
+ liability if in fact the work certified is not in the public domain.
+ .
+ Dedicator makes this dedication for the benefit of the public at large and to
+ the detriment of the Dedicator's heirs and successors. Dedicator intends this
+ dedication to be an overt act of relinquishment in perpetuity of all present
+ and future rights under copyright law, whether vested or contingent, in the
+ Work. Dedicator understands that such relinquishment of all rights includes the
+ relinquishment of all rights to enforce (by lawsuit or otherwise) those
+ copyrights in the Work.
+ .
+ Dedicator recognizes that, once placed in the public domain, the Work may be
+ freely reproduced, distributed, transmitted, used, modified, built upon, or
+ otherwise exploited by anyone for any purpose, commercial or non-commercial,
+ and in any way, including by methods that have not yet been invented or
+ conceived.
+ .
+ This copy of license text is based on
+   http://creativecommons.org/licenses/publicdomain
+
+License: GPL-2
+ Full text of the GNU General Public License version 2 can be found at
+ `/usr/share/common-licenses/GPL-2` in any Debian distribution.
+
+License: LGPL-2.1
+ Full text of the GNU Lesser General Public License version 2.1 can be found at
+ `/usr/share/common-licenses/GPL-2` in any Debian distribution.
+
+License: BSD-2-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ *  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ *  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+ FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+ COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+ BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
+ OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+ AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ SUCH DAMAGE.
+
+License: BSD-4-clause
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions
+ are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ 3. All advertising materials mentioning features or use of this software
+    must display the following acknowledgement:
+    This product includes software developed by Mark Brinicombe.
+ 4. The name of the company nor the name of the author may be used to
+    endorse or promote products derived from this software without specific
+    prior written permission.
+
+License: Expat
+ This software is Copyright (c) 2020 by foo.
+ This is free software, licensed under:
+ The MIT (X11) License
+ The MIT License
+ Permission is hereby granted, free of charge, to any person
+ obtaining a copy of this software and associated
+ documentation files (the "Software"), to deal in the Software
+ without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to
+ whom the Software is furnished to do so, subject to the
+ following conditions:
+ The above copyright notice and this permission notice shall
+ be included in all copies or substantial portions of the
+ Software.
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+ WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR
+ PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+ SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ CONNECTION WITH THE SOFTWARE OR THE USE OR
+ OTHER DEALINGS IN THE SOFTWARE.
+
+License: Khronos
+ Copyright (c) 2017 The Khronos Group Inc.
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+     http://www.apache.org/licenses/LICENSE-2.0
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+ Copyright (c) 2013-2017 The Khronos Group Inc.
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and/or associated documentation files (the
+ "Materials"), to deal in the Materials without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish,
+ distribute, sublicense, and/or sell copies of the Materials, and to
+ permit persons to whom the Materials are furnished to do so, subject to
+ the following conditions:
+ The above copyright notice and this permission notice shall be included
+ in all copies or substantial portions of the Materials.
+ THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.

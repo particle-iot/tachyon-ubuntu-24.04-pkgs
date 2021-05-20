@@ -1,0 +1,13 @@
+Description: Add missing 'std::' scope identifiers.
+Forwarded: not-needed
+--- a/art/runtime/class_linker.cc
++++ b/art/runtime/class_linker.cc
+@@ -3181,7 +3181,7 @@
+     return Finish(h_klass);
+   }
+ 
+-  ObjPtr<mirror::Class> Finish(nullptr_t np ATTRIBUTE_UNUSED)
++  ObjPtr<mirror::Class> Finish(std::nullptr_t np ATTRIBUTE_UNUSED)
+       REQUIRES_SHARED(Locks::mutator_lock_) {
+     ScopedNullHandle<mirror::Class> snh;
+     return Finish(snh);

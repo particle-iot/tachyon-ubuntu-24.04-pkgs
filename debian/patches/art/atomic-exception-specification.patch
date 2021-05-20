@@ -1,0 +1,46 @@
+Description: Conforms with the exception specification of `std::atomic`
+ All constructors of `std::atomic` require `noexcept`. As a result, its members
+ must also be able to instantiate without any exception throwing.
+Forwarded: not-needed
+--- a/art/runtime/mirror/dex_cache.h
++++ b/art/runtime/mirror/dex_cache.h
+@@ -68,7 +68,7 @@
+   // Set the initial state for the 0th entry to be {0,1} which is guaranteed to fail
+   // the lookup id == stored id branch.
+   DexCachePair(ObjPtr<T> object, uint32_t index);
+-  DexCachePair() : index(0) {}
++  DexCachePair() noexcept : index(0) {}
+   DexCachePair(const DexCachePair<T>&) = default;
+   DexCachePair& operator=(const DexCachePair<T>&) = default;
+ 
+@@ -91,7 +91,7 @@
+   NativeDexCachePair(T* object, uint32_t index)
+       : object(object),
+         index(index) {}
+-  NativeDexCachePair() : object(nullptr), index(0u) { }
++  NativeDexCachePair() noexcept : object(nullptr), index(0u) { }
+   NativeDexCachePair(const NativeDexCachePair<T>&) = default;
+   NativeDexCachePair& operator=(const NativeDexCachePair<T>&) = default;
+ 
+--- a/art/runtime/mirror/object_reference.h
++++ b/art/runtime/mirror/object_reference.h
+@@ -164,7 +164,7 @@
+ template<class MirrorType>
+ class MANAGED CompressedReference : public mirror::ObjectReference<false, MirrorType> {
+  public:
+-  CompressedReference<MirrorType>() REQUIRES_SHARED(Locks::mutator_lock_)
++  CompressedReference<MirrorType>() noexcept REQUIRES_SHARED(Locks::mutator_lock_)
+       : mirror::ObjectReference<false, MirrorType>(nullptr) {}
+ 
+   static CompressedReference<MirrorType> FromMirrorPtr(MirrorType* p)
+--- a/art/runtime/gc_root.h
++++ b/art/runtime/gc_root.h
+@@ -213,7 +213,7 @@
+     return root_.IsNull();
+   }
+ 
+-  ALWAYS_INLINE GcRoot() {}
++  ALWAYS_INLINE GcRoot() noexcept {}
+   explicit ALWAYS_INLINE GcRoot(MirrorType* ref)
+       REQUIRES_SHARED(Locks::mutator_lock_);
+   explicit ALWAYS_INLINE GcRoot(ObjPtr<MirrorType> ref)

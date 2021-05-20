@@ -1,0 +1,22 @@
+Description: get libart building
+Forwarded: not-needed
+--- a/art/runtime/gc/space/image_space.cc
++++ b/art/runtime/gc/space/image_space.cc
+@@ -3272,7 +3272,7 @@ class ImageSpace::BootImageLoader {
+ 
+   if (VLOG_IS_ON(image)) {
+     LOG(INFO) << "ImageSpace::BootImageLoader::LoadFromSystem exiting "
+-        << boot_image_spaces->front();
++        << *boot_image_spaces->front();
+     logger.Dump(LOG_STREAM(INFO));
+   }
+   return true;
+@@ -3303,7 +3303,7 @@ class ImageSpace::BootImageLoader {
+ 
+   if (VLOG_IS_ON(image)) {
+     LOG(INFO) << "ImageSpace::BootImageLoader::LoadFromDalvikCache exiting "
+-        << boot_image_spaces->front();
++        << *boot_image_spaces->front();
+     logger.Dump(LOG_STREAM(INFO));
+   }
+   return true;

@@ -1,0 +1,12 @@
+Files under debian/include
+==========================
+
+These files are extracted from the AOSP forked external project LZMA [1] which
+is actually the "p7zip" package in Debian. However the package does not provide
+separated binary packages for lib7z.so or its header files, therefore we include
+the file in this package.
+
+See the filed bug [2].
+
+[1]: https://android.googlesource.com/platform/external/lzma
+[2]: http://bugs.debian.org/837873

@@ -1,0 +1,21 @@
+This library is a version of Google's internal OpenSSL fork called
+BoringSSL.  This is not the official BoringSSL release, it is the
+version of BoringSSL that is maintained as part of the Android SDK and
+OS.  These packages should never be used for anything but the parts of
+the Android SDK that require them.
+
+We package these chunks separately because we believe it makes it
+easier to maintain.  Security updates can happen only in the
+particular package rather than having to build the whole Android SDK
+together as one giant source tree.
+
+Upstream is already good at providing security fixes for all of the
+various bits, and they maintain quite a few stable releases in
+parallel.  Security maintenance for the Android SDK packages will
+mostly be a matter of just including any new patch versions
+(i.e. 8.1.0_r14 vs 8.1.0_r15).
+
+For more info:
+https://lists.debian.org/debian-security/2016/05/msg00038.html
+
+ -- Hans-Christoph Steiner <hans@eds.org>, Wed, 28 Feb 2018 11:51:35 +0100

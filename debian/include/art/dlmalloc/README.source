@@ -1,0 +1,4 @@
+The code is pulled from
+[here](https://android.googlesource.com/platform/external/dlmalloc).
+It seems to be used only at 2 places in AOSP and never receive any update, so
+I decided not to go through the trouble of the NEW queue.
