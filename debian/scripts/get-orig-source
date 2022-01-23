@@ -34,8 +34,8 @@ mkdir --parents debian/tmp/get-orig-source/manifest
 mkdir --parents debian/tmp/get-orig-source/archive
 (
   cd debian/tmp/get-orig-source/archive
-  repo init --manifest-url=file://"$(readlink --canonicalize-existing ../manifest/.git)" --depth=1
-  repo sync
+  repo --time init --manifest-url=file://"$(readlink --canonicalize-existing ../manifest/.git)" --depth=1 -c --no-tags
+  repo --time sync -c --no-tags -j$(nproc)
   tar --create --xz --file "../../../../../${DEB_SOURCE}_${DEB_VERSION_UPSTREAM}.orig.tar.xz" --exclude-from=../../../orig.excludes --mtime=2000-01-01 --sort=name ./*
 )
 

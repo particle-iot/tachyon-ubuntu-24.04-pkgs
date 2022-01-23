@@ -1,3 +1,17 @@
+android-platform-tools (29.0.6-3~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * debian: Remove legacy mips Arch support.
+  * debian/control:
+    - Add Arch for adb and fastboot: mipsel, mips64el.
+    - Remove unnecessary B-D: dh-exec, dpkg-dev, p7zip-full.
+  * debian/rules:
+    - Support to build adb and fastboot for Archs other than amd64.
+  * debian/scripts:
+    - Update get-orig-source to get perf data and run in parallel.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 24 Jan 2022 01:37:17 +0900
+
 android-platform-tools (29.0.6-2) unstable; urgency=medium
 
   * Team upload.

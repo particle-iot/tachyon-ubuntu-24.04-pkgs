@@ -15,9 +15,6 @@ endif
 ifeq ($(DEB_HOST_ARCH), arm64)
   CPU = arm64
 endif
-ifeq ($(DEB_HOST_ARCH), mips)
-  CPU = mips
-endif
 ifeq ($(DEB_HOST_ARCH), mipsel)
   CPU = mips
 endif

@@ -59,9 +59,6 @@ endif
 ifeq ($(DEB_HOST_ARCH), arm64)
   # TODO port me!
 endif
-ifeq ($(DEB_HOST_ARCH), mips)
-  SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips.S
-endif
 ifeq ($(DEB_HOST_ARCH), mipsel)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips.S
 endif
