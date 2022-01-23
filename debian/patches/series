@@ -17,6 +17,7 @@ system/core/fix-build-on-non-x86.patch
 system/core/add-missing-headers.patch
 system/core/hard-code-build-number.patch
 system/core/stub-out-fastdeploy.patch
+system/core/fix-standard-namespace-errors.patch
 development/typos.patch
 art/use-android-dlmalloc.patch
 art/missing-system-includes.patch
@@ -31,3 +32,4 @@ art/fix-build-on-non-x86.patch
 art/workaround-cacheflush-on-arm.patch
 art/arm-asm-instruction.patch
 art/fix-standard-namespace-errors.patch
+art/add-assembler-macro.patch

@@ -1,0 +1,311 @@
+From: Peter Collingbourne <pcc@google.com>
+Date: Thu, 24 Jun 2021 10:17:39 -0700
+Subject: Switch to an assembler macro for CFI_RESTORE_STATE_AND_DEF_CFA
+
+Newer versions of clang reject multiple assembler directives
+on the same line, which breaks the preprocessor macro
+CFI_RESTORE_STATE_AND_DEF_CFA. Fix it by making it an assembler
+macro instead.
+
+Bug: 191980979
+Change-Id: I823ff9c66336931249d2bac40280b24ecdebd0cf
+(cherry picked from commit 082659bcbf66c08e2ad9be88363c7ab88c50e114)
+---
+ art/runtime/arch/x86/asm_support_x86.S             |  5 ++-
+ art/runtime/arch/x86/memcmp16_x86.S                | 38 ++++++++++++----------
+ art/runtime/arch/x86/quick_entrypoints_x86.S       |  8 ++---
+ art/runtime/arch/x86_64/asm_support_x86_64.S       |  7 +++-
+ art/runtime/arch/x86_64/quick_entrypoints_x86_64.S | 10 +++---
+ 5 files changed, 40 insertions(+), 28 deletions(-)
+
+diff --git a/art/runtime/arch/x86/asm_support_x86.S b/art/runtime/arch/x86/asm_support_x86.S
+index 8f43cc8..5f2f739 100644
+--- a/art/runtime/arch/x86/asm_support_x86.S
++++ b/art/runtime/arch/x86/asm_support_x86.S
+@@ -82,7 +82,10 @@
+     // differ in the behaviour, so explicitly set the CFA to avoid any ambiguity.
+     // The restored CFA state should match the CFA state during CFI_REMEMBER_STATE.
+     // `objdump -Wf libart.so | egrep "_cfa|_state"` is useful to audit the opcodes.
+-    #define CFI_RESTORE_STATE_AND_DEF_CFA(reg,off) .cfi_restore_state .cfi_def_cfa reg,off
++    MACRO2(CFI_RESTORE_STATE_AND_DEF_CFA, reg, off)
++        .cfi_restore_state
++        .cfi_def_cfa \reg,\off
++    END_MACRO
+     #define CFI_ESCAPE(...) .cfi_escape __VA_ARGS__
+ #else
+     // Mac OS' doesn't like cfi_* directives.
+diff --git a/art/runtime/arch/x86/memcmp16_x86.S b/art/runtime/arch/x86/memcmp16_x86.S
+index bd33a62..636ceb9 100644
+--- a/art/runtime/arch/x86/memcmp16_x86.S
++++ b/art/runtime/arch/x86/memcmp16_x86.S
+@@ -40,7 +40,11 @@
+ #define BLK2        BLK1+4
+ #define LEN        BLK2+4
+ #define RETURN_END    POP (%edi); POP (%esi); POP (%ebx); ret
+-#define RETURN        RETURN_END; CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16); CFI_REMEMBER_STATE
++MACRO0(RETURN)
++    RETURN_END
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
++    CFI_REMEMBER_STATE
++END_MACRO
+ 
+ DEFINE_FUNCTION MEMCMP
+     movl       LEN(%esp), %ecx
+@@ -131,7 +135,7 @@ L(shr_0):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_0_gobble):
+@@ -177,7 +181,7 @@ L(shr_0_gobble_loop_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_2):
+@@ -207,7 +211,7 @@ L(shr_2):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_2_gobble):
+@@ -260,7 +264,7 @@ L(shr_2_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_4):
+@@ -290,7 +294,7 @@ L(shr_4):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_4_gobble):
+@@ -343,7 +347,7 @@ L(shr_4_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_6):
+@@ -373,7 +377,7 @@ L(shr_6):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_6_gobble):
+@@ -426,7 +430,7 @@ L(shr_6_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_8):
+@@ -456,7 +460,7 @@ L(shr_8):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_8_gobble):
+@@ -509,7 +513,7 @@ L(shr_8_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_10):
+@@ -539,7 +543,7 @@ L(shr_10):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_10_gobble):
+@@ -592,7 +596,7 @@ L(shr_10_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_12):
+@@ -622,7 +626,7 @@ L(shr_12):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_12_gobble):
+@@ -675,7 +679,7 @@ L(shr_12_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_14):
+@@ -705,7 +709,7 @@ L(shr_14):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(shr_14_gobble):
+@@ -758,7 +762,7 @@ L(shr_14_gobble_next):
+     POP        (%esi)
+     jmp        L(less48bytes)
+ 
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+     CFI_REMEMBER_STATE
+     .p2align 4
+ L(exit):
+diff --git a/art/runtime/arch/x86/quick_entrypoints_x86.S b/art/runtime/arch/x86/quick_entrypoints_x86.S
+index 7533cf8..d623a99 100644
+--- a/art/runtime/arch/x86/quick_entrypoints_x86.S
++++ b/art/runtime/arch/x86/quick_entrypoints_x86.S
+@@ -944,7 +944,7 @@ MACRO3(ONE_ARG_SAVE_EVERYTHING_DOWNCALL, c_name, cxx_name, runtime_method_offset
+     CFI_REMEMBER_STATE
+     RESTORE_SAVE_EVERYTHING_FRAME_KEEP_EAX            // restore frame up to return address
+     ret                                               // return
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, FRAME_SIZE_SAVE_EVERYTHING)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, FRAME_SIZE_SAVE_EVERYTHING
+ 1:
+     DELIVER_PENDING_EXCEPTION_FRAME_READY
+     END_FUNCTION VAR(c_name)
+@@ -1835,7 +1835,7 @@ DEFINE_FUNCTION art_quick_imt_conflict_trampoline
+     POP ESI
+     POP EDI
+     jmp *ART_METHOD_QUICK_CODE_OFFSET_32(%eax)
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+ .Limt_table_next_entry:
+     // If the entry is null, the interface method is not in the ImtConflictTable.
+     cmpl LITERAL(0), 0(%edi)
+@@ -1851,7 +1851,7 @@ DEFINE_FUNCTION art_quick_imt_conflict_trampoline
+     POP ESI
+     POP EDI
+     INVOKE_TRAMPOLINE_BODY artInvokeInterfaceTrampoline
+-    CFI_RESTORE_STATE_AND_DEF_CFA(esp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA esp, 16
+ .Limt_conflict_trampoline_dex_cache_miss:
+     // We're not creating a proper runtime method frame here,
+     // artLookupResolvedMethod() is not allowed to walk the stack.
+@@ -2433,7 +2433,7 @@ DEFINE_FUNCTION art_quick_osr_stub
+     mov %edx, 4(%ecx)             // Store the other half of the result.
+     ret
+ .Losr_entry:
+-    CFI_RESTORE_STATE_AND_DEF_CFA(ebp, SAVE_SIZE)  // CFA = ebp + SAVE_SIZE
++    CFI_RESTORE_STATE_AND_DEF_CFA ebp, SAVE_SIZE   // CFA = ebp + SAVE_SIZE
+     subl LITERAL(4), %ecx         // Given stack size contains pushed frame pointer, substract it.
+     subl %ecx, %esp
+     mov %esp, %edi                // EDI = beginning of stack
+diff --git a/art/runtime/arch/x86_64/asm_support_x86_64.S b/art/runtime/arch/x86_64/asm_support_x86_64.S
+index 2b50cdb..4606751 100644
+--- a/art/runtime/arch/x86_64/asm_support_x86_64.S
++++ b/art/runtime/arch/x86_64/asm_support_x86_64.S
+@@ -81,7 +81,10 @@
+     // differ in the behaviour, so explicitly set the CFA to avoid any ambiguity.
+     // The restored CFA state should match the CFA state during CFI_REMEMBER_STATE.
+     // `objdump -Wf libart.so | egrep "_cfa|_state"` is useful to audit the opcodes.
+-    #define CFI_RESTORE_STATE_AND_DEF_CFA(reg,off) .cfi_restore_state .cfi_def_cfa reg,off
++    MACRO2(CFI_RESTORE_STATE_AND_DEF_CFA, reg, off)
++        .cfi_restore_state
++        .cfi_def_cfa \reg,\off
++    END_MACRO
+     #define CFI_RESTORE_STATE .cfi_restore_state
+ #else
+     // Mac OS' doesn't like cfi_* directives.
+@@ -94,6 +97,8 @@
+     #define CFI_REL_OFFSET(reg,size)
+     #define CFI_REMEMBER_STATE
+     #define CFI_RESTORE_STATE_AND_DEF_CFA(off)
++    MACRO2(CFI_RESTORE_STATE_AND_DEF_CFA, reg, off)
++    END_MACRO
+     #define CFI_RESTORE_STATE
+ #endif
+ 
+diff --git a/art/runtime/arch/x86_64/quick_entrypoints_x86_64.S b/art/runtime/arch/x86_64/quick_entrypoints_x86_64.S
+index 56961d7..68a1ee5 100644
+--- a/art/runtime/arch/x86_64/quick_entrypoints_x86_64.S
++++ b/art/runtime/arch/x86_64/quick_entrypoints_x86_64.S
+@@ -828,7 +828,7 @@ MACRO3(ONE_ARG_SAVE_EVERYTHING_DOWNCALL, c_name, cxx_name, runtime_method_offset
+     CFI_REMEMBER_STATE
+     RESTORE_SAVE_EVERYTHING_FRAME_KEEP_RAX        // restore frame up to return address
+     ret
+-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, FRAME_SIZE_SAVE_EVERYTHING)
++    CFI_RESTORE_STATE_AND_DEF_CFA rsp, FRAME_SIZE_SAVE_EVERYTHING
+ 1:
+     DELIVER_PENDING_EXCEPTION_FRAME_READY
+     END_FUNCTION VAR(c_name)
+@@ -1279,7 +1279,7 @@ DEFINE_FUNCTION art_quick_check_instance_of
+     addq LITERAL(24), %rsp            // pop arguments
+     CFI_ADJUST_CFA_OFFSET(-24)
+     ret
+-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 64)  // Reset unwind info so following code unwinds.
++    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 64  // Reset unwind info so following code unwinds.
+ 
+ .Lthrow_class_cast_exception:
+     RESTORE_FP_CALLEE_SAVE_FRAME
+@@ -1541,7 +1541,7 @@ DEFINE_FUNCTION art_quick_imt_conflict_trampoline
+     CFI_REMEMBER_STATE
+     POP rdx
+     jmp *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi)
+-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 16
+ .Limt_table_next_entry:
+     // If the entry is null, the interface method is not in the ImtConflictTable.
+     cmpq LITERAL(0), 0(%rdi)
+@@ -1556,7 +1556,7 @@ DEFINE_FUNCTION art_quick_imt_conflict_trampoline
+     POP rdx
+     movq %rax, %rdi  // Load interface method
+     INVOKE_TRAMPOLINE_BODY artInvokeInterfaceTrampoline
+-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 16)
++    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 16
+ .Limt_conflict_trampoline_dex_cache_miss:
+     // We're not creating a proper runtime method frame here,
+     // artLookupResolvedMethod() is not allowed to walk the stack.
+@@ -2260,7 +2260,7 @@ DEFINE_FUNCTION art_quick_osr_stub
+     movq %rax, (%rcx)              // Store the result.
+     ret
+ .Losr_entry:
+-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 80)
++    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 80
+     // Since the call has pushed the return address we need to switch the CFA register to RBP.
+     CFI_DEF_CFA_REGISTER(rbp)
+ 

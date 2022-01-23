@@ -1,5 +1,25 @@
 Description: Add missing 'std::' scope identifiers.
 Forwarded: not-needed
+--- a/art/libdexfile/dex/compact_offset_table.h
++++ b/art/libdexfile/dex/compact_offset_table.h
+@@ -28,7 +28,7 @@
+  public:
+   // This value is coupled with the leb chunk bitmask. That logic must also be adjusted when the
+   // integer is modified.
+-  static constexpr size_t kElementsPerIndex = 16;
++  static constexpr std::size_t kElementsPerIndex = 16;
+ 
+   // Leb block format:
+   // [uint16_t] 16 bit mask for what indexes actually have a non zero offset for the chunk.
+@@ -61,7 +61,7 @@
+                     uint32_t* out_table_offset);
+ 
+   // 32 bit aligned for the offset table.
+-  static constexpr size_t kAlignment = sizeof(uint32_t);
++  static constexpr std::size_t kAlignment = sizeof(uint32_t);
+ };
+ 
+ }  // namespace art
 --- a/art/runtime/class_linker.cc
 +++ b/art/runtime/class_linker.cc
 @@ -3181,7 +3181,7 @@

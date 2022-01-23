@@ -1,3 +1,21 @@
+android-platform-tools (29.0.6-2) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Remove unused B-D: debhelper (>= 11).
+    - Use clang for all ARCHs.
+  * debian/patches:
+    - Update to adapt patch requirement for gbp pq command:
+      + debian/patches/system/core/stub-out-fastdeploy.patch
+    - To fix ftbfs issues (Closes: #999334):
+      + Update: debian/patches/art/fix-standard-namespace-errors.patch
+      + Update: debian/patches/system/core/add-missing-headers.patch
+      + Add: debian/patches/system/core/fix-standard-namespace-errors.patch
+    - Cherry-pick patch from upstream:
+      + Switch to an assembler macro for CFI_RESTORE_STATE_AND_DEF_CFA.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 23 Jan 2022 18:03:24 +0900
+
 android-platform-tools (29.0.6-1) unstable; urgency=medium
 
   * Team upload
