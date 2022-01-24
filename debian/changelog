@@ -1,3 +1,11 @@
+android-platform-tools (29.0.6-3~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Disable libdexfile for armel and armhf.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 25 Jan 2022 01:50:38 +0900
+
 android-platform-tools (29.0.6-3~exp2) experimental; urgency=medium
 
   * Team upload.

@@ -146,10 +146,16 @@ COMPONENTS += \
 # MIPS is left out because ART only supports MIPSr6 while Debian is by default MIPSr2
 ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
   COMPONENTS += \
-    art/libdexfile_external.a \
-    art/libdexfile_support.a \
     art/libnativebridge.a \
     art/libnativeloader.a \
+
+endif
+
+# libdexfile depends on libart, and it only builds on limited Arch
+ifneq ($(filter amd64 i386 arm64,$(DEB_HOST_ARCH)),)
+  COMPONENTS += \
+    art/libdexfile_external.a \
+    art/libdexfile_support.a \
 
 endif
 
