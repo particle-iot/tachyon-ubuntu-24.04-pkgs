@@ -1,3 +1,11 @@
+android-platform-tools (29.0.6-3~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Remove unnecessary B-D: maven-repo-helper.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 24 Jan 2022 18:07:50 +0900
+
 android-platform-tools (29.0.6-3~exp1) experimental; urgency=medium
 
   * Team upload.

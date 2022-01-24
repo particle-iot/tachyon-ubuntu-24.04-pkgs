@@ -13,7 +13,6 @@ Build-Depends:
  libpcre3-dev,
  libpng-dev,
  libsquashfuse-dev,
- maven-repo-helper,
  python3 [amd64 i386 armel armhf arm64],
  zlib1g-dev [amd64 i386 armel armhf arm64],
 Build-Depends-Arch:
