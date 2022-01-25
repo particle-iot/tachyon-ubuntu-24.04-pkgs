@@ -325,7 +325,8 @@ Copyright: 2015, CloudFlare Ltd
 License: ISC
 
 Files: debian/*
-Copyright: 2018, Saif Abdul Cassim <saif.15@cse.mrt.ac.lk>
+Copyright: 2022, Roger Shimizu <rosh@debian.org>
+           2018, Saif Abdul Cassim <saif.15@cse.mrt.ac.lk>
            2016, Kai-Chung Yan (殷啟聰) <seamlikok@gmail.com>
            2015, Laszlo Boszormenyi (GCS) <gcs@debian.org>
            2015, Hans-Christoph Steiner <hans@eds.org>

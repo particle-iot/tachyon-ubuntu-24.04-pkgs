@@ -13,7 +13,7 @@ Build-Depends:
  libpcre3-dev,
  libpng-dev,
  libsquashfuse-dev,
- python3 [amd64 i386 armel armhf arm64],
+ python3 [amd64 i386 arm64],
  zlib1g-dev [amd64 i386 armel armhf arm64],
 Build-Depends-Arch:
  libgtest-dev [amd64 i386 armel armhf arm64],
