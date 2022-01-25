@@ -147,6 +147,12 @@ OBJECTS_ASSEMBLY = $(SOURCES_ASSEMBLY:.S=.o)
 CFLAGS += -DHAVE_CONFIG_H -DNDEBUG -D_GNU_SOURCE -Werror -Wno-unused-parameter -fcommon -Wno-header-guard -Wno-absolute-value -Wno-inline-asm
 CPPFLAGS += -Iexternal/libunwind/include -Iexternal/libunwind/src $($(CPU)_INCLUDES) -Idebian/include/external/libunwind/
 
+# Use gcc instead of clang for assembly on armel
+# Header external/libunwind/include/libunwind_i.h includes some assembly
+ifeq ($(DEB_HOST_ARCH), armel)
+  CC=gcc
+endif
+
 debian/out/external/libunwind/$(NAME).a: $(OBJECTS_C) $(OBJECTS_ASSEMBLY)
 	mkdir --parents debian/out/external/libunwind
 	ar -rcs $@ $^

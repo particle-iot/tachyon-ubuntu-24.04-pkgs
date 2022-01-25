@@ -28,6 +28,12 @@ CFLAGS += \
 
 CPPFLAGS += -Iexternal/boringssl/src/include -Iexternal/boringssl/src/crypto
 
+# Use gcc instead of clang for assembly on armel
+CC_ASSEMBLY = $(CC)
+ifeq ($(DEB_HOST_ARCH), armel)
+  CC_ASSEMBLY = gcc
+endif
+
 debian/out/external/boringssl/$(NAME).a: $(OBJECTS_C) $(OBJECTS_ASSEMBLY)
 	mkdir --parents debian/out/external/boringssl
 	ar -rcs $@ $^
@@ -36,4 +42,4 @@ $(OBJECTS_C): %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)
 
 $(OBJECTS_ASSEMBLY): %.o: %.S
-	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)
+	$(CC_ASSEMBLY) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)

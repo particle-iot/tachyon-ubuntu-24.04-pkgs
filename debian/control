@@ -5,7 +5,7 @@ Maintainer: Android Tools Maintainers <android-tools-devel@lists.alioth.debian.o
 Uploaders: Chirayu Desai <chirayudesai1@gmail.com>
 Build-Depends:
  bash-completion,
- clang,
+ clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x powerpc ppc64 sparc64 riscv64],
  debhelper-compat (= 13),
  help2man,
  libicu-dev [amd64 i386 armel armhf arm64],
