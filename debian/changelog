@@ -1,3 +1,10 @@
+android-platform-tools (29.0.6-4) unstable; urgency=medium
+
+  * Team upload.
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Jan 2022 18:43:43 +0900
+
 android-platform-tools (29.0.6-4~exp2) experimental; urgency=medium
 
   * Team upload.
