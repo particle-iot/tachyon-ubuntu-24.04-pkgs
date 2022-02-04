@@ -18,15 +18,17 @@ SOURCES_ASSEMBLY = $(filter %.S,$(SOURCES))
 OBJECTS_ASSEMBLY = $(SOURCES_ASSEMBLY:.S=.o)
 
 CFLAGS += \
+  -fvisibility=hidden \
+  -Wa,--noexecstack # Fixes `shlib-with-executable-stack`, see `src/util/BUILD.toplevel`
+
+CPPFLAGS += \
   -D_XOPEN_SOURCE=700 \
   -DBORINGSSL_ANDROID_SYSTEM \
   -DBORINGSSL_IMPLEMENTATION \
   -DBORINGSSL_SHARED_LIBRARY \
   -DOPENSSL_SMALL \
-  -fvisibility=hidden \
-  -Wa,--noexecstack # Fixes `shlib-with-executable-stack`, see `src/util/BUILD.toplevel`
-
-CPPFLAGS += -Iexternal/boringssl/src/include -Iexternal/boringssl/src/crypto
+  -Iexternal/boringssl/src/crypto \
+  -Iexternal/boringssl/src/include \
 
 # Use gcc instead of clang for assembly on armel
 CC_ASSEMBLY = $(CC)

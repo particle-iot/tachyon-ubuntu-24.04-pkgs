@@ -14,14 +14,16 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), system/core/adb/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a -pie
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-  -Isystem/core/include \
+  -D_GNU_SOURCE \
+  -DADB_HOST=1 \
+  -DADB_VERSION='"$(DEB_VERSION)"' \
+  -I/usr/include/android \
+  -Iexternal/boringssl/include \
   -Isystem/core/adb \
   -Isystem/core/base/include \
-  -Iexternal/boringssl/include \
-  -I/usr/include/android \
-  -DADB_VERSION='"$(DEB_VERSION)"' -DADB_HOST=1 -D_GNU_SOURCE \
+  -Isystem/core/include \
 
 LDFLAGS += -lpthread -lusb-1.0
 STATIC_LIBS = \

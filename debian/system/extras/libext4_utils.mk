@@ -19,17 +19,20 @@ OBJECTS_C = $(SOURCES_C:.c=.o)
 SOURCES_CXX = $(filter %.cpp,$(SOURCES))
 OBJECTS_CXX = $(SOURCES_CXX:.cpp=.o)
 
-CXXFLAGS += -fno-strict-aliasing -std=g++17
+CXXFLAGS += -std=gnu++2a -fno-strict-aliasing
 CPPFLAGS += \
-            -Isystem/extras/ext4_utils/include \
-            -Isystem/extras/libfec/include \
-            -Isystem/extras/squashfs_utils \
-            -I/usr/include/android \
-            -Iexternal/selinux/libselinux/include \
-            -Isystem/core/libsparse/include \
-            -Isystem/core/libcutils/include \
-            -Isystem/core/base/include \
-            -D_GNU_SOURCE -DFEC_NO_KLOG -DSQUASHFS_NO_KLOG -D_LARGEFILE64_SOURCE \
+  -D_GNU_SOURCE \
+  -D_LARGEFILE64_SOURCE \
+  -DFEC_NO_KLOG \
+  -DSQUASHFS_NO_KLOG \
+  -I/usr/include/android \
+  -Iexternal/selinux/libselinux/include \
+  -Isystem/core/base/include \
+  -Isystem/core/libcutils/include \
+  -Isystem/core/libsparse/include \
+  -Isystem/extras/ext4_utils/include \
+  -Isystem/extras/libfec/include \
+  -Isystem/extras/squashfs_utils \
 
 debian/out/system/extras/libext4_utils.a: $(OBJECTS_C) $(OBJECTS_CXX)
 	mkdir --parents debian/out/system/extras

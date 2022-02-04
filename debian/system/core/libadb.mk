@@ -45,17 +45,16 @@ OBJECTS = $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
+  -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
+  -DADB_HOST=1 -DADB_VERSION='"$(DEB_VERSION)"' \
+  -I/usr/include/android \
+  -Iexternal/boringssl/include \
   -Isystem/core/adb \
   -Isystem/core/base/include \
   -Isystem/core/diagnose_usb/include \
-  -Isystem/core/libcrypto_utils/include \
   -Isystem/core/include \
-  -Iexternal/boringssl/include \
+  -Isystem/core/libcrypto_utils/include \
   -Isystem/core/libcutils/include \
-  -Isystem/core/base/include \
-  -I/usr/include/android \
-  -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
-  -DADB_HOST=1 -DADB_VERSION='"$(DEB_VERSION)"'
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/system/core

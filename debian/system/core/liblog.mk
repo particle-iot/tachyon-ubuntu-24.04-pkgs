@@ -16,16 +16,15 @@ SOURCES = $(liblog_sources) $(not_windows_sources)
 SOURCES := $(foreach source, $(SOURCES), system/core/liblog/$(source))
 OBJECTS := $(SOURCES:.cpp=.o)
 
-CFLAGS += -fvisibility=hidden -fcommon
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a -fcommon -fvisibility=hidden
 CPPFLAGS += \
-  -Isystem/core/liblog/include \
-  -Isystem/core/include \
-  -Isystem/core/base/include \
-  -I/usr/include/android \
-  -DLIBLOG_LOG_TAG=1006 \
   -DFAKE_LOG_DEVICE=1 \
+  -DLIBLOG_LOG_TAG=1006 \
   -DSNET_EVENT_LOG_TAG=1397638484 \
+  -I/usr/include/android \
+  -Isystem/core/base/include \
+  -Isystem/core/include \
+  -Isystem/core/liblog/include \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/system/core

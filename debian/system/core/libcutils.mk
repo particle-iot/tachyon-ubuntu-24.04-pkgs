@@ -38,13 +38,13 @@ OBJECTS_C := $(SOURCES_C:.c=.o)
 SOURCES_CXX := $(foreach source, $(filter %.cpp, $(SOURCES)), system/core/libcutils/$(source))
 OBJECTS_CXX := $(SOURCES_CXX:.cpp=.o)
 
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
+  -I/usr/include/android \
   -Isystem/core/base/include \
   -Isystem/core/libcutils/include \
   -Isystem/core/liblog/include \
   -Isystem/core/include \
-  -I/usr/include/android \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS_C) $(OBJECTS_CXX)
 	mkdir --parents debian/out/system/core

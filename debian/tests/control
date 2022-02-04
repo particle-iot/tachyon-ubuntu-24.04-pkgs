@@ -1,28 +1,35 @@
 ## system-core
 
 Test-Command: adb version
+Architecture: amd64 i386 armel armhf arm64
 Depends: adb
 
 Test-Command: adb help
+Architecture: amd64 i386 armel armhf arm64
 Depends: adb
 
 Test-Command: adb kill-server && adb devices
+Architecture: amd64 i386 armel armhf arm64
 Depends: adb
 Restrictions: allow-stderr
 
 Test-Command: adb keygen key.txt && ls -l key.txt* && rm key.txt*
+Architecture: amd64 i386 armel armhf arm64
 Depends: adb
 Restrictions: allow-stderr
 
 Test-Command: fastboot --version
+Architecture: amd64 i386 armel armhf arm64
 Depends: fastboot
 
 Test-Command: fastboot devices
+Architecture: amd64 i386 armel armhf arm64
 Depends: fastboot
 
 ## development
 
 Test-Command: etc1tool development/tools/templates/ic_launcher_ldpi.png --encode && etc1tool development/tools/templates/ic_launcher_ldpi.pkm --decode
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el
 
 ## art
 

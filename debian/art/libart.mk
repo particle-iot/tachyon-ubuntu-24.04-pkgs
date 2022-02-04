@@ -427,15 +427,26 @@ OBJECTS_CXX = $(SOURCES_CXX:.cc=.o)
 SOURCES_ASSEMBLY = $(filter %.S,$(SOURCES))
 OBJECTS_ASSEMBLY = $(SOURCES_ASSEMBLY:.S=.o)
 
-CFLAGS += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE=1 -Wa,--noexecstack -fcommon \
-  -fno-rtti -fstrict-aliasing -fvisibility=protected \
+CFLAGS += \
+  -fcommon \
+  -fno-rtti \
+  -fstrict-aliasing \
+  -fvisibility=protected \
 
 CXXFLAGS += -std=gnu++17 \
-  -Wno-invalid-offsetof -Wno-invalid-partial-specialization \
-  -D__STDC_FORMAT_MACROS -D__STDC_CONSTANT_MACROS \
-  -fno-rtti -fstrict-aliasing -fvisibility=protected -fno-omit-frame-pointer \
+  -fno-omit-frame-pointer \
+  -fno-rtti \
+  -fstrict-aliasing \
+  -fvisibility=protected \
+  -Wa,--noexecstack \
+  -Wno-invalid-offsetof \
+  -Wno-invalid-partial-specialization \
 
 CPPFLAGS += \
+  -D__STDC_CONSTANT_MACROS \
+  -D__STDC_FORMAT_MACROS \
+  -D_FILE_OFFSET_BITS=64 \
+  -D_LARGEFILE_SOURCE=1 \
   -DART_BASE_ADDRESS_MAX_DELTA=0x1000000 \
   -DART_BASE_ADDRESS_MIN_DELTA=-0x1000000 \
   -DART_BASE_ADDRESS=0x60000000 \
@@ -456,6 +467,7 @@ CPPFLAGS += \
   -DIMT_SIZE=43 \
   -DUSE_D8_DESUGAR=1 \
   -I. \
+  -I/usr/include/android \
   -Iart \
   -Ilibnativehelper/include_jni \
   -Iart/cmdline \
@@ -472,16 +484,15 @@ CPPFLAGS += \
   -Iart/sigchainlib \
   -Iart/tools/cpp-define-generator \
   -Idebian/out/art \
-  -I/usr/include/android \
-  -Isystem/core/libbacktrace/include \
-  -Isystem/core/libziparchive/include \
-  -Isystem/core/libunwindstack/include \
-  -Isystem/core/liblog/include \
-  -Isystem/core/base/include \
-  -Ilibnativehelper/include_jni \
-  -Ilibnativehelper/include \
   -Ilibnativehelper/header_only_include \
+  -Ilibnativehelper/include \
+  -Ilibnativehelper/include_jni \
   -Ilibnativehelper/platform_include \
+  -Isystem/core/base/include \
+  -Isystem/core/libbacktrace/include \
+  -Isystem/core/liblog/include \
+  -Isystem/core/libunwindstack/include \
+  -Isystem/core/libziparchive/include \
   -Umips \
 
 CC_ASSEMBLY = clang

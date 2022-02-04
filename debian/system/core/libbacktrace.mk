@@ -78,18 +78,17 @@ OBJECTS_ASSEMBLY := $(SOURCES_ASSEMBLY:.S=.o)
 
 CXXFLAGS += -std=gnu++2a -fno-omit-frame-pointer
 CPPFLAGS += \
+  -I/usr/include/android \
+  -I/usr/include/android/lzma \
+  -Iart/libdexfile/external/include \
+  -Iexternal/libunwind/include \
+  -Idebian/include/external/libunwind \
   -Isystem/core/include \
   -Isystem/core/base/include \
   -Isystem/core/demangle/include \
+  -Isystem/core/liblog/include \
   -Isystem/core/libprocinfo/include \
   -Isystem/core/libunwindstack/include \
-  -I/usr/include/android/lzma \
-  -Iexternal/libunwind/include \
-  -Idebian/include/external/libunwind \
-  -Isystem/core/liblog/include \
-  -Isystem/core/base/include \
-  -Iart/libdexfile/external/include \
-  -I/usr/include/android \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
 	mkdir --parents debian/out/system/core

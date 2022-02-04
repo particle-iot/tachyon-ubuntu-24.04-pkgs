@@ -144,8 +144,22 @@ OBJECTS_C = $(SOURCES_C:.c=.o)
 SOURCES_ASSEMBLY = $(filter %.S,$(SOURCES))
 OBJECTS_ASSEMBLY = $(SOURCES_ASSEMBLY:.S=.o)
 
-CFLAGS += -DHAVE_CONFIG_H -DNDEBUG -D_GNU_SOURCE -Werror -Wno-unused-parameter -fcommon -Wno-header-guard -Wno-absolute-value -Wno-inline-asm
-CPPFLAGS += -Iexternal/libunwind/include -Iexternal/libunwind/src $($(CPU)_INCLUDES) -Idebian/include/external/libunwind/
+CFLAGS += \
+  -fcommon \
+  -Werror \
+  -Wno-absolute-value \
+  -Wno-header-guard \
+  -Wno-inline-asm \
+  -Wno-unused-parameter \
+
+CPPFLAGS += \
+  -D_GNU_SOURCE \
+  -DHAVE_CONFIG_H \
+  -DNDEBUG \
+  -Idebian/include/external/libunwind \
+  -Iexternal/libunwind/include \
+  -Iexternal/libunwind/src \
+  $($(CPU)_INCLUDES) \
 
 # Use gcc instead of clang for assembly on armel
 # Header external/libunwind/include/libunwind_i.h includes some assembly

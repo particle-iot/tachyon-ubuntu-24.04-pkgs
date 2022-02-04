@@ -3,14 +3,14 @@ NAME = libdexfile_support
 SOURCES = art/libdexfile/external/dex_file_supp.cc
 OBJECTS = $(SOURCES:.cc=.o)
 
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
+  -I/usr/include/android \
   -Iart/libartbase \
   -Iart/libdexfile \
   -Iart/libdexfile/external/include \
-  -I/usr/include/android \
-  -Isystem/core/liblog/include \
   -Isystem/core/base/include \
+  -Isystem/core/liblog/include \
   -Umips \
 
 debian/out/art/$(NAME).a: $(OBJECTS)

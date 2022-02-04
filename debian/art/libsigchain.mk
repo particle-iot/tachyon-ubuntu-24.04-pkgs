@@ -3,8 +3,11 @@ NAME = libsigchain
 SOURCES = art/sigchainlib/sigchain.cc
 OBJECTS = $(SOURCES:.cc=.o)
 
-CPPFLAGS += -Iart/sigchainlib -I/usr/include/android -Umips
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a
+CPPFLAGS += \
+  -I/usr/include/android \
+  -Iart/sigchainlib \
+  -Umips
 
 debian/out/art/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/art

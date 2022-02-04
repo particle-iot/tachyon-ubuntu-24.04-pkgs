@@ -1,3 +1,13 @@
+android-platform-tools (29.0.6-5~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * debian/tests/control:
+    - Add Architecture limit for each test.
+  * debian/*.mk: Cleanup, sort list, etc.
+  * debian/rules: Move -pie to LDFLAGS.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 05 Feb 2022 04:05:11 +0900
+
 android-platform-tools (29.0.6-4) unstable; urgency=medium
 
   * Team upload.

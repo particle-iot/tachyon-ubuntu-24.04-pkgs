@@ -3,6 +3,7 @@ NAME = libETC1
 SOURCES = frameworks/native/opengl/libs/ETC1/etc1.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += -Iframeworks/native/opengl/include
 
 debian/out/frameworks/native/$(NAME).a: $(OBJECTS)

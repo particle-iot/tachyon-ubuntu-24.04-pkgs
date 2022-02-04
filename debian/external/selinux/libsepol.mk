@@ -46,13 +46,13 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), external/selinux/libsepol/$(source))
 OBJECTS = $(SOURCES:.c=.o)
 
-CFLAGS += \
-    -D_GNU_SOURCE \
-    -Wundef \
-    -Wshadow \
-    -Wmissing-noreturn \
-    -Wmissing-format-attribute
-CPPFLAGS += -Iexternal/selinux/libsepol/include
+CPPFLAGS += \
+  -D_GNU_SOURCE \
+  -Wmissing-format-attribute \
+  -Wmissing-noreturn \
+  -Wshadow \
+  -Wundef \
+  -Iexternal/selinux/libsepol/include \
 
 debian/out/external/selinux/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/external/selinux

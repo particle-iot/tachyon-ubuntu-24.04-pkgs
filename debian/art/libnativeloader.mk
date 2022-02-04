@@ -3,17 +3,16 @@ NAME = libnativeloader
 SOURCES = art/libnativeloader/native_loader.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -I/usr/include/android \
-  -Isystem/core/include \
-  -Isystem/core/base/include \
   -Iart/libnativebridge/include \
   -Iart/libnativeloader/include \
-  -Ilibnativehelper/include_jni \
-  -Ilibnativehelper/include \
   -Ilibnativehelper/header_only_include \
-
-CXXFLAGS += -std=gnu++2a
+  -Ilibnativehelper/include \
+  -Ilibnativehelper/include_jni \
+  -Isystem/core/base/include \
+  -Isystem/core/include \
 
 debian/out/art/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/art

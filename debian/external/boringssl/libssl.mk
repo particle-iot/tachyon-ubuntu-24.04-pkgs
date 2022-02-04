@@ -41,19 +41,18 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), external/boringssl/$(source))
 OBJECTS = $(SOURCES:.cc=.o)
 
-CXXFLAGS += \
+CXXFLAGS += -std=gnu++2a -fvisibility=hidden
+CPPFLAGS += \
   -D_XOPEN_SOURCE=700 \
   -DBORINGSSL_ANDROID_SYSTEM \
   -DBORINGSSL_IMPLEMENTATION \
   -DBORINGSSL_SHARED_LIBRARY \
   -DOPENSSL_SMALL \
-  -fvisibility=hidden \
-
-CPPFLAGS += -Iexternal/boringssl/src/include
+  -Iexternal/boringssl/src/include \
 
 debian/out/external/boringssl/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/external/boringssl
 	ar -rcs $@ $^
 
 $(OBJECTS): %.o: %.cc
-	$(CXX) -c -o $@ $< $(CXXLAGS) $(CPPFLAGS)
+	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

@@ -28,17 +28,17 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), system/core/libutils/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-            -Isystem/core/include \
-            -Isystem/core/base/include \
-            -Isystem/core/cutils/include \
-            -Isystem/core/libprocessgroup/include \
-            -Isystem/core/libbacktrace/include \
-            -Isystem/core/liblog/include \
-            -Isystem/core/libcutils/include \
-            -I/usr/include/android \
-            -DLIBUTILS_NATIVE=1 \
+  -DLIBUTILS_NATIVE=1 \
+  -I/usr/include/android \
+  -Isystem/core/base/include \
+  -Isystem/core/cutils/include \
+  -Isystem/core/include \
+  -Isystem/core/libbacktrace/include \
+  -Isystem/core/libcutils/include \
+  -Isystem/core/liblog/include \
+  -Isystem/core/libprocessgroup/include \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/system/core

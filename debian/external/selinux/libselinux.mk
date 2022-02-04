@@ -1,9 +1,5 @@
 NAME = libselinux
 
-cc_defaults_target_host_cflags = -DBUILD_HOST
-
-cc_library_cflags = -DUSE_PCRE2
-
 cc_defaults_srcs = \
   src/booleans.c \
   src/callbacks.c \
@@ -60,15 +56,18 @@ SOURCES = $(cc_defaults_srcs) $(cc_library_srcs) $(cc_library_target_linux_srcs)
 SOURCES := $(foreach source, $(SOURCES), external/selinux/libselinux/$(source))
 OBJECTS = $(SOURCES:.c=.o)
 
-CFLAGS += \
-    -DNO_PERSISTENTLY_STORED_PATTERNS \
-    -DDISABLE_SETRANS \
-    -DDISABLE_BOOL \
-    -D_GNU_SOURCE \
-    -DNO_MEDIA_BACKEND \
-    -DNO_X_BACKEND \
-    -DNO_DB_BACKEND
-CPPFLAGS += -Iexternal/selinux/libselinux/include -Iexternal/selinux/libsepol/include -DHOST
+CPPFLAGS += \
+  -D_GNU_SOURCE \
+  -DBUILD_HOST \
+  -DDISABLE_BOOL \
+  -DDISABLE_SETRANS \
+  -DHOST \
+  -DNO_DB_BACKEND \
+  -DNO_MEDIA_BACKEND \
+  -DNO_PERSISTENTLY_STORED_PATTERNS \
+  -DNO_X_BACKEND \
+  -Iexternal/selinux/libselinux/include \
+  -Iexternal/selinux/libsepol/include \
 
 debian/out/external/selinux/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/external/selinux

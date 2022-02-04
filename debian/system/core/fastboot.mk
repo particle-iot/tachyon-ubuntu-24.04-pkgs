@@ -26,12 +26,13 @@ SOURCES := \
   $(foreach source, $(fs_mgr_liblp_SOURCES), system/core/fs_mgr/liblp/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a -fpermissive -pie
+CXXFLAGS += -std=gnu++2a -fpermissive
 CPPFLAGS += \
-   -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
    -D_FILE_OFFSET_BITS=64 \
-   -Isystem/core/include \
-   -Isystem/tools/mkbootimg/include/bootimg \
+   -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
+   -I/usr/include/android \
+   -Iexternal/boringssl/include \
+   -Iexternal/avb \
    -Isystem/core/adb \
    -Isystem/core/base/include \
    -Isystem/core/demangle/include \
@@ -39,15 +40,12 @@ CPPFLAGS += \
    -Isystem/core/fs_mgr/include \
    -Isystem/core/fs_mgr/include_fstab \
    -Isystem/core/fs_mgr/liblp/include \
-   -Isystem/core/libsparse/include \
-   -Isystem/core/libziparchive/include \
-   -Iexternal/boringssl/include \
-   -Iexternal/avb \
+   -Isystem/core/include \
    -Isystem/core/libcutils/include \
    -Isystem/core/libsparse/include \
-   -Isystem/core/base/include \
+   -Isystem/core/libziparchive/include \
    -Isystem/extras/ext4_utils/include \
-   -I/usr/include/android \
+   -Isystem/tools/mkbootimg/include/bootimg \
 
 LDFLAGS += -lpthread -lusb-1.0 -lz
 STATIC_LIBS = \
