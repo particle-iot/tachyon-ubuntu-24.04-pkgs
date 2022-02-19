@@ -26,7 +26,6 @@ CPPFLAGS += \
   -DFEC_NO_KLOG \
   -DSQUASHFS_NO_KLOG \
   -I/usr/include/android \
-  -Iexternal/selinux/libselinux/include \
   -Isystem/core/base/include \
   -Isystem/core/libcutils/include \
   -Isystem/core/libsparse/include \

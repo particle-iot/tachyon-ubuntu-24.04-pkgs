@@ -12,6 +12,7 @@ Build-Depends:
  liblz4-dev [amd64 i386 armel armhf arm64],
  libpcre3-dev,
  libpng-dev,
+ libselinux1-dev,
  libsquashfuse-dev,
  python3 [amd64 i386 arm64],
  zlib1g-dev [amd64 i386 armel armhf arm64],

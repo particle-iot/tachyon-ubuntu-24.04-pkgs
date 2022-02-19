@@ -52,8 +52,6 @@ STATIC_LIBS = \
   debian/out/system/core/libadb.a \
   debian/out/system/core/libcutils.a \
   debian/out/system/extras/libext4_utils.a \
-  debian/out/external/selinux/libselinux.a \
-  debian/out/external/selinux/libsepol.a \
   debian/out/system/core/libziparchive.a \
   debian/out/system/core/libsparse.a \
   debian/out/system/core/libbase.a \

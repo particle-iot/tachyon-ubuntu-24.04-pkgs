@@ -188,22 +188,12 @@ COMPONENTS += \
 
 endif
 
-## external/selinux
-
-e/selinux/libsepol.a: debian/external/selinux/libsepol.mk
-	dh_auto_build --buildsystem=makefile -- --file=$<
-
-e/selinux/libselinux.a: debian/external/selinux/libselinux.mk e/selinux/libsepol.a
-	dh_auto_build --buildsystem=makefile -- --file=$<
-
-COMPONENTS += e/selinux/libsepol.a e/selinux/libselinux.a
-
 ## system/extras
 
-s/extras/libext4_utils.a: debian/system/extras/libext4_utils.mk e/selinux/libselinux.a s/core/libsparse.a s/core/libbase.a
+s/extras/libext4_utils.a: debian/system/extras/libext4_utils.mk s/core/libsparse.a s/core/libbase.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/extras/libfec.a: debian/system/extras/libfec.mk e/selinux/libselinux.a s/core/libsparse.a s/core/libbase.a
+s/extras/libfec.a: debian/system/extras/libfec.mk s/core/libsparse.a s/core/libbase.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS += s/extras/libext4_utils.a
@@ -230,11 +220,9 @@ override_dh_auto_test:
 override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
-override_dh_auto_clean:
-	dh_auto_clean
-
-override_dh_shlibdeps:
-	dh_shlibdeps
+override_dh_auto_configure:
+	rm -rf external/selinux development/[a-s]* development/v* development/testrunner
+	dh_auto_configure
 
 override_dh_gencontrol:
 	dh_gencontrol

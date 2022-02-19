@@ -17,7 +17,6 @@ CPPFLAGS += \
   -I/usr/include/android \
   -Idebian/include/external/fec \
   -Iexternal/boringssl/include \
-  -Iexternal/selinux/libselinux/include \
   -Isystem/core/base/include \
   -Isystem/core/libcrypto_utils/include \
   -Isystem/core/libsparse/include \
