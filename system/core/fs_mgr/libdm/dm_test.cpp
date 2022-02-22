@@ -29,12 +29,14 @@
 #include <thread>
 
 #include <android-base/file.h>
+#include <android-base/scopeguard.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <gtest/gtest.h>
 #include <libdm/dm.h>
 #include <libdm/loop_control.h>
 #include "test_util.h"
+#include "utility.h"
 
 using namespace std;
 using namespace std::chrono_literals;
@@ -516,27 +518,22 @@ TEST(libdm, CryptArgs) {
 }
 
 TEST(libdm, DefaultKeyArgs) {
-    DmTargetTypeInfo info;
-
-    DeviceMapper& dm = DeviceMapper::Instance();
-    if (!dm.GetTargetByName("default-key", &info)) {
-        cout << "default-key module not enabled; skipping test" << std::endl;
-        return;
-    }
-    bool is_legacy;
-    ASSERT_TRUE(DmTargetDefaultKey::IsLegacy(&is_legacy));
-    // set_dun only in the non-is_legacy case
-    DmTargetDefaultKey target(0, 4096, "AES-256-XTS", "abcdef0123456789", "/dev/loop0", 0,
-                              is_legacy, !is_legacy);
+    DmTargetDefaultKey target(0, 4096, "aes-xts-plain64", "abcdef0123456789", "/dev/loop0", 0);
+    target.SetSetDun();
     ASSERT_EQ(target.name(), "default-key");
     ASSERT_TRUE(target.Valid());
-    if (is_legacy) {
-        ASSERT_EQ(target.GetParameterString(), "AES-256-XTS abcdef0123456789 /dev/loop0 0");
-    } else {
-        ASSERT_EQ(target.GetParameterString(),
-                  "AES-256-XTS abcdef0123456789 0 /dev/loop0 0 3 allow_discards sector_size:4096 "
-                  "iv_large_sectors");
-    }
+    // TODO: Add case for wrapped key enabled
+    ASSERT_EQ(target.GetParameterString(),
+              "aes-xts-plain64 abcdef0123456789 0 /dev/loop0 0 3 allow_discards sector_size:4096 "
+              "iv_large_sectors");
+}
+
+TEST(libdm, DefaultKeyLegacyArgs) {
+    DmTargetDefaultKey target(0, 4096, "AES-256-XTS", "abcdef0123456789", "/dev/loop0", 0);
+    target.SetUseLegacyOptionsFormat();
+    ASSERT_EQ(target.name(), "default-key");
+    ASSERT_TRUE(target.Valid());
+    ASSERT_EQ(target.GetParameterString(), "AES-256-XTS abcdef0123456789 /dev/loop0 0");
 }
 
 TEST(libdm, DeleteDeviceWithTimeout) {
@@ -621,4 +618,75 @@ TEST(libdm, GetParentBlockDeviceByPath) {
     ASSERT_FALSE(dm.GetParentBlockDeviceByPath(loop.device()));
     auto sub_block_device = dm.GetParentBlockDeviceByPath(dev.path());
     ASSERT_EQ(loop.device(), *sub_block_device);
+}
+
+TEST(libdm, DeleteDeviceDeferredNoReferences) {
+    unique_fd tmp(CreateTempFile("file_1", 4096));
+    ASSERT_GE(tmp, 0);
+    LoopDevice loop(tmp, 10s);
+    ASSERT_TRUE(loop.valid());
+
+    DmTable table;
+    ASSERT_TRUE(table.Emplace<DmTargetLinear>(0, 1, loop.device(), 0));
+    ASSERT_TRUE(table.valid());
+    TempDevice dev("libdm-test-dm-linear", table);
+    ASSERT_TRUE(dev.valid());
+
+    DeviceMapper& dm = DeviceMapper::Instance();
+
+    std::string path;
+    ASSERT_TRUE(dm.GetDmDevicePathByName("libdm-test-dm-linear", &path));
+    ASSERT_EQ(0, access(path.c_str(), F_OK));
+
+    ASSERT_TRUE(dm.DeleteDeviceDeferred("libdm-test-dm-linear"));
+
+    ASSERT_TRUE(WaitForFileDeleted(path, 5s));
+    ASSERT_EQ(DmDeviceState::INVALID, dm.GetState("libdm-test-dm-linear"));
+    ASSERT_NE(0, access(path.c_str(), F_OK));
+    ASSERT_EQ(ENOENT, errno);
+}
+
+TEST(libdm, DeleteDeviceDeferredWaitsForLastReference) {
+    unique_fd tmp(CreateTempFile("file_1", 4096));
+    ASSERT_GE(tmp, 0);
+    LoopDevice loop(tmp, 10s);
+    ASSERT_TRUE(loop.valid());
+
+    DmTable table;
+    ASSERT_TRUE(table.Emplace<DmTargetLinear>(0, 1, loop.device(), 0));
+    ASSERT_TRUE(table.valid());
+    TempDevice dev("libdm-test-dm-linear", table);
+    ASSERT_TRUE(dev.valid());
+
+    DeviceMapper& dm = DeviceMapper::Instance();
+
+    std::string path;
+    ASSERT_TRUE(dm.GetDmDevicePathByName("libdm-test-dm-linear", &path));
+    ASSERT_EQ(0, access(path.c_str(), F_OK));
+
+    {
+        // Open a reference to block device.
+        unique_fd fd(TEMP_FAILURE_RETRY(open(dev.path().c_str(), O_RDONLY | O_CLOEXEC)));
+        ASSERT_GE(fd.get(), 0);
+
+        ASSERT_TRUE(dm.DeleteDeviceDeferred("libdm-test-dm-linear"));
+
+        ASSERT_EQ(0, access(path.c_str(), F_OK));
+    }
+
+    // After release device will be removed.
+    ASSERT_TRUE(WaitForFileDeleted(path, 5s));
+    ASSERT_EQ(DmDeviceState::INVALID, dm.GetState("libdm-test-dm-linear"));
+    ASSERT_NE(0, access(path.c_str(), F_OK));
+    ASSERT_EQ(ENOENT, errno);
+}
+
+TEST(libdm, CreateEmptyDevice) {
+    DeviceMapper& dm = DeviceMapper::Instance();
+    ASSERT_TRUE(dm.CreateEmptyDevice("empty-device"));
+    auto guard =
+            android::base::make_scope_guard([&]() { dm.DeleteDeviceIfExists("empty-device", 5s); });
+
+    // Empty device should be in suspended state.
+    ASSERT_EQ(DmDeviceState::SUSPENDED, dm.GetState("empty-device"));
 }

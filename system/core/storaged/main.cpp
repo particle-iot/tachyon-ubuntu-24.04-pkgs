@@ -46,11 +46,6 @@ sp<storaged_t> storaged_sp;
 
 // Function of storaged's main thread
 void* storaged_main(void* /* unused */) {
-    storaged_sp = new storaged_t();
-
-    storaged_sp->init();
-    storaged_sp->report_storage_info();
-
     LOG(INFO) << "storaged: Start";
 
     for (;;) {
@@ -76,6 +71,7 @@ int main(int argc, char** argv) {
     bool flag_dump_perf = false;
     int opt;
 
+    signal(SIGPIPE, SIG_IGN);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
     for (;;) {
@@ -123,6 +119,9 @@ int main(int argc, char** argv) {
 
     if (flag_main_service) { // start main thread
         // Start the main thread of storaged
+        storaged_sp = new storaged_t();
+        storaged_sp->init();
+        storaged_sp->report_storage_info();
         pthread_t storaged_main_thread;
         errno = pthread_create(&storaged_main_thread, NULL, storaged_main, NULL);
         if (errno != 0) {

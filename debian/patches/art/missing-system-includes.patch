@@ -1,25 +1,259 @@
 Description: somehow upstream builds don't need these headers :-/
 Forwarded: not-needed
---- a/art/runtime/runtime_common.h
-+++ b/art/runtime/runtime_common.h
-@@ -27,6 +27,7 @@
+--- a/art/libartbase/arch/instruction_set.cc
++++ b/art/libartbase/arch/instruction_set.cc
+@@ -19,6 +19,7 @@
+ #include "android-base/logging.h"
+ #include "base/bit_utils.h"
+ #include "base/globals.h"
++#include <cstring>
  
- #include <sys/utsname.h>
- #include <ucontext.h>
-+#include <signal.h>
+ namespace art {
  
- #include <iomanip>
+--- a/art/libartbase/base/arena_allocator.h
++++ b/art/libartbase/base/arena_allocator.h
+@@ -17,6 +17,7 @@
+ #ifndef ART_LIBARTBASE_BASE_ARENA_ALLOCATOR_H_
+ #define ART_LIBARTBASE_BASE_ARENA_ALLOCATOR_H_
  
---- a/art/sigchainlib/sigchain.cc
-+++ b/art/sigchainlib/sigchain.cc
-@@ -27,6 +27,7 @@
++#include <cstring>
+ #include <stddef.h>
+ #include <stdint.h>
+ 
+--- a/art/libartbase/base/arena_containers.h
++++ b/art/libartbase/base/arena_containers.h
+@@ -17,6 +17,7 @@
+ #ifndef ART_LIBARTBASE_BASE_ARENA_CONTAINERS_H_
+ #define ART_LIBARTBASE_BASE_ARENA_CONTAINERS_H_
+ 
++#include <cstring>
+ #include <deque>
+ #include <forward_list>
+ #include <queue>
+--- a/art/libartbase/base/bit_vector-inl.h
++++ b/art/libartbase/base/bit_vector-inl.h
+@@ -20,6 +20,7 @@
+ #include "bit_vector.h"
+ 
+ #include <android-base/logging.h>
++#include <cstring>
+ 
+ #include "bit_utils.h"
+ 
+--- a/art/libartbase/base/bit_vector.cc
++++ b/art/libartbase/base/bit_vector.cc
+@@ -16,6 +16,7 @@
+ 
+ #include "bit_vector.h"
+ 
++#include <cstring>
+ #include <limits>
+ #include <sstream>
+ 
+--- a/art/libartbase/base/bit_vector.h
++++ b/art/libartbase/base/bit_vector.h
+@@ -19,6 +19,7 @@
+ 
+ #include <stdint.h>
+ 
++#include <cstring>
+ #include <iterator>
+ 
+ #include "bit_utils.h"
+--- a/art/libartbase/base/endian_utils.h
++++ b/art/libartbase/base/endian_utils.h
+@@ -20,6 +20,7 @@
+ #include <stdint.h>
+ #include <endian.h>
+ #include <vector>
++#include <cstring>
+ 
+ namespace art {
+ 
+--- a/art/libartbase/base/file_magic.cc
++++ b/art/libartbase/base/file_magic.cc
+@@ -19,6 +19,7 @@
+ #include <fcntl.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
++#include <cstring>
+ 
+ #include <android-base/logging.h>
+ #include <android-base/stringprintf.h>
+--- a/art/libartbase/base/file_utils.cc
++++ b/art/libartbase/base/file_utils.cc
+@@ -38,6 +38,7 @@
+ #endif
+ #endif
+ 
++#include <cstring>
+ #include <memory>
+ #include <sstream>
+ 
+--- a/art/libartbase/base/logging.cc
++++ b/art/libartbase/base/logging.cc
+@@ -16,6 +16,7 @@
+ 
+ #include "logging.h"
+ 
++#include <cstring>
+ #include <iostream>
+ #include <limits>
  #include <mutex>
+--- a/art/libartbase/base/membarrier.cc
++++ b/art/libartbase/base/membarrier.cc
+@@ -18,6 +18,7 @@
+ 
+ #include <errno.h>
+ #include <stdio.h>
++#include <cstring>
+ 
+ #if !defined(_WIN32)
+ #include <sys/syscall.h>
+--- a/art/libartbase/base/memfd.cc
++++ b/art/libartbase/base/memfd.cc
+@@ -31,6 +31,7 @@
+ #include <android-base/logging.h>
+ #include <android-base/unique_fd.h>
+ 
++#include <cstring>
+ #include "macros.h"
+ 
+ 
+--- a/art/libartbase/base/scoped_flock.cc
++++ b/art/libartbase/base/scoped_flock.cc
+@@ -19,6 +19,8 @@
+ #include <sys/file.h>
+ #include <sys/stat.h>
+ 
++#include <cstring>
++
+ #include <android-base/logging.h>
+ #include <android-base/stringprintf.h>
+ 
+--- a/art/libartbase/base/stl_util.h
++++ b/art/libartbase/base/stl_util.h
+@@ -19,6 +19,7 @@
+ 
+ #include <algorithm>
+ #include <iterator>
++#include <optional>
+ #include <set>
+ #include <sstream>
+ 
+--- a/art/libartbase/base/time_utils.h
++++ b/art/libartbase/base/time_utils.h
+@@ -24,6 +24,7 @@
+ #include <time.h>
+ 
+ #include <cstdint>
++#include <limits>
+ #include <string>
+ 
+ namespace art {
+--- a/art/libartbase/base/unix_file/fd_file.cc
++++ b/art/libartbase/base/unix_file/fd_file.cc
+@@ -29,6 +29,7 @@
+ #include <windows.h>
+ #endif
+ 
++#include <cstring>
+ #include <limits>
+ 
+ #include <android-base/file.h>
+--- a/art/libartbase/base/variant_map.h
++++ b/art/libartbase/base/variant_map.h
+@@ -19,6 +19,7 @@
+ 
+ #include <memory.h>
+ #include <map>
++#include <optional>
  #include <type_traits>
  #include <utility>
-+#include <climits>
  
- #include "log.h"
- #include "sigchain.h"
+--- a/art/libdexfile/dex/descriptors_names.cc
++++ b/art/libdexfile/dex/descriptors_names.cc
+@@ -21,6 +21,7 @@
+ 
+ #include "base/macros.h"
+ #include "dex/utf-inl.h"
++#include <cstring>
+ 
+ namespace art {
+ 
+--- a/art/libdexfile/dex/dex_file_loader.h
++++ b/art/libdexfile/dex/dex_file_loader.h
+@@ -18,6 +18,7 @@
+ #define ART_LIBDEXFILE_DEX_DEX_FILE_LOADER_H_
+ 
+ #include <cstdint>
++#include <cstring>
+ #include <memory>
+ #include <string>
+ #include <vector>
+--- a/art/libdexfile/dex/dex_file_types.h
++++ b/art/libdexfile/dex/dex_file_types.h
+@@ -17,6 +17,8 @@
+ #ifndef ART_LIBDEXFILE_DEX_DEX_FILE_TYPES_H_
+ #define ART_LIBDEXFILE_DEX_DEX_FILE_TYPES_H_
+ 
++#include <cstdint>
++#include <functional>
+ #include <iosfwd>
+ #include <limits>
+ #include <utility>
+--- a/art/libdexfile/dex/method_reference.h
++++ b/art/libdexfile/dex/method_reference.h
+@@ -17,6 +17,7 @@
+ #ifndef ART_LIBDEXFILE_DEX_METHOD_REFERENCE_H_
+ #define ART_LIBDEXFILE_DEX_METHOD_REFERENCE_H_
+ 
++#include <cstring>
+ #include <stdint.h>
+ #include <string>
+ #include "dex/dex_file.h"
+--- a/art/libprofile/profile/profile_boot_info.cc
++++ b/art/libprofile/profile/profile_boot_info.cc
+@@ -18,6 +18,7 @@
+ 
+ #include <unistd.h>
+ 
++#include <cstring>
+ #include <vector>
+ 
+ #include "dex/dex_file.h"
+--- a/art/runtime/app_info.h
++++ b/art/runtime/app_info.h
+@@ -17,6 +17,7 @@
+ #ifndef ART_RUNTIME_APP_INFO_H_
+ #define ART_RUNTIME_APP_INFO_H_
+ 
++#include <optional>
+ #include <vector>
+ 
+ #include "base/mutex.h"
+--- a/art/runtime/arch/instruction_set_features.cc
++++ b/art/runtime/arch/instruction_set_features.cc
+@@ -21,6 +21,8 @@
+ #include <algorithm>
+ #include <ostream>
+ 
++#include <algorithm>
++
+ #include "android-base/strings.h"
+ 
+ #include "base/casts.h"
+--- a/art/runtime/arch/x86/context_x86.cc
++++ b/art/runtime/arch/x86/context_x86.cc
+@@ -16,6 +16,8 @@
+ 
+ #include "context_x86.h"
+ 
++#include <cstring>
++
+ #include "base/bit_utils.h"
+ #include "base/bit_utils_iterator.h"
+ #include "base/memory_tool.h"
 --- a/art/runtime/base/mutex.cc
 +++ b/art/runtime/base/mutex.cc
 @@ -18,6 +18,7 @@
@@ -70,31 +304,10 @@ Forwarded: not-needed
 +#include <cstring>
  
  #include "base/macros.h"
- #include "gc_root.h"
---- a/art/runtime/arch/instruction_set_features.cc
-+++ b/art/runtime/arch/instruction_set_features.cc
-@@ -21,6 +21,8 @@
- #include <algorithm>
- #include <ostream>
- 
-+#include <algorithm>
-+
- #include "android-base/strings.h"
- 
- #include "base/casts.h"
---- a/art/runtime/arch/mips/instruction_set_features_mips.cc
-+++ b/art/runtime/arch/mips/instruction_set_features_mips.cc
-@@ -18,6 +18,7 @@
- 
- #include <fstream>
- #include <sstream>
-+#include <cstring>
- 
- #include <android-base/stringprintf.h>
- #include <android-base/strings.h>
+ #include "base/value_object.h"
 --- a/art/runtime/monitor.h
 +++ b/art/runtime/monitor.h
-@@ -24,6 +24,7 @@
+@@ -25,6 +25,7 @@
  #include <iosfwd>
  #include <list>
  #include <vector>
@@ -102,206 +315,33 @@ Forwarded: not-needed
  
  #include "base/allocator.h"
  #include "base/atomic.h"
---- a/art/runtime/arch/x86/context_x86.cc
-+++ b/art/runtime/arch/x86/context_x86.cc
-@@ -16,6 +16,8 @@
+--- a/art/runtime/runtime_common.h
++++ b/art/runtime/runtime_common.h
+@@ -27,6 +27,7 @@
  
- #include "context_x86.h"
+ #include <sys/utsname.h>
+ #include <ucontext.h>
++#include <signal.h>
  
-+#include <cstring>
-+
- #include "base/bit_utils.h"
- #include "base/bit_utils_iterator.h"
- #include "base/memory_tool.h"
---- a/art/libartbase/base/arena_allocator.h
-+++ b/art/libartbase/base/arena_allocator.h
-@@ -17,6 +17,7 @@
- #ifndef ART_LIBARTBASE_BASE_ARENA_ALLOCATOR_H_
- #define ART_LIBARTBASE_BASE_ARENA_ALLOCATOR_H_
+ #include <iomanip>
  
-+#include <cstring>
- #include <stddef.h>
- #include <stdint.h>
+--- a/art/runtime/transaction.h
++++ b/art/runtime/transaction.h
+@@ -28,6 +28,7 @@
+ #include "offsets.h"
  
---- a/art/libdexfile/dex/dex_file_types.h
-+++ b/art/libdexfile/dex/dex_file_types.h
-@@ -17,6 +17,8 @@
- #ifndef ART_LIBDEXFILE_DEX_DEX_FILE_TYPES_H_
- #define ART_LIBDEXFILE_DEX_DEX_FILE_TYPES_H_
- 
-+#include <cstdint>
-+#include <functional>
- #include <iosfwd>
- #include <limits>
- #include <utility>
---- a/art/libdexfile/dex/method_reference.h
-+++ b/art/libdexfile/dex/method_reference.h
-@@ -17,6 +17,7 @@
- #ifndef ART_LIBDEXFILE_DEX_METHOD_REFERENCE_H_
- #define ART_LIBDEXFILE_DEX_METHOD_REFERENCE_H_
- 
-+#include <cstring>
- #include <stdint.h>
- #include <string>
- #include "dex/dex_file.h"
---- a/art/libartbase/base/arena_containers.h
-+++ b/art/libartbase/base/arena_containers.h
-@@ -17,6 +17,7 @@
- #ifndef ART_LIBARTBASE_BASE_ARENA_CONTAINERS_H_
- #define ART_LIBARTBASE_BASE_ARENA_CONTAINERS_H_
- 
-+#include <cstring>
- #include <deque>
- #include <queue>
- #include <set>
---- a/art/libartbase/arch/instruction_set.cc
-+++ b/art/libartbase/arch/instruction_set.cc
-@@ -19,6 +19,7 @@
- #include "android-base/logging.h"
- #include "base/bit_utils.h"
- #include "base/globals.h"
-+#include <cstring>
+ #include <list>
++#include <optional>
+ #include <map>
  
  namespace art {
- 
---- a/art/libartbase/base/bit_vector-inl.h
-+++ b/art/libartbase/base/bit_vector-inl.h
-@@ -20,6 +20,7 @@
- #include "bit_vector.h"
- 
- #include <android-base/logging.h>
-+#include <cstring>
- 
- #include "bit_utils.h"
- 
---- a/art/libartbase/base/bit_vector.cc
-+++ b/art/libartbase/base/bit_vector.cc
-@@ -16,6 +16,7 @@
- 
- #include "bit_vector.h"
- 
-+#include <cstring>
- #include <limits>
- #include <sstream>
- 
---- a/art/libartbase/base/file_utils.cc
-+++ b/art/libartbase/base/file_utils.cc
-@@ -40,6 +40,7 @@
- 
- 
- #include <memory>
-+#include <cstring>
- 
- #include "android-base/stringprintf.h"
- #include "android-base/strings.h"
---- a/art/libartbase/base/bit_vector.h
-+++ b/art/libartbase/base/bit_vector.h
-@@ -18,6 +18,7 @@
- #define ART_LIBARTBASE_BASE_BIT_VECTOR_H_
- 
- #include <stdint.h>
-+#include <cstring>
- #include <iterator>
- 
- #include "bit_utils.h"
---- a/art/libartbase/base/file_magic.cc
-+++ b/art/libartbase/base/file_magic.cc
-@@ -19,6 +19,7 @@
- #include <fcntl.h>
- #include <sys/stat.h>
- #include <sys/types.h>
-+#include <cstring>
- 
- #include <android-base/logging.h>
- #include <android-base/stringprintf.h>
---- a/art/libartbase/base/logging.cc
-+++ b/art/libartbase/base/logging.cc
-@@ -16,6 +16,7 @@
- 
- #include "logging.h"
- 
-+#include <cstring>
- #include <iostream>
- #include <limits>
- #include <sstream>
---- a/art/libartbase/base/memfd.cc
-+++ b/art/libartbase/base/memfd.cc
+--- a/art/sigchainlib/sigchain.cc
++++ b/art/sigchainlib/sigchain.cc
 @@ -31,6 +31,7 @@
- #include <android-base/logging.h>
- #include <android-base/unique_fd.h>
+ #include <mutex>
+ #include <type_traits>
+ #include <utility>
++#include <climits>
  
-+#include <cstring>
- #include "macros.h"
- 
- 
---- a/art/libartbase/base/endian_utils.h
-+++ b/art/libartbase/base/endian_utils.h
-@@ -20,6 +20,7 @@
- #include <stdint.h>
- #include <endian.h>
- #include <vector>
-+#include <cstring>
- 
- namespace art {
- 
---- a/art/libartbase/base/membarrier.cc
-+++ b/art/libartbase/base/membarrier.cc
-@@ -18,6 +18,7 @@
- 
- #include <errno.h>
- #include <stdio.h>
-+#include <cstring>
- 
- #if !defined(_WIN32)
- #include <sys/syscall.h>
---- a/art/libartbase/base/scoped_flock.cc
-+++ b/art/libartbase/base/scoped_flock.cc
-@@ -19,6 +19,8 @@
- #include <sys/file.h>
- #include <sys/stat.h>
- 
-+#include <cstring>
-+
- #include <android-base/logging.h>
- #include <android-base/stringprintf.h>
- 
---- a/art/libartbase/base/unix_file/fd_file.cc
-+++ b/art/libartbase/base/unix_file/fd_file.cc
-@@ -29,6 +29,7 @@
- #include <windows.h>
- #endif
- 
-+#include <cstring>
- #include <limits>
- 
- #include <android-base/file.h>
---- a/art/libdexfile/dex/descriptors_names.cc
-+++ b/art/libdexfile/dex/descriptors_names.cc
-@@ -21,6 +21,7 @@
- 
- #include "base/macros.h"
- #include "dex/utf-inl.h"
-+#include <cstring>
- 
- namespace art {
- 
---- a/art/libdexfile/dex/dex_file_loader.h
-+++ b/art/libdexfile/dex/dex_file_loader.h
-@@ -18,6 +18,7 @@
- #define ART_LIBDEXFILE_DEX_DEX_FILE_LOADER_H_
- 
- #include <cstdint>
-+#include <cstring>
- #include <memory>
- #include <string>
- #include <vector>
---- a/art/libprofile/profile/profile_boot_info.cc
-+++ b/art/libprofile/profile/profile_boot_info.cc
-@@ -18,6 +18,7 @@
- 
- #include <unistd.h>
- 
-+#include <cstring>
- #include <vector>
- 
- #include "dex/dex_file.h"
+ #include "log.h"
+ #include "sigchain.h"

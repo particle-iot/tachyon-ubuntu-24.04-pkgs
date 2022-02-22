@@ -1,27 +1,28 @@
 NAME = libnativehelper
 
 SOURCES = \
-  JNIHelp.cpp \
-  JniConstants.cpp \
-  toStringArray.cpp \
-  JniInvocation.cpp \
+  DlHelp.c \
+  ExpandableString.c \
+  JNIHelp.c \
+  JNIPlatformHelp.c \
+  JniConstants.c \
+  JniInvocation.c \
+  file_descriptor_jni.c \
 
 SOURCES := $(foreach source, $(SOURCES), libnativehelper/$(source))
-OBJECTS = $(SOURCES:.cpp=.o)
+OBJECTS = $(SOURCES:.c=.o)
 
-CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -I/usr/include/android \
   -Ilibnativehelper/header_only_include \
   -Ilibnativehelper/include \
   -Ilibnativehelper/include_jni \
-  -Ilibnativehelper/platform_include \
-  -Isystem/core/base/include \
-  -Isystem/core/liblog/include \
+  -Isystem/libbase/include \
+  -Isystem/logging/liblog/include \
 
 debian/out/libnativehelper/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/libnativehelper
 	ar -rcs $@ $^
 
-$(OBJECTS): %.o: %.cpp
-	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)
+$(OBJECTS): %.o: %.c
+	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)

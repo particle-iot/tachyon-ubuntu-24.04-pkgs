@@ -49,42 +49,6 @@
     DECREASE_FRAME 96
 .endm
 
-
-.macro SETUP_SAVE_REFS_AND_ARGS_FRAME_INTERNAL
-    INCREASE_FRAME 224
-
-    // Ugly compile-time check, but we only have the preprocessor.
-#if (FRAME_SIZE_SAVE_REFS_AND_ARGS != 224)
-#error "FRAME_SIZE_SAVE_REFS_AND_ARGS(ARM64) size not as expected."
-#endif
-
-    // Stack alignment filler [sp, #8].
-    // FP args.
-    stp d0, d1, [sp, #16]
-    stp d2, d3, [sp, #32]
-    stp d4, d5, [sp, #48]
-    stp d6, d7, [sp, #64]
-
-    // Core args.
-    SAVE_TWO_REGS x1, x2, 80
-    SAVE_TWO_REGS x3, x4, 96
-    SAVE_TWO_REGS x5, x6, 112
-
-    // x7, Callee-saves.
-    // Note: We could avoid saving X20 in the case of Baker read
-    // barriers, as it is overwritten by REFRESH_MARKING_REGISTER
-    // later; but it's not worth handling this special case.
-    SAVE_TWO_REGS x7, x20, 128
-    SAVE_TWO_REGS x21, x22, 144
-    SAVE_TWO_REGS x23, x24, 160
-    SAVE_TWO_REGS x25, x26, 176
-    SAVE_TWO_REGS x27, x28, 192
-
-    // x29(callee-save) and LR.
-    SAVE_TWO_REGS x29, xLR, 208
-
-.endm
-
     /*
      * Macro that sets up the callee save frame to conform with
      * Runtime::CreateCalleeSaveMethod(kSaveRefsAndArgs).
@@ -99,7 +63,8 @@
     // ArtMethod* xIP0 = Runtime::instance_->callee_save_methods_[kSaveRefAndArgs];
     ldr xIP0, [xIP0, RUNTIME_SAVE_REFS_AND_ARGS_METHOD_OFFSET]
 
-    SETUP_SAVE_REFS_AND_ARGS_FRAME_INTERNAL
+    INCREASE_FRAME FRAME_SIZE_SAVE_REFS_AND_ARGS
+    SETUP_SAVE_REFS_AND_ARGS_FRAME_INTERNAL sp
 
     str xIP0, [sp]    // Store ArtMethod* Runtime::callee_save_methods_[kSaveRefsAndArgs].
     // Place sp in Thread::Current()->top_quick_frame.
@@ -108,40 +73,12 @@
 .endm
 
 .macro SETUP_SAVE_REFS_AND_ARGS_FRAME_WITH_METHOD_IN_X0
-    SETUP_SAVE_REFS_AND_ARGS_FRAME_INTERNAL
+    INCREASE_FRAME FRAME_SIZE_SAVE_REFS_AND_ARGS
+    SETUP_SAVE_REFS_AND_ARGS_FRAME_INTERNAL sp
     str x0, [sp, #0]  // Store ArtMethod* to bottom of stack.
     // Place sp in Thread::Current()->top_quick_frame.
     mov xIP0, sp
     str xIP0, [xSELF, # THREAD_TOP_QUICK_FRAME_OFFSET]
-.endm
-
-// TODO: Probably no need to restore registers preserved by aapcs64.
-.macro RESTORE_SAVE_REFS_AND_ARGS_FRAME
-    // FP args.
-    ldp d0, d1, [sp, #16]
-    ldp d2, d3, [sp, #32]
-    ldp d4, d5, [sp, #48]
-    ldp d6, d7, [sp, #64]
-
-    // Core args.
-    RESTORE_TWO_REGS x1, x2, 80
-    RESTORE_TWO_REGS x3, x4, 96
-    RESTORE_TWO_REGS x5, x6, 112
-
-    // x7, Callee-saves.
-    // Note: Likewise, we could avoid restoring X20 in the case of Baker
-    // read barriers, as it is overwritten by REFRESH_MARKING_REGISTER
-    // later; but it's not worth handling this special case.
-    RESTORE_TWO_REGS x7, x20, 128
-    RESTORE_TWO_REGS x21, x22, 144
-    RESTORE_TWO_REGS x23, x24, 160
-    RESTORE_TWO_REGS x25, x26, 176
-    RESTORE_TWO_REGS x27, x28, 192
-
-    // x29(callee-save) and LR.
-    RESTORE_TWO_REGS x29, xLR, 208
-
-    DECREASE_FRAME 224
 .endm
 
     /*
@@ -1566,6 +1503,8 @@ ART_QUICK_ALLOC_OBJECT_ROSALLOC art_quick_alloc_object_initialized_rosalloc, art
 .endm
 
 // The common code for art_quick_alloc_object_*region_tlab
+// Currently the implementation ignores isInitialized. TODO(b/172087402): clean this up.
+// Caller must execute a constructor fence after this.
 .macro GENERATE_ALLOC_OBJECT_RESOLVED_TLAB name, entrypoint, isInitialized
 ENTRY \name
     // Fast path region tlab allocation.
@@ -1633,6 +1572,7 @@ GENERATE_ALLOC_OBJECT_RESOLVED_TLAB art_quick_alloc_object_initialized_tlab, art
     ret
 .endm
 
+// Caller must execute a constructor fence after this.
 .macro GENERATE_ALLOC_ARRAY_TLAB name, entrypoint, size_setup
 ENTRY \name
     // Fast path array allocation for region tlab allocation.
@@ -1761,96 +1701,33 @@ END art_quick_proxy_invoke_handler
     /*
      * Called to resolve an imt conflict.
      * x0 is the conflict ArtMethod.
-     * xIP1 is a hidden argument that holds the target interface method's dex method index.
+     * xIP1 is a hidden argument that holds the target interface method.
      *
-     * Note that this stub writes to xIP0, xIP1, x13-x15, and x0.
+     * Note that this stub writes to xIP0, xIP1, and x0.
      */
-    .extern artLookupResolvedMethod
 ENTRY art_quick_imt_conflict_trampoline
-    ldr xIP0, [sp, #0]  // Load referrer
-    // Load the declaring class (without read barrier) and access flags (for obsolete method check).
-    // The obsolete flag is set with suspended threads, so we do not need an acquire operation here.
-#if ART_METHOD_ACCESS_FLAGS_OFFSET != ART_METHOD_DECLARING_CLASS_OFFSET + 4
-#error "Expecting declaring class and access flags to be consecutive for LDP."
-#endif
-    ldp wIP0, w15, [xIP0, #ART_METHOD_DECLARING_CLASS_OFFSET]
-    // If the method is obsolete, just go through the dex cache miss slow path.
-    tbnz x15, #ACC_OBSOLETE_METHOD_SHIFT, .Limt_conflict_trampoline_dex_cache_miss
-    ldr wIP0, [xIP0, #MIRROR_CLASS_DEX_CACHE_OFFSET]  // Load the DexCache (without read barrier).
-    UNPOISON_HEAP_REF wIP0
-    ubfx x15, xIP1, #0, #METHOD_DEX_CACHE_HASH_BITS  // Calculate DexCache method slot index.
-    ldr xIP0, [xIP0, #MIRROR_DEX_CACHE_RESOLVED_METHODS_OFFSET]  // Load the resolved methods.
-    add xIP0, xIP0, x15, lsl #(POINTER_SIZE_SHIFT + 1)  // Load DexCache method slot address.
-
-    // Relaxed atomic load x14:x15 from the dex cache slot.
-.Limt_conflict_trampoline_retry_load:
-    ldxp x14, x15, [xIP0]
-    stxp w13, x14, x15, [xIP0]
-    cbnz w13, .Limt_conflict_trampoline_retry_load
-
-    cmp x15, xIP1       // Compare method index to see if we had a DexCache method hit.
-    bne .Limt_conflict_trampoline_dex_cache_miss
-.Limt_conflict_trampoline_have_interface_method:
-    ldr xIP1, [x0, #ART_METHOD_JNI_OFFSET_64]  // Load ImtConflictTable
-    ldr x0, [xIP1]  // Load first entry in ImtConflictTable.
+    ldr xIP0, [x0, #ART_METHOD_JNI_OFFSET_64]  // Load ImtConflictTable
+    ldr x0, [xIP0]  // Load first entry in ImtConflictTable.
 .Limt_table_iterate:
-    cmp x0, x14
+    cmp x0, xIP1
     // Branch if found. Benchmarks have shown doing a branch here is better.
     beq .Limt_table_found
     // If the entry is null, the interface method is not in the ImtConflictTable.
     cbz x0, .Lconflict_trampoline
     // Iterate over the entries of the ImtConflictTable.
-    ldr x0, [xIP1, #(2 * __SIZEOF_POINTER__)]!
+    ldr x0, [xIP0, #(2 * __SIZEOF_POINTER__)]!
     b .Limt_table_iterate
 .Limt_table_found:
     // We successfully hit an entry in the table. Load the target method
     // and jump to it.
-    ldr x0, [xIP1, #__SIZEOF_POINTER__]
+    ldr x0, [xIP0, #__SIZEOF_POINTER__]
     ldr xIP0, [x0, #ART_METHOD_QUICK_CODE_OFFSET_64]
     br xIP0
 .Lconflict_trampoline:
     // Call the runtime stub to populate the ImtConflictTable and jump to the
     // resolved method.
-    mov x0, x14  // Load interface method
+    mov x0, xIP1  // Load interface method
     INVOKE_TRAMPOLINE_BODY artInvokeInterfaceTrampoline
-.Limt_conflict_trampoline_dex_cache_miss:
-    // We're not creating a proper runtime method frame here,
-    // artLookupResolvedMethod() is not allowed to walk the stack.
-
-    // Save GPR args and return address, allocate space for FPR args, align stack.
-    SAVE_TWO_REGS_INCREASE_FRAME x0, x1, (8 * 8 + 8 * 8 + 8 + 8)
-    SAVE_TWO_REGS x2, x3, 16
-    SAVE_TWO_REGS x4, x5, 32
-    SAVE_TWO_REGS x6, x7, 48
-    SAVE_REG      xLR, (8 * 8 + 8 * 8 + 8)
-
-    // Save FPR args.
-    stp d0, d1, [sp, #64]
-    stp d2, d3, [sp, #80]
-    stp d4, d5, [sp, #96]
-    stp d6, d7, [sp, #112]
-
-    mov x0, xIP1                            // Pass method index.
-    ldr x1, [sp, #(8 * 8 + 8 * 8 + 8 + 8)]  // Pass referrer.
-    bl artLookupResolvedMethod              // (uint32_t method_index, ArtMethod* referrer)
-    mov x14, x0   // Move the interface method to x14 where the loop above expects it.
-
-    // Restore FPR args.
-    ldp d0, d1, [sp, #64]
-    ldp d2, d3, [sp, #80]
-    ldp d4, d5, [sp, #96]
-    ldp d6, d7, [sp, #112]
-
-    // Restore GPR args and return address.
-    RESTORE_REG      xLR, (8 * 8 + 8 * 8 + 8)
-    RESTORE_TWO_REGS x2, x3, 16
-    RESTORE_TWO_REGS x4, x5, 32
-    RESTORE_TWO_REGS x6, x7, 48
-    RESTORE_TWO_REGS_DECREASE_FRAME x0, x1, (8 * 8 + 8 * 8 + 8 + 8)
-
-    // If the method wasn't resolved, skip the lookup and go to artInvokeInterfaceTrampoline().
-    cbz x14, .Lconflict_trampoline
-    b .Limt_conflict_trampoline_have_interface_method
 END art_quick_imt_conflict_trampoline
 
 ENTRY art_quick_resolution_trampoline
@@ -1887,7 +1764,6 @@ END art_quick_resolution_trampoline
  * | X22               |    callee save
  * | X21               |    callee save
  * | X20               |    callee save
- * | X19               |    callee save
  * | X7                |    arg7
  * | X6                |    arg6
  * | X5                |    arg5
@@ -1903,27 +1779,30 @@ END art_quick_resolution_trampoline
  * | D2                |    float arg 3
  * | D1                |    float arg 2
  * | D0                |    float arg 1
- * | Method*           | <- X0
+ * | padding           | // 8B
+ * | Method*           | <- X0 (Managed frame similar to SaveRefsAndArgs.)
  * #-------------------#
  * | local ref cookie  | // 4B
- * | handle scope size | // 4B
+ * | padding           | // 0B or 4B to align handle scope on 8B address
+ * | handle scope      | // Size depends on number of references; multiple of 4B.
  * #-------------------#
- * | JNI Call Stack    |
- * #-------------------#    <--- SP on native call
+ * | JNI Stack Args    | // Empty if all args fit into registers x0-x7, d0-d7.
+ * #-------------------#    <--- SP on native call (1)
+ * | Free scratch      |
+ * #-------------------#
+ * | SP for JNI call   | // Pointer to (1).
+ * #-------------------#
+ * | Hidden arg        | // For @CriticalNative
+ * #-------------------#
  * |                   |
  * | Stack for Regs    |    The trampoline assembly will pop these values
  * |                   |    into registers for native call
- * #-------------------#
- * | Native code ptr   |
- * #-------------------#
- * | Free scratch      |
- * #-------------------#
- * | Ptr to (1)        |    <--- SP
  * #-------------------#
  */
     /*
      * Called to do a generic JNI down-call
      */
+    .extern artQuickGenericJniTrampoline
 ENTRY art_quick_generic_jni_trampoline
     SETUP_SAVE_REFS_AND_ARGS_FRAME_WITH_METHOD_IN_X0
 
@@ -1939,31 +1818,28 @@ ENTRY art_quick_generic_jni_trampoline
     sub sp, sp, xIP0
 
     // prepare for artQuickGenericJniTrampoline call
-    // (Thread*,  SP)
-    //    x0      x1   <= C calling convention
-    //   xSELF    xFP  <= where they are
+    // (Thread*, managed_sp, reserved_area)
+    //    x0         x1            x2   <= C calling convention
+    //  xSELF       xFP            sp   <= where they are
 
     mov x0, xSELF   // Thread*
-    mov x1, xFP
+    mov x1, xFP     // SP for the managed frame.
+    mov x2, sp      // reserved area for arguments and other saved data (up to managed frame)
     bl artQuickGenericJniTrampoline  // (Thread*, sp)
 
     // The C call will have registered the complete save-frame on success.
     // The result of the call is:
-    // x0: pointer to native code, 0 on error.
-    // x1: pointer to the bottom of the used area of the alloca, can restore stack till there.
+    //     x0: pointer to native code, 0 on error.
+    //     The bottom of the reserved area contains values for arg registers,
+    //     hidden arg register and SP for out args for the call.
 
-    // Check for error (locking can throw for synchronized native method).
+    // Check for error (class init check or locking for synchronized native method can throw).
     cbz x0, .Lexception_in_native
-
-    // Release part of the alloca.
-    mov sp, x1
 
     // Save the code pointer
     mov xIP0, x0
 
     // Load parameters from frame into registers.
-    // TODO Check with artQuickGenericJniTrampoline.
-    //      Also, check again APPCS64 - the stack arguments are interleaved.
     ldp x0, x1, [sp]
     ldp x2, x3, [sp, #16]
     ldp x4, x5, [sp, #32]
@@ -1974,7 +1850,11 @@ ENTRY art_quick_generic_jni_trampoline
     ldp d4, d5, [sp, #96]
     ldp d6, d7, [sp, #112]
 
-    add sp, sp, #128
+    // Load hidden arg (x15) for @CriticalNative and SP for out args.
+    ldp x15, xIP1, [sp, #128]
+
+    // Apply the new SP for out args, releasing unneeded reserved area.
+    mov sp, xIP1
 
     blr xIP0        // native call.
 
@@ -1994,6 +1874,7 @@ ENTRY art_quick_generic_jni_trampoline
 
     // Tear down the alloca.
     mov sp, x28
+    .cfi_remember_state
     .cfi_def_cfa_register sp
 
     // Tear down the callee-save frame.
@@ -2004,14 +1885,20 @@ ENTRY art_quick_generic_jni_trampoline
     fmov d0, x0
     ret
 
+    // Undo the unwinding information from above since it doesn't apply below.
+    .cfi_restore_state
+    .cfi_def_cfa x28, FRAME_SIZE_SAVE_REFS_AND_ARGS
 .Lexception_in_native:
     // Move to x1 then sp to please assembler.
     ldr x1, [xSELF, # THREAD_TOP_QUICK_FRAME_OFFSET]
     add sp, x1, #-1  // Remove the GenericJNI tag.
-    .cfi_def_cfa_register sp
+    bl art_deliver_pending_exception
+END art_quick_generic_jni_trampoline
+
+ENTRY art_deliver_pending_exception
     # This will create a new save-all frame, required by the runtime.
     DELIVER_PENDING_EXCEPTION
-END art_quick_generic_jni_trampoline
+END art_deliver_pending_exception
 
 /*
  * Called to bridge from the quick to interpreter ABI. On entry the arguments match those

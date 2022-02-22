@@ -19,15 +19,36 @@
 #include <bionic/reserved_signals.h>
 #include <signal.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/cdefs.h>
+#include <sys/system_properties.h>
 #include <sys/types.h>
 
 __BEGIN_DECLS
 
+// Forward declare these classes so not everyone has to include GWP-ASan
+// headers.
+namespace gwp_asan {
+struct AllocatorState;
+struct AllocationMetadata;
+};  // namespace gwp_asan
+
+// When updating this data structure, CrashInfoDataDynamic and the code in
+// ReadCrashInfo() must also be updated.
+struct debugger_process_info {
+  void* abort_msg;
+  void* fdsan_table;
+  const gwp_asan::AllocatorState* gwp_asan_state;
+  const gwp_asan::AllocationMetadata* gwp_asan_metadata;
+  const char* scudo_stack_depot;
+  const char* scudo_region_info;
+  const char* scudo_ring_buffer;
+};
+
 // These callbacks are called in a signal handler, and thus must be async signal safe.
 // If null, the callbacks will not be called.
 typedef struct {
-  struct abort_msg_t* (*get_abort_message)();
+  debugger_process_info (*get_process_info)();
   void (*post_dump)();
 } debuggerd_callbacks_t;
 
@@ -41,16 +62,21 @@ void debuggerd_init(debuggerd_callbacks_t* callbacks);
 #define DEBUGGER_SIGNAL BIONIC_SIGNAL_DEBUGGER
 
 static void __attribute__((__unused__)) debuggerd_register_handlers(struct sigaction* action) {
-  sigaction(SIGABRT, action, nullptr);
-  sigaction(SIGBUS, action, nullptr);
-  sigaction(SIGFPE, action, nullptr);
-  sigaction(SIGILL, action, nullptr);
-  sigaction(SIGSEGV, action, nullptr);
-#if defined(SIGSTKFLT)
-  sigaction(SIGSTKFLT, action, nullptr);
-#endif
-  sigaction(SIGSYS, action, nullptr);
-  sigaction(SIGTRAP, action, nullptr);
+  char value[PROP_VALUE_MAX] = "";
+  bool enabled =
+      !(__system_property_get("ro.debuggable", value) > 0 && !strcmp(value, "1") &&
+        __system_property_get("debug.debuggerd.disable", value) > 0 && !strcmp(value, "1"));
+  if (enabled) {
+    sigaction(SIGABRT, action, nullptr);
+    sigaction(SIGBUS, action, nullptr);
+    sigaction(SIGFPE, action, nullptr);
+    sigaction(SIGILL, action, nullptr);
+    sigaction(SIGSEGV, action, nullptr);
+    sigaction(SIGSTKFLT, action, nullptr);
+    sigaction(SIGSYS, action, nullptr);
+    sigaction(SIGTRAP, action, nullptr);
+  }
+
   sigaction(BIONIC_SIGNAL_DEBUGGER, action, nullptr);
 }
 

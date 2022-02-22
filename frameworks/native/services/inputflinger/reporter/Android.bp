@@ -12,30 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "frameworks_native_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: ["frameworks_native_license"],
+}
+
 cc_library_headers {
     name: "libinputreporter_headers",
     export_include_dirs: ["."],
 }
 
-cc_library_shared {
-    name: "libinputreporter",
-    defaults: ["inputflinger_defaults"],
-
+filegroup {
+    name: "libinputreporter_sources",
     srcs: [
-        "InputReporter.cpp",
+            "InputReporter.cpp",
     ],
+}
 
+cc_defaults {
+    name: "libinputreporter_defaults",
+    srcs: [":libinputreporter_sources"],
     shared_libs: [
         "liblog",
         "libutils",
     ],
-
     header_libs: [
-        "libinputflinger_headers",
-    ],
-
-    export_header_lib_headers: [
-        "libinputflinger_headers",
+        "libinputreporter_headers",
     ],
 }
 
+cc_library_shared {
+    name: "libinputreporter",
+    defaults: [
+        "inputflinger_defaults",
+        "libinputreporter_defaults",
+    ],
+    export_header_lib_headers: [
+        "libinputreporter_headers",
+    ],
+}

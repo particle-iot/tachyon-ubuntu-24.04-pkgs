@@ -73,6 +73,10 @@ class Operand : public ValueObject {
     return static_cast<Register>(encoding_at(1) & 7);
   }
 
+  int32_t disp() const {
+    return disp_;
+  }
+
   int8_t disp8() const {
     CHECK_GE(length_, 2);
     return static_cast<int8_t>(encoding_[length_ - 1]);
@@ -90,9 +94,16 @@ class Operand : public ValueObject {
         && ((encoding_[0] & 0x07) == reg);  // Register codes match.
   }
 
+  inline bool operator==(const Operand &op) const {
+    return length_ == op.length_ &&
+        memcmp(encoding_, op.encoding_, length_) == 0 &&
+        disp_ == op.disp_ &&
+        fixup_ == op.fixup_;
+  }
+
  protected:
   // Operand can be sub classed (e.g: Address).
-  Operand() : length_(0), fixup_(nullptr) { }
+  Operand() : length_(0), disp_(0), fixup_(nullptr) { }
 
   void SetModRM(int mod_in, Register rm_in) {
     CHECK_EQ(mod_in & ~3, 0);
@@ -110,6 +121,7 @@ class Operand : public ValueObject {
   void SetDisp8(int8_t disp) {
     CHECK(length_ == 1 || length_ == 2);
     encoding_[length_++] = static_cast<uint8_t>(disp);
+    disp_ = disp;
   }
 
   void SetDisp32(int32_t disp) {
@@ -117,6 +129,7 @@ class Operand : public ValueObject {
     int disp_size = sizeof(disp);
     memmove(&encoding_[length_], &disp, disp_size);
     length_ += disp_size;
+    disp_ = disp;
   }
 
   AssemblerFixup* GetFixup() const {
@@ -130,12 +143,13 @@ class Operand : public ValueObject {
  private:
   uint8_t length_;
   uint8_t encoding_[6];
+  int32_t disp_;
 
   // A fixup can be associated with the operand, in order to be applied after the
   // code has been generated. This is used for constant area fixups.
   AssemblerFixup* fixup_;
 
-  explicit Operand(Register reg) : fixup_(nullptr) { SetModRM(3, reg); }
+  explicit Operand(Register reg) : disp_(0), fixup_(nullptr) { SetModRM(3, reg); }
 
   // Get the operand encoding byte at the given index.
   uint8_t encoding_at(int index_in) const {
@@ -191,6 +205,53 @@ class Address : public Operand {
     SetFixup(fixup);
   }
 
+  // Break the address into pieces and reassemble it again with a new displacement.
+  // Note that it may require a new addressing mode if displacement size is changed.
+  static Address displace(const Address &addr, int32_t disp) {
+    const int32_t new_disp = addr.disp() + disp;
+    const bool sib = addr.rm() == ESP;
+    const bool ebp = EBP == (sib ? addr.base() : addr.rm());
+    Address new_addr;
+    if (addr.mod() == 0 && ebp) {
+      // Special case: mod 00b and EBP in r/m or SIB base => 32-bit displacement.
+      new_addr.SetModRM(0, addr.rm());
+      if (sib) {
+        new_addr.SetSIB(addr.scale(), addr.index(), addr.base());
+      }
+      new_addr.SetDisp32(new_disp);
+    } else if (new_disp == 0 && !ebp) {
+      // Mod 00b (excluding a special case for EBP) => no displacement.
+      new_addr.SetModRM(0, addr.rm());
+      if (sib) {
+        new_addr.SetSIB(addr.scale(), addr.index(), addr.base());
+      }
+    } else if (new_disp >= -128 && new_disp <= 127) {
+      // Mod 01b => 8-bit displacement.
+      new_addr.SetModRM(1, addr.rm());
+      if (sib) {
+        new_addr.SetSIB(addr.scale(), addr.index(), addr.base());
+      }
+      new_addr.SetDisp8(new_disp);
+    } else {
+      // Mod 10b => 32-bit displacement.
+      new_addr.SetModRM(2, addr.rm());
+      if (sib) {
+        new_addr.SetSIB(addr.scale(), addr.index(), addr.base());
+      }
+      new_addr.SetDisp32(new_disp);
+    }
+    new_addr.SetFixup(addr.GetFixup());
+    return new_addr;
+  }
+
+  Register GetBaseRegister() {
+    if (rm() == ESP) {
+      return base();
+    } else {
+      return rm();
+    }
+  }
+
   static Address Absolute(uintptr_t addr) {
     Address result;
     result.SetModRM(0, EBP);
@@ -200,6 +261,10 @@ class Address : public Operand {
 
   static Address Absolute(ThreadOffset32 addr) {
     return Absolute(addr.Int32Value());
+  }
+
+  inline bool operator==(const Address& addr) const {
+    return static_cast<const Operand&>(*this) == static_cast<const Operand&>(addr);
   }
 
  private:
@@ -671,6 +736,16 @@ class X86Assembler final : public Assembler {
   void fptan();
   void fprem();
 
+  void xchgb(ByteRegister dst, ByteRegister src);
+  void xchgb(ByteRegister reg, const Address& address);
+
+  // Wrappers for `xchgb` that accept `Register` instead of `ByteRegister` (used for testing).
+  void xchgb(Register dst, Register src);
+  void xchgb(Register reg, const Address& address);
+
+  void xchgw(Register dst, Register src);
+  void xchgw(Register reg, const Address& address);
+
   void xchgl(Register dst, Register src);
   void xchgl(Register reg, const Address& address);
 
@@ -694,6 +769,7 @@ class X86Assembler final : public Assembler {
   void andl(Register dst, const Immediate& imm);
   void andl(Register dst, Register src);
   void andl(Register dst, const Address& address);
+  void andw(const Address& address, const Immediate& imm);
 
   void orl(Register dst, const Immediate& imm);
   void orl(Register dst, Register src);
@@ -723,6 +799,7 @@ class X86Assembler final : public Assembler {
   void cdq();
 
   void idivl(Register reg);
+  void divl(Register reg);
 
   void imull(Register dst, Register src);
   void imull(Register reg, const Immediate& imm);
@@ -794,8 +871,14 @@ class X86Assembler final : public Assembler {
   void rep_movsw();
 
   X86Assembler* lock();
+  void cmpxchgb(const Address& address, ByteRegister reg);
+  void cmpxchgw(const Address& address, Register reg);
   void cmpxchgl(const Address& address, Register reg);
   void cmpxchg8b(const Address& address);
+
+  void xaddb(const Address& address, ByteRegister reg);
+  void xaddw(const Address& address, Register reg);
+  void xaddl(const Address& address, Register reg);
 
   void mfence();
 
@@ -811,12 +894,61 @@ class X86Assembler final : public Assembler {
   void LoadLongConstant(XmmRegister dst, int64_t value);
   void LoadDoubleConstant(XmmRegister dst, double value);
 
+  // For testing purpose (Repeat* functions expect Register rather than ByteRegister).
+  void cmpxchgb(const Address& address, Register reg) {
+    cmpxchgb(address, static_cast<ByteRegister>(reg));
+  }
+
+  // For testing purpose (Repeat* functions expect Register rather than ByteRegister).
+  void LockCmpxchgb(const Address& address, Register reg) {
+    LockCmpxchgb(address, static_cast<ByteRegister>(reg));
+  }
+
+  void LockCmpxchgb(const Address& address, ByteRegister reg) {
+    lock()->cmpxchgb(address, reg);
+  }
+
+  void LockCmpxchgw(const Address& address, Register reg) {
+    AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+    // We make sure that the operand size override bytecode is emited before the lock bytecode.
+    // We test against clang which enforces this bytecode order.
+    EmitOperandSizeOverride();
+    EmitUint8(0xF0);
+    EmitUint8(0x0F);
+    EmitUint8(0xB1);
+    EmitOperand(reg, address);
+  }
+
   void LockCmpxchgl(const Address& address, Register reg) {
     lock()->cmpxchgl(address, reg);
   }
 
   void LockCmpxchg8b(const Address& address) {
     lock()->cmpxchg8b(address);
+  }
+
+  // For testing purpose (Repeat* functions expect Register rather than ByteRegister).
+  void LockXaddb(const Address& address, Register reg) {
+    LockXaddb(address, static_cast<ByteRegister>(reg));
+  }
+
+  void LockXaddb(const Address& address, ByteRegister reg) {
+    lock()->xaddb(address, reg);
+  }
+
+  void LockXaddw(const Address& address, Register reg) {
+    AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+    // We make sure that the operand size override bytecode is emited before the lock bytecode.
+    // We test against clang which enforces this bytecode order.
+    EmitOperandSizeOverride();
+    EmitUint8(0xF0);
+    EmitUint8(0x0F);
+    EmitUint8(0xC1);
+    EmitOperand(reg, address);
+  }
+
+  void LockXaddl(const Address& address, Register reg) {
+    lock()->xaddl(address, reg);
   }
 
   //
@@ -918,6 +1050,10 @@ class X86Assembler final : public Assembler {
   uint8_t EmitVexPrefixByteTwo(bool W,
                                int SET_VEX_L,
                                int SET_VEX_PP);
+
+  // Helper function to emit a shorter variant of XCHG for when at least one operand is EAX/AX.
+  bool try_xchg_eax(Register dst, Register src);
+
   ConstantArea constant_area_;
   bool has_AVX_;     // x86 256bit SIMD AVX.
   bool has_AVX2_;    // x86 256bit SIMD AVX 2.0.

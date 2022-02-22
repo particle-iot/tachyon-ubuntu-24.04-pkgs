@@ -33,7 +33,6 @@
 #include "dwarf/debug_frame_opcode_writer.h"
 #include "label.h"
 #include "managed_register.h"
-#include "mips/constants_mips.h"
 #include "offsets.h"
 #include "x86/constants_x86.h"
 #include "x86_64/constants_x86_64.h"
@@ -230,7 +229,7 @@ class AssemblerBuffer {
 
   // When building the C++ tests, assertion code is enabled. To allow
   // asserting that the user of the assembler buffer has ensured the
-  // capacity needed for emitting, we add a dummy method in non-debug mode.
+  // capacity needed for emitting, we add a placeholder method in non-debug mode.
   bool HasEnsuredCapacity() const { return true; }
 
 #endif
@@ -251,7 +250,7 @@ class AssemblerBuffer {
   // The limit is set to kMinimumGap bytes before the end of the data area.
   // This leaves enough space for the longest possible instruction and allows
   // for a single, fast space check per instruction.
-  static const int kMinimumGap = 32;
+  static constexpr int kMinimumGap = 32;
 
   ArenaAllocator* const allocator_;
   uint8_t* contents_;
@@ -372,6 +371,7 @@ class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
   // the instructions that can trigger signals into branch delay slots. Handling
   // signals from instructions in delay slots is a bit problematic and should be
   // avoided.
+  // TODO: Re-evaluate whether we still need this now that MIPS support has been removed.
   virtual size_t CodePosition() { return CodeSize(); }
 
   // Copy instructions out of assembly buffer into the given region of memory
@@ -407,6 +407,13 @@ class Assembler : public DeletableArenaObject<kArenaAllocAssembler> {
   AssemblerBuffer buffer_;
 
   DebugFrameOpCodeWriterForAssembler cfi_;
+};
+
+enum ScaleFactor {
+  TIMES_1 = 0,
+  TIMES_2 = 1,
+  TIMES_4 = 2,
+  TIMES_8 = 3
 };
 
 }  // namespace art

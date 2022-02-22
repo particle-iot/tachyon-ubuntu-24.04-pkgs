@@ -28,8 +28,6 @@ namespace art {
 
 class ArmInstructionSetFeatures;
 class Arm64InstructionSetFeatures;
-class MipsInstructionSetFeatures;
-class Mips64InstructionSetFeatures;
 class X86InstructionSetFeatures;
 class X86_64InstructionSetFeatures;
 
@@ -73,6 +71,9 @@ class InstructionSetFeatures {
   // InstructionSetFeatures. This works around kernel bugs in AT_HWCAP and /proc/cpuinfo.
   static std::unique_ptr<const InstructionSetFeatures> FromAssembly();
 
+  // Use external cpu_features library.
+  static std::unique_ptr<const InstructionSetFeatures> FromCpuFeatures();
+
   // Parse a string of the form "div,-atomic_ldrd_strd" adding and removing these features to
   // create a new InstructionSetFeatures.
   std::unique_ptr<const InstructionSetFeatures> AddFeaturesFromString(
@@ -113,12 +114,6 @@ class InstructionSetFeatures {
 
   // Down cast this Arm64InstructionFeatures.
   const Arm64InstructionSetFeatures* AsArm64InstructionSetFeatures() const;
-
-  // Down cast this MipsInstructionFeatures.
-  const MipsInstructionSetFeatures* AsMipsInstructionSetFeatures() const;
-
-  // Down cast this Mips64InstructionFeatures.
-  const Mips64InstructionSetFeatures* AsMips64InstructionSetFeatures() const;
 
   // Down cast this X86InstructionFeatures.
   const X86InstructionSetFeatures* AsX86InstructionSetFeatures() const;

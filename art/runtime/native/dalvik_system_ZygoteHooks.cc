@@ -144,7 +144,7 @@ enum {
   DEBUG_NATIVE_DEBUGGABLE             = 1 << 7,
   DEBUG_JAVA_DEBUGGABLE               = 1 << 8,
   DISABLE_VERIFIER                    = 1 << 9,
-  ONLY_USE_SYSTEM_OAT_FILES           = 1 << 10,
+  ONLY_USE_TRUSTED_OAT_FILES          = 1 << 10,  // Formerly ONLY_USE_SYSTEM_OAT_FILES
   DEBUG_GENERATE_MINI_DEBUG_INFO      = 1 << 11,
   HIDDEN_API_ENFORCEMENT_POLICY_MASK  = (1 << 12)
                                       | (1 << 13),
@@ -153,6 +153,7 @@ enum {
   USE_APP_IMAGE_STARTUP_CACHE         = 1 << 16,
   DEBUG_IGNORE_APP_SIGNAL_HANDLER     = 1 << 17,
   DISABLE_TEST_API_ENFORCEMENT_POLICY = 1 << 18,
+  PROFILEABLE                         = 1 << 24,
 
   // bits to shift (flags & HIDDEN_API_ENFORCEMENT_POLICY_MASK) by to get a value
   // corresponding to hiddenapi::EnforcementPolicy
@@ -196,9 +197,7 @@ static uint32_t EnableDebugFeatures(uint32_t runtime_flags) {
   if ((runtime_flags & DEBUG_ALWAYS_JIT) != 0) {
     jit::JitOptions* jit_options = runtime->GetJITOptions();
     CHECK(jit_options != nullptr);
-    Runtime::Current()->DoAndMaybeSwitchInterpreter([=]() {
-        jit_options->SetJitAtFirstUse();
-    });
+    jit_options->SetJitAtFirstUse();
     runtime_flags &= ~DEBUG_ALWAYS_JIT;
   }
 
@@ -245,6 +244,8 @@ static uint32_t EnableDebugFeatures(uint32_t runtime_flags) {
 
   runtime->SetProfileableFromShell((runtime_flags & PROFILE_FROM_SHELL) != 0);
   runtime_flags &= ~PROFILE_FROM_SHELL;
+  runtime->SetProfileable((runtime_flags & PROFILEABLE) != 0);
+  runtime_flags &= ~PROFILEABLE;
 
   return runtime_flags;
 }
@@ -266,6 +267,9 @@ static void ZygoteHooks_nativePostZygoteFork(JNIEnv*, jclass) {
 static void ZygoteHooks_nativePostForkSystemServer(JNIEnv* env ATTRIBUTE_UNUSED,
                                                    jclass klass ATTRIBUTE_UNUSED,
                                                    jint runtime_flags) {
+  // Reload the current flags first. In case we need to take actions based on them.
+  Runtime::Current()->ReloadAllFlags(__FUNCTION__);
+
   // Set the runtime state as the first thing, in case JIT and other services
   // start querying it.
   Runtime::Current()->SetAsSystemServer();
@@ -278,11 +282,6 @@ static void ZygoteHooks_nativePostForkSystemServer(JNIEnv* env ATTRIBUTE_UNUSED,
     Runtime::Current()->GetJit()->GetCodeCache()->PostForkChildAction(
         /* is_system_server= */ true, /* is_zygote= */ false);
   }
-  // Allow picking up verity-protected files from the dalvik cache for pre-caching. This window will
-  // be closed in the common nativePostForkChild below.
-  Runtime::Current()->GetOatFileManager().SetOnlyUseSystemOatFiles(
-      /*enforce=*/false, /*assert_no_files_loaded=*/false);
-
   // Enable profiling if required based on the flags. This is done here instead of in
   // nativePostForkChild since nativePostForkChild is called after loading the system server oat
   // files.
@@ -298,7 +297,9 @@ static void ZygoteHooks_nativePostForkChild(JNIEnv* env,
                                             jboolean is_zygote,
                                             jstring instruction_set) {
   DCHECK(!(is_system_server && is_zygote));
-  // Set the runtime state as the first thing, in case JIT and other services
+  // Reload the current flags first. In case we need to take any updated actions.
+  Runtime::Current()->ReloadAllFlags(__FUNCTION__);
+  // Then, set the runtime state, in case JIT and other services
   // start querying it.
   Runtime::Current()->SetAsZygoteChild(is_system_server, is_zygote);
 
@@ -315,13 +316,10 @@ static void ZygoteHooks_nativePostForkChild(JNIEnv* env,
     runtime_flags &= ~DISABLE_VERIFIER;
   }
 
-  bool only_use_system_oat_files = false;
-  if ((runtime_flags & ONLY_USE_SYSTEM_OAT_FILES) != 0 || is_system_server) {
-    only_use_system_oat_files = true;
-    runtime_flags &= ~ONLY_USE_SYSTEM_OAT_FILES;
+  if ((runtime_flags & ONLY_USE_TRUSTED_OAT_FILES) != 0 || is_system_server) {
+    runtime->GetOatFileManager().SetOnlyUseTrustedOatFiles();
+    runtime_flags &= ~ONLY_USE_TRUSTED_OAT_FILES;
   }
-  runtime->GetOatFileManager().SetOnlyUseSystemOatFiles(only_use_system_oat_files,
-                                                        !is_system_server);
 
   api_enforcement_policy = hiddenapi::EnforcementPolicyFromInt(
       (runtime_flags & HIDDEN_API_ENFORCEMENT_POLICY_MASK) >> API_ENFORCEMENT_POLICY_SHIFT);
@@ -442,11 +440,26 @@ static void ZygoteHooks_stopZygoteNoThreadCreation(JNIEnv* env ATTRIBUTE_UNUSED,
   Runtime::Current()->SetZygoteNoThreadSection(false);
 }
 
+static jboolean ZygoteHooks_nativeZygoteLongSuspendOk(JNIEnv* env ATTRIBUTE_UNUSED,
+                                                    jclass klass ATTRIBUTE_UNUSED) {
+  // Indefinite thread suspensions are not OK if we're supposed to be JIT-compiling for other
+  // processes.  We only care about JIT compilation that affects other processes.  The zygote
+  // itself doesn't run appreciable amounts of Java code when running single-threaded, so
+  // suspending the JIT in non-jit-zygote mode is OK.
+  // TODO: Make this potentially return true once we're done with JIT compilation in JIT Zygote.
+  // Only called in zygote. Thus static is OK here.
+  static bool isJitZygote = jit::Jit::InZygoteUsingJit();
+  static bool explicitlyDisabled = Runtime::Current()->IsJavaZygoteForkLoopRequired();
+  return (isJitZygote || explicitlyDisabled) ? JNI_FALSE : JNI_TRUE;
+}
+
+
 static JNINativeMethod gMethods[] = {
   NATIVE_METHOD(ZygoteHooks, nativePreFork, "()J"),
   NATIVE_METHOD(ZygoteHooks, nativePostZygoteFork, "()V"),
   NATIVE_METHOD(ZygoteHooks, nativePostForkSystemServer, "(I)V"),
   NATIVE_METHOD(ZygoteHooks, nativePostForkChild, "(JIZZLjava/lang/String;)V"),
+  NATIVE_METHOD(ZygoteHooks, nativeZygoteLongSuspendOk, "()Z"),
   NATIVE_METHOD(ZygoteHooks, startZygoteNoThreadCreation, "()V"),
   NATIVE_METHOD(ZygoteHooks, stopZygoteNoThreadCreation, "()V"),
 };

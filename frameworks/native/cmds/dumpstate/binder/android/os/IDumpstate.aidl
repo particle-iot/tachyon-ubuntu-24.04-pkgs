@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright (c) 2016, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,24 +17,12 @@
 package android.os;
 
 import android.os.IDumpstateListener;
-import android.os.IDumpstateToken;
 
 /**
-  * Binder interface for the currently running dumpstate process.
-  * {@hide}
-  */
+ * Binder interface for the currently running dumpstate process.
+ * {@hide}
+ */
 interface IDumpstate {
-    // TODO: remove method once startBugReport is used by Shell.
-    /*
-     * Sets the listener for this dumpstate progress.
-     *
-     * Returns a token used to monitor dumpstate death, or `nullptr` if the listener was already
-     * set (the listener behaves like a Highlander: There Can be Only One).
-     * Set {@code getSectionDetails} to true in order to receive callbacks with per section
-     * progress details
-     */
-    IDumpstateToken setListener(@utf8InCpp String name, IDumpstateListener listener,
-                                boolean getSectionDetails);
 
     // NOTE: If you add to or change these modes, please also change the corresponding enums
     // in system server, in BugreportParams.java.
@@ -61,10 +49,10 @@ interface IDumpstate {
     // Default mode.
     const int BUGREPORT_MODE_DEFAULT = 6;
 
-    /*
+    /**
      * Starts a bugreport in the background.
      *
-     *<p>Shows the user a dialog to get consent for sharing the bugreport with the calling
+     * <p>Shows the user a dialog to get consent for sharing the bugreport with the calling
      * application. If they deny {@link IDumpstateListener#onError} will be called. If they
      * consent and bugreport generation is successful artifacts will be copied to the given fds and
      * {@link IDumpstateListener#onFinished} will be called. If there
@@ -76,13 +64,22 @@ interface IDumpstate {
      * @param screenshotFd the file to which screenshot should be written
      * @param bugreportMode the mode that specifies other run time options; must be one of above
      * @param listener callback for updates; optional
+     * @param isScreenshotRequested indicates screenshot is requested or not
      */
     void startBugreport(int callingUid, @utf8InCpp String callingPackage,
                         FileDescriptor bugreportFd, FileDescriptor screenshotFd,
-                        int bugreportMode, IDumpstateListener listener);
+                        int bugreportMode, IDumpstateListener listener,
+                        boolean isScreenshotRequested);
 
-    /*
+    /**
      * Cancels the bugreport currently in progress.
+     *
+     * <p>The caller must match the original caller of {@link #startBugreport} in order for the
+     * report to actually be cancelled. A {@link SecurityException} is reported if a mismatch is
+     * detected.
+     *
+     * @param callingUid UID of the original application that requested the cancellation.
+     * @param callingPackage package of the original application that requested the cancellation.
      */
-    void cancelBugreport();
+    void cancelBugreport(int callingUid, @utf8InCpp String callingPackage);
 }

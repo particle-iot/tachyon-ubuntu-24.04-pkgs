@@ -16,17 +16,210 @@
 
 #include <gtest/gtest.h>
 
+#include "android-base/logging.h"
 #include "android-base/stringprintf.h"
 #include "android-base/strings.h"
 
 #include "base/stl_util.h"
 #include "class_linker.h"
 #include "dexopt_test.h"
+#include "dex/utf.h"
+#include "intern_table-inl.h"
 #include "noop_compiler_callbacks.h"
+#include "oat_file.h"
 
 namespace art {
 namespace gc {
 namespace space {
+
+class ImageSpaceTest : public CommonRuntimeTest {
+ protected:
+  void SetUpRuntimeOptions(RuntimeOptions* options) override {
+    // Disable relocation.
+    options->emplace_back("-Xnorelocate", nullptr);
+  }
+
+  std::string GetFilenameBase(const std::string& full_path) {
+    size_t slash_pos = full_path.rfind('/');
+    CHECK_NE(std::string::npos, slash_pos);
+    size_t dot_pos = full_path.rfind('.');
+    CHECK_NE(std::string::npos, dot_pos);
+    CHECK_GT(dot_pos, slash_pos + 1u);
+    return full_path.substr(slash_pos + 1u, dot_pos - (slash_pos + 1u));
+  }
+};
+
+TEST_F(ImageSpaceTest, StringDeduplication) {
+  const char* const kBaseNames[] = { "Extension1", "Extension2" };
+
+  ScratchDir scratch;
+  const std::string& scratch_dir = scratch.GetPath();
+  std::string image_dir = scratch_dir + GetInstructionSetString(kRuntimeISA);
+  int mkdir_result = mkdir(image_dir.c_str(), 0700);
+  ASSERT_EQ(0, mkdir_result);
+
+  // Prepare boot class path variables, exclude core-icu4j and conscrypt
+  // which are not in the primary boot image.
+  std::vector<std::string> bcp = GetLibCoreDexFileNames();
+  std::vector<std::string> bcp_locations = GetLibCoreDexLocations();
+  CHECK_EQ(bcp.size(), bcp_locations.size());
+  ASSERT_NE(std::string::npos, bcp.back().find("conscrypt"));
+  bcp.pop_back();
+  bcp_locations.pop_back();
+  ASSERT_NE(std::string::npos, bcp.back().find("core-icu4j"));
+  bcp.pop_back();
+  bcp_locations.pop_back();
+  std::string base_bcp_string = android::base::Join(bcp, ':');
+  std::string base_bcp_locations_string = android::base::Join(bcp_locations, ':');
+  std::string base_image_location = GetImageLocation();
+
+  // Compile the two extensions independently.
+  std::vector<std::string> extension_image_locations;
+  for (const char* base_name : kBaseNames) {
+    std::string jar_name = GetTestDexFileName(base_name);
+    ArrayRef<const std::string> dex_files(&jar_name, /*size=*/ 1u);
+    ScratchFile profile_file;
+    GenerateBootProfile(dex_files, profile_file.GetFile());
+    std::vector<std::string> extra_args = {
+        "--profile-file=" + profile_file.GetFilename(),
+        "--runtime-arg",
+        "-Xbootclasspath:" + base_bcp_string + ':' + jar_name,
+        "--runtime-arg",
+        "-Xbootclasspath-locations:" + base_bcp_locations_string + ':' + jar_name,
+        "--boot-image=" + base_image_location,
+    };
+    std::string prefix = GetFilenameBase(base_image_location);
+    std::string error_msg;
+    bool success = CompileBootImage(extra_args, image_dir + '/' + prefix, dex_files, &error_msg);
+    ASSERT_TRUE(success) << error_msg;
+    bcp.push_back(jar_name);
+    bcp_locations.push_back(jar_name);
+    extension_image_locations.push_back(
+        scratch_dir + prefix + '-' + GetFilenameBase(jar_name) + ".art");
+  }
+
+  // Also compile the second extension as an app with app image.
+  const char* app_base_name = kBaseNames[std::size(kBaseNames) - 1u];
+  std::string app_jar_name = GetTestDexFileName(app_base_name);
+  std::string app_odex_name = scratch_dir + app_base_name + ".odex";
+  std::string app_image_name = scratch_dir + app_base_name + ".art";
+  {
+    ArrayRef<const std::string> dex_files(&app_jar_name, /*size=*/ 1u);
+    ScratchFile profile_file;
+    GenerateProfile(dex_files, profile_file.GetFile());
+    std::vector<std::string> argv;
+    std::string error_msg;
+    bool success = StartDex2OatCommandLine(&argv, &error_msg, /*use_runtime_bcp_and_image=*/ false);
+    ASSERT_TRUE(success) << error_msg;
+    argv.insert(argv.end(), {
+        "--profile-file=" + profile_file.GetFilename(),
+        "--runtime-arg",
+        "-Xbootclasspath:" + base_bcp_string,
+        "--runtime-arg",
+        "-Xbootclasspath-locations:" + base_bcp_locations_string,
+        "--boot-image=" + base_image_location,
+        "--dex-file=" + app_jar_name,
+        "--dex-location=" + app_jar_name,
+        "--oat-file=" + app_odex_name,
+        "--app-image-file=" + app_image_name,
+        "--initialize-app-image-classes=true",
+    });
+    success = RunDex2Oat(argv, &error_msg);
+    ASSERT_TRUE(success) << error_msg;
+  }
+
+  std::vector<std::string> full_image_locations;
+  std::vector<std::unique_ptr<gc::space::ImageSpace>> boot_image_spaces;
+  MemMap extra_reservation;
+  auto load_boot_image = [&]() REQUIRES_SHARED(Locks::mutator_lock_) {
+    boot_image_spaces.clear();
+    extra_reservation = MemMap::Invalid();
+    return ImageSpace::LoadBootImage(bcp,
+                                     bcp_locations,
+                                     /*boot_class_path_fds=*/ std::vector<int>(),
+                                     full_image_locations,
+                                     kRuntimeISA,
+                                     /*relocate=*/ false,
+                                     /*executable=*/ true,
+                                     /*extra_reservation_size=*/ 0u,
+                                     &boot_image_spaces,
+                                     &extra_reservation);
+  };
+
+  const char test_string[] = "SharedBootImageExtensionTestString";
+  size_t test_string_length = std::size(test_string) - 1u;  // Equals UTF-16 length.
+  uint32_t hash = ComputeUtf16HashFromModifiedUtf8(test_string, test_string_length);
+  InternTable::Utf8String utf8_test_string(test_string_length, test_string, hash);
+  auto contains_test_string = [utf8_test_string](ImageSpace* space)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const ImageHeader& image_header = space->GetImageHeader();
+    if (image_header.GetInternedStringsSection().Size() != 0u) {
+      const uint8_t* data = space->Begin() + image_header.GetInternedStringsSection().Offset();
+      size_t read_count;
+      InternTable::UnorderedSet temp_set(data, /*make_copy_of_data=*/ false, &read_count);
+      return temp_set.find(utf8_test_string) != temp_set.end();
+    } else {
+      return false;
+    }
+  };
+
+  // Load extensions and test for the presence of the test string.
+  ScopedObjectAccess soa(Thread::Current());
+  ASSERT_EQ(2u, extension_image_locations.size());
+  full_image_locations = {
+    base_image_location, extension_image_locations[0], extension_image_locations[1]
+  };
+  bool success = load_boot_image();
+  ASSERT_TRUE(success);
+  ASSERT_EQ(bcp.size(), boot_image_spaces.size());
+  EXPECT_TRUE(contains_test_string(boot_image_spaces[boot_image_spaces.size() - 2u].get()));
+  // The string in the second extension should be replaced and removed from interned string section.
+  EXPECT_FALSE(contains_test_string(boot_image_spaces[boot_image_spaces.size() - 1u].get()));
+
+  // Reload extensions in reverse order and test for the presence of the test string.
+  std::swap(bcp[bcp.size() - 2u], bcp[bcp.size() - 1u]);
+  std::swap(bcp_locations[bcp_locations.size() - 2u], bcp_locations[bcp_locations.size() - 1u]);
+  full_image_locations = {
+    base_image_location, extension_image_locations[1], extension_image_locations[0]
+  };
+  success = load_boot_image();
+  ASSERT_TRUE(success);
+  ASSERT_EQ(bcp.size(), boot_image_spaces.size());
+  EXPECT_TRUE(contains_test_string(boot_image_spaces[boot_image_spaces.size() - 2u].get()));
+  // The string in the second extension should be replaced and removed from interned string section.
+  EXPECT_FALSE(contains_test_string(boot_image_spaces[boot_image_spaces.size() - 1u].get()));
+
+  // Reload the image without the second extension.
+  bcp.erase(bcp.end() - 2u);
+  bcp_locations.erase(bcp_locations.end() - 2u);
+  full_image_locations = {base_image_location, extension_image_locations[0]};
+  success = load_boot_image();
+  ASSERT_TRUE(success);
+  ASSERT_EQ(bcp.size(), boot_image_spaces.size());
+  ASSERT_TRUE(contains_test_string(boot_image_spaces[boot_image_spaces.size() - 1u].get()));
+
+  // Load the app odex file and app image.
+  std::string error_msg;
+  std::unique_ptr<OatFile> odex_file(OatFile::Open(/*zip_fd=*/ -1,
+                                                   app_odex_name.c_str(),
+                                                   app_odex_name.c_str(),
+                                                   /*executable=*/ false,
+                                                   /*low_4gb=*/ false,
+                                                   app_jar_name,
+                                                   &error_msg));
+  ASSERT_TRUE(odex_file != nullptr) << error_msg;
+  std::vector<ImageSpace*> non_owning_boot_image_spaces =
+      MakeNonOwningPointerVector(boot_image_spaces);
+  std::unique_ptr<ImageSpace> app_image_space = ImageSpace::CreateFromAppImage(
+      app_image_name.c_str(),
+      odex_file.get(),
+      ArrayRef<ImageSpace* const>(non_owning_boot_image_spaces),
+      &error_msg);
+  ASSERT_TRUE(app_image_space != nullptr) << error_msg;
+
+  // The string in the app image should be replaced and removed from interned string section.
+  EXPECT_FALSE(contains_test_string(app_image_space.get()));
+}
 
 TEST_F(DexoptTest, ValidateOatFile) {
   std::string dex1 = GetScratchDir() + "/Dex1.jar";
@@ -63,6 +256,7 @@ TEST_F(DexoptTest, ValidateOatFile) {
                                                 /*executable=*/ false,
                                                 /*low_4gb=*/ false,
                                                 ArrayRef<const std::string>(dex_filenames),
+                                                /*dex_fds=*/ ArrayRef<const int>(),
                                                 /*reservation=*/ nullptr,
                                                 &error_msg));
     ASSERT_TRUE(oat2 != nullptr) << error_msg;
@@ -141,11 +335,11 @@ TEST_F(DexoptTest, Checksums) {
     return gc::space::ImageSpace::VerifyBootClassPathChecksums(
         checksums,
         android::base::Join(bcp_locations, ':'),
-        runtime->GetImageLocation(),
+        ArrayRef<const std::string>(runtime->GetImageLocations()),
         ArrayRef<const std::string>(bcp_locations),
         ArrayRef<const std::string>(bcp),
+        /*boot_class_path_fds=*/ ArrayRef<const int>(),
         kRuntimeISA,
-        gc::space::ImageSpaceLoadingOrder::kSystemFirst,
         &error_msg);
   };
 
@@ -174,7 +368,7 @@ TEST_F(DexoptTest, Checksums) {
   }
 }
 
-template <bool kImage, bool kRelocate, bool kImageDex2oat>
+template <bool kImage, bool kRelocate>
 class ImageSpaceLoadingTest : public CommonRuntimeTest {
  protected:
   void SetUpRuntimeOptions(RuntimeOptions* options) override {
@@ -186,7 +380,6 @@ class ImageSpaceLoadingTest : public CommonRuntimeTest {
     options->emplace_back(android::base::StringPrintf("-Ximage:%s", image_location.c_str()),
                           nullptr);
     options->emplace_back(kRelocate ? "-Xrelocate" : "-Xnorelocate", nullptr);
-    options->emplace_back(kImageDex2oat ? "-Ximage-dex2oat" : "-Xnoimage-dex2oat", nullptr);
 
     // We want to test the relocation behavior of ImageSpace. As such, don't pretend we're a
     // compiler.
@@ -217,23 +410,20 @@ class ImageSpaceLoadingTest : public CommonRuntimeTest {
   UniqueCPtr<const char[]> old_dex2oat_bcp_;
 };
 
-using ImageSpaceDex2oatTest = ImageSpaceLoadingTest<false, true, true>;
-TEST_F(ImageSpaceDex2oatTest, Test) {
-  EXPECT_FALSE(Runtime::Current()->GetHeap()->GetBootImageSpaces().empty());
-}
-
-using ImageSpaceNoDex2oatTest = ImageSpaceLoadingTest<true, true, false>;
+using ImageSpaceNoDex2oatTest = ImageSpaceLoadingTest<true, true>;
 TEST_F(ImageSpaceNoDex2oatTest, Test) {
   EXPECT_FALSE(Runtime::Current()->GetHeap()->GetBootImageSpaces().empty());
 }
 
-using ImageSpaceNoRelocateNoDex2oatTest = ImageSpaceLoadingTest<true, false, false>;
+using ImageSpaceNoRelocateNoDex2oatTest = ImageSpaceLoadingTest<true, false>;
 TEST_F(ImageSpaceNoRelocateNoDex2oatTest, Test) {
   EXPECT_FALSE(Runtime::Current()->GetHeap()->GetBootImageSpaces().empty());
 }
 
-class NoAccessAndroidDataTest : public ImageSpaceLoadingTest<false, true, true> {
+class NoAccessAndroidDataTest : public ImageSpaceLoadingTest<false, true> {
  protected:
+  NoAccessAndroidDataTest() : quiet_(LogSeverity::FATAL) {}
+
   void SetUpRuntimeOptions(RuntimeOptions* options) override {
     const char* android_data = getenv("ANDROID_DATA");
     CHECK(android_data != nullptr);
@@ -251,11 +441,11 @@ class NoAccessAndroidDataTest : public ImageSpaceLoadingTest<false, true, true> 
     CHECK_NE(fd, -1) << strerror(errno);
     result = close(fd);
     CHECK_EQ(result, 0) << strerror(errno);
-    ImageSpaceLoadingTest<false, true, true>::SetUpRuntimeOptions(options);
+    ImageSpaceLoadingTest<false, true>::SetUpRuntimeOptions(options);
   }
 
   void TearDown() override {
-    ImageSpaceLoadingTest<false, true, true>::TearDown();
+    ImageSpaceLoadingTest<false, true>::TearDown();
     int result = unlink(bad_dalvik_cache_.c_str());
     CHECK_EQ(result, 0) << strerror(errno);
     result = rmdir(bad_android_data_.c_str());
@@ -265,6 +455,7 @@ class NoAccessAndroidDataTest : public ImageSpaceLoadingTest<false, true, true> 
   }
 
  private:
+  ScopedLogSeverity quiet_;
   std::string old_android_data_;
   std::string bad_android_data_;
   std::string bad_dalvik_cache_;

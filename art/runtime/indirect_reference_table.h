@@ -85,19 +85,19 @@ class Object;
 // more memory and additional memory accesses on add/get, but is moving-GC safe. It will catch
 // additional problems, e.g.: create iref1 for obj, delete iref1, create iref2 for same obj,
 // lookup iref1. A pattern based on object bits will miss this.
-typedef void* IndirectRef;
+using IndirectRef = void*;
 
 // Indirect reference kind, used as the two low bits of IndirectRef.
 //
 // For convenience these match up with enum jobjectRefType from jni.h.
 enum IndirectRefKind {
-  kHandleScopeOrInvalid = 0,           // <<stack indirect reference table or invalid reference>>
-  kLocal                = 1,           // <<local reference>>
-  kGlobal               = 2,           // <<global reference>>
-  kWeakGlobal           = 3,           // <<weak global reference>>
-  kLastKind             = kWeakGlobal
+  kJniTransitionOrInvalid = 0,  // <<JNI transition frame reference or invalid reference>>
+  kLocal                  = 1,  // <<local reference>>
+  kGlobal                 = 2,  // <<global reference>>
+  kWeakGlobal             = 3,  // <<weak global reference>>
+  kLastKind               = kWeakGlobal
 };
-std::ostream& operator<<(std::ostream& os, const IndirectRefKind& rhs);
+std::ostream& operator<<(std::ostream& os, IndirectRefKind rhs);
 const char* GetIndirectRefKindString(const IndirectRefKind& kind);
 
 // Table definition.
@@ -285,10 +285,20 @@ class IndirectReferenceTable {
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::alloc_tracker_lock_);
 
+  IndirectRefKind GetKind() const {
+    return kind_;
+  }
+
   // Return the #of entries in the entire table.  This includes holes, and
   // so may be larger than the actual number of "live" entries.
   size_t Capacity() const {
     return segment_state_.top_index;
+  }
+
+  // Return the number of non-null entries in the table. Only reliable for a
+  // single segment table.
+  int32_t NEntriesForGlobal() {
+    return segment_state_.top_index - current_num_holes_;
   }
 
   // Ensure that at least free_capacity elements are available, or return false.
@@ -330,6 +340,10 @@ class IndirectReferenceTable {
   ALWAYS_INLINE static inline IndirectRefKind GetIndirectRefKind(IndirectRef iref) {
     return DecodeIndirectRefKind(reinterpret_cast<uintptr_t>(iref));
   }
+
+  /* Reference validation for CheckJNI. */
+  bool IsValidReference(IndirectRef, /*out*/std::string* error_msg) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   static constexpr size_t kSerialBits = MinimumBitsToStore(kIRTPrevCount);
@@ -381,7 +395,8 @@ class IndirectReferenceTable {
     return reinterpret_cast<IndirectRef>(EncodeIndirectRef(table_index, serial));
   }
 
-  // Resize the backing table. Currently must be larger than the current size.
+  // Resize the backing table to be at least new_size elements long. Currently
+  // must be larger than the current size. After return max_entries_ >= new_size.
   bool Resize(size_t new_size, std::string* error_msg);
 
   void RecoverHoles(IRTSegmentState from);
@@ -390,7 +405,6 @@ class IndirectReferenceTable {
   static void AbortIfNoCheckJNI(const std::string& msg);
 
   /* extra debugging checks */
-  bool GetChecked(IndirectRef) const REQUIRES_SHARED(Locks::mutator_lock_);
   bool CheckEntry(const char*, IndirectRef, uint32_t) const;
 
   /// semi-public - read/write by jni down calls.
@@ -410,7 +424,7 @@ class IndirectReferenceTable {
   // Some values to retain old behavior with holes. Description of the algorithm is in the .cc
   // file.
   // TODO: Consider other data structures for compact tables, e.g., free lists.
-  size_t current_num_holes_;
+  size_t current_num_holes_;  // Number of holes in the current / top segment.
   IRTSegmentState last_known_previous_state_;
 
   // Whether the table's capacity may be resized. As there are no locks used, it is the caller's

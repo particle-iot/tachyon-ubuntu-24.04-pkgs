@@ -20,8 +20,7 @@ import dalvik.annotation.optimization.FastNative;
 /*
  * AUTOMATICALLY GENERATED FROM art/tools/mako-source-generator/...../MyClassNatives.java.mako
  *
- * !!! DO NOT EDIT DIRECTLY !!!
- *
+ * The tool is however not available, so the changes now need to be done by hand.
  */
 class MyClassNatives {
 
@@ -122,6 +121,8 @@ class MyClassNatives {
     native void withoutImplementation();
     // Normal native
     native Object withoutImplementationRefReturn();
+    // Normal native
+    native static void staticWithoutImplementation();
 
     // Normal native
     native static void stackArgsIntsFirst(int i1, int i2, int i3, int i4, int i5, int i6, int i7,
@@ -137,10 +138,6 @@ class MyClassNatives {
     native static void stackArgsMixed(int i1, float f1, int i2, float f2, int i3, float f3, int i4,
         float f4, int i5, float f5, int i6, float f6, int i7, float f7, int i8, float f8, int i9,
         float f9, int i10, float f10);
-
-    // Normal native
-    native static long getStackArgSignExtendedMips64(int i1, int i2, int i3, int i4, int i5, int i6,
-        int stack_arg);
 
     // Normal native
     static native double logD(double d);
@@ -178,8 +175,6 @@ class MyClassNatives {
     @FastNative
     native double fooDD_Fast(double x, double y);
     @FastNative
-    synchronized native long fooJJ_synchronized_Fast(long x, long y);
-    @FastNative
     native Object fooIOO_Fast(int x, Object y, Object z);
     @FastNative
     static native Object fooSIOO_Fast(int x, Object y, Object z);
@@ -188,15 +183,13 @@ class MyClassNatives {
     @FastNative
     static native double fooSDD_Fast(double x, double y);
     @FastNative
-    static synchronized native Object fooSSIOO_Fast(int x, Object y, Object z);
-    @FastNative
     static native void arraycopy_Fast(Object src, int src_pos, Object dst, int dst_pos, int length);
     @FastNative
     native boolean compareAndSwapInt_Fast(Object obj, long offset, int expected, int newval);
     @FastNative
     static native int getText_Fast(long val1, Object obj1, long val2, Object obj2);
     @FastNative
-    synchronized native Object[] getSinkPropertiesNative_Fast(String path);
+    native Object[] getSinkPropertiesNative_Fast(String path);
 
     @FastNative
     native Class<?> instanceMethodThatShouldReturnClass_Fast();
@@ -256,6 +249,8 @@ class MyClassNatives {
     native void withoutImplementation_Fast();
     @FastNative
     native Object withoutImplementationRefReturn_Fast();
+    @FastNative
+    native static void staticWithoutImplementation_Fast();
 
     @FastNative
     native static void stackArgsIntsFirst_Fast(int i1, int i2, int i3, int i4, int i5, int i6, int i7,
@@ -271,10 +266,6 @@ class MyClassNatives {
     native static void stackArgsMixed_Fast(int i1, float f1, int i2, float f2, int i3, float f3, int i4,
         float f4, int i5, float f5, int i6, float f6, int i7, float f7, int i8, float f8, int i9,
         float f9, int i10, float f10);
-
-    @FastNative
-    native static long getStackArgSignExtendedMips64_Fast(int i1, int i2, int i3, int i4, int i5, int i6,
-        int stack_arg);
 
     @FastNative
     static native double logD_Fast(double d);
@@ -299,6 +290,9 @@ class MyClassNatives {
     static native int fooSII_Critical(int x, int y);
     @CriticalNative
     static native double fooSDD_Critical(double x, double y);
+
+    @CriticalNative
+    native static void staticWithoutImplementation_Critical();
 
     @CriticalNative
     native static void stackArgsIntsFirst_Critical(int i1, int i2, int i3, int i4, int i5, int i6, int i7,

@@ -710,7 +710,7 @@ class Instrumentation {
 
   // Contains the instrumentation level required by each client of the instrumentation identified
   // by a string key.
-  typedef SafeMap<const char*, InstrumentationLevel> InstrumentationLevelTable;
+  using InstrumentationLevelTable = SafeMap<const char*, InstrumentationLevel>;
   InstrumentationLevelTable requested_instrumentation_levels_ GUARDED_BY(Locks::mutator_lock_);
 
   // The event listeners, written to with the mutator_lock_ exclusively held.
@@ -763,8 +763,8 @@ class Instrumentation {
 
   DISALLOW_COPY_AND_ASSIGN(Instrumentation);
 };
-std::ostream& operator<<(std::ostream& os, const Instrumentation::InstrumentationEvent& rhs);
-std::ostream& operator<<(std::ostream& os, const Instrumentation::InstrumentationLevel& rhs);
+std::ostream& operator<<(std::ostream& os, Instrumentation::InstrumentationEvent rhs);
+std::ostream& operator<<(std::ostream& os, Instrumentation::InstrumentationLevel rhs);
 
 // An element in the instrumentation side stack maintained in art::Thread.
 struct InstrumentationStackFrame {

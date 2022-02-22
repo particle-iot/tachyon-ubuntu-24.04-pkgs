@@ -1,7 +1,7 @@
 Description: Add missing 'std::' scope identifiers.
 Forwarded: not-needed
---- a/system/core/libunwindstack/include/unwindstack/DwarfMemory.h
-+++ b/system/core/libunwindstack/include/unwindstack/DwarfMemory.h
+--- a/system/unwinding/libunwindstack/include/unwindstack/DwarfMemory.h
++++ b/system/unwinding/libunwindstack/include/unwindstack/DwarfMemory.h
 @@ -29,7 +29,7 @@
    DwarfMemory(Memory* memory) : memory_(memory) {}
    virtual ~DwarfMemory() = default;

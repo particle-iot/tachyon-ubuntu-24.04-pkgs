@@ -21,8 +21,6 @@ package android.os;
   *
   * <p>When bugreport creation is complete one of {@code onError} or {@code onFinished} is called.
   *
-  * <p>These methods are synchronous by design in order to make dumpstate's lifecycle simpler
-  * to handle.
   *
   * {@hide}
   */
@@ -32,7 +30,7 @@ interface IDumpstateListener {
      *
      * @param progress the progress in [0, 100]
      */
-    void onProgress(int progress);
+    oneway void onProgress(int progress);
 
     // NOTE: If you add to or change these error codes, please also change the corresponding enums
     // in system server, in BugreportManager.java.
@@ -55,10 +53,20 @@ interface IDumpstateListener {
     /**
      * Called on an error condition with one of the error codes listed above.
      */
-    void onError(int errorCode);
+    oneway void onError(int errorCode);
 
     /**
      * Called when taking bugreport finishes successfully.
      */
-    void onFinished();
+    oneway void onFinished();
+
+    /**
+     * Called when screenshot is taken.
+     */
+    oneway void onScreenshotTaken(boolean success);
+
+    /**
+     * Called when ui intensive bugreport dumps are finished.
+     */
+    oneway void onUiIntensiveBugreportDumpsFinished();
 }

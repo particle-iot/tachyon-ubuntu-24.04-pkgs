@@ -19,20 +19,22 @@
 
 #include "deoptimization_kind.h"
 
+#include "base/macros.h"
 #include "jni.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class ArtMethod;
 class Thread;
 
-#ifndef BUILDING_LIBART
-#error "File and symbols only for use within libart."
-#endif
-
 extern "C" void* art_jni_dlsym_lookup_stub(JNIEnv*, jobject);
 static inline const void* GetJniDlsymLookupStub() {
   return reinterpret_cast<const void*>(art_jni_dlsym_lookup_stub);
+}
+
+extern "C" void* art_jni_dlsym_lookup_critical_stub(JNIEnv*, jobject);
+static inline const void* GetJniDlsymLookupCriticalStub() {
+  return reinterpret_cast<const void*>(art_jni_dlsym_lookup_critical_stub);
 }
 
 // Return the address of quick stub code for handling IMT conflicts.

@@ -1,9 +1,14 @@
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_library_static {
     name: "libmodprobe",
     cflags: [
         "-Werror",
     ],
     vendor_available: true,
+    ramdisk_available: true,
     recovery_available: true,
     srcs: [
         "libmodprobe.cpp",

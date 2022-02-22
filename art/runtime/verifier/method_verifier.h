@@ -39,7 +39,6 @@
 namespace art {
 
 class ClassLinker;
-class CompilerCallbacks;
 class DexFile;
 class Instruction;
 struct ReferenceMap2Visitor;
@@ -62,6 +61,7 @@ class RegisterLine;
 using RegisterLineArenaUniquePtr = std::unique_ptr<RegisterLine, RegisterLineArenaDelete>;
 class RegType;
 struct ScopedNewLine;
+class VerifierDeps;
 
 // We don't need to store the register data for many instructions, because we either only need
 // it at branch points (for verification) or GC points and branches (for verification +
@@ -70,16 +70,6 @@ enum RegisterTrackingMode {
   kTrackRegsBranches,
   kTrackCompilerInterestPoints,
   kTrackRegsAll,
-};
-
-// A class used by the verifier to tell users about what options need to be set for given methods.
-class VerifierCallback {
- public:
-  virtual ~VerifierCallback() {}
-  virtual void SetDontCompile(ArtMethod* method, bool value)
-      REQUIRES_SHARED(Locks::mutator_lock_) = 0;
-  virtual void SetMustCountLocks(ArtMethod* method, bool value)
-      REQUIRES_SHARED(Locks::mutator_lock_) = 0;
 };
 
 // A mapping from a dex pc to the register line statuses as they are immediately prior to the
@@ -123,7 +113,7 @@ class MethodVerifier {
                                              Handle<mirror::DexCache> dex_cache,
                                              Handle<mirror::ClassLoader> class_loader,
                                              const dex::ClassDef& class_def,
-                                             const dex::CodeItem* code_item, ArtMethod* method,
+                                             const dex::CodeItem* code_item,
                                              uint32_t method_access_flags,
                                              uint32_t api_level)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -141,6 +131,10 @@ class MethodVerifier {
   const DexFile& GetDexFile() const {
     DCHECK(dex_file_ != nullptr);
     return *dex_file_;
+  }
+
+  const dex::ClassDef& GetClassDef() const {
+    return class_def_;
   }
 
   RegTypeCache* GetRegTypeCache() {
@@ -183,7 +177,6 @@ class MethodVerifier {
   void VisitRoots(RootVisitor* visitor, const RootInfo& roots)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Accessors used by the compiler via CompilerCallback
   const CodeItemDataAccessor& CodeItem() const {
     return code_item_accessor_;
   }
@@ -191,20 +184,19 @@ class MethodVerifier {
   ALWAYS_INLINE const InstructionFlags& GetInstructionFlags(size_t index) const;
 
   MethodReference GetMethodReference() const;
-  bool HasCheckCasts() const;
   bool HasFailures() const;
   bool HasInstructionThatWillThrow() const {
-    return flags_.have_any_pending_runtime_throw_failure_;
+    return (encountered_failure_types_ & VERIFY_ERROR_RUNTIME_THROW) != 0;
   }
 
   virtual const RegType& ResolveCheckedClass(dex::TypeIndex class_idx)
       REQUIRES_SHARED(Locks::mutator_lock_) = 0;
 
-  uint32_t GetEncounteredFailureTypes() {
+  uint32_t GetEncounteredFailureTypes() const {
     return encountered_failure_types_;
   }
 
-  ClassLinker* GetClassLinker() {
+  ClassLinker* GetClassLinker() const {
     return class_linker_;
   }
 
@@ -212,11 +204,17 @@ class MethodVerifier {
     return flags_.aot_mode_;
   }
 
+  VerifierDeps* GetVerifierDeps() const {
+    return verifier_deps_;
+  }
+
  protected:
   MethodVerifier(Thread* self,
                  ClassLinker* class_linker,
                  ArenaPool* arena_pool,
+                 VerifierDeps* verifier_deps,
                  const DexFile* dex_file,
+                 const dex::ClassDef& class_def,
                  const dex::CodeItem* code_item,
                  uint32_t dex_method_idx,
                  bool can_load_classes,
@@ -249,16 +247,14 @@ class MethodVerifier {
   static FailureData VerifyMethod(Thread* self,
                                   ClassLinker* class_linker,
                                   ArenaPool* arena_pool,
+                                  VerifierDeps* verifier_deps,
                                   uint32_t method_idx,
                                   const DexFile* dex_file,
                                   Handle<mirror::DexCache> dex_cache,
                                   Handle<mirror::ClassLoader> class_loader,
                                   const dex::ClassDef& class_def_idx,
                                   const dex::CodeItem* code_item,
-                                  ArtMethod* method,
                                   uint32_t method_access_flags,
-                                  CompilerCallbacks* callbacks,
-                                  VerifierCallback* verifier_callback,
                                   bool allow_soft_failures,
                                   HardFailLogMode log_level,
                                   bool need_precise_constants,
@@ -271,16 +267,14 @@ class MethodVerifier {
   static FailureData VerifyMethod(Thread* self,
                                   ClassLinker* class_linker,
                                   ArenaPool* arena_pool,
+                                  VerifierDeps* verifier_deps,
                                   uint32_t method_idx,
                                   const DexFile* dex_file,
                                   Handle<mirror::DexCache> dex_cache,
                                   Handle<mirror::ClassLoader> class_loader,
                                   const dex::ClassDef& class_def_idx,
                                   const dex::CodeItem* code_item,
-                                  ArtMethod* method,
                                   uint32_t method_access_flags,
-                                  CompilerCallbacks* callbacks,
-                                  VerifierCallback* verifier_callback,
                                   bool allow_soft_failures,
                                   HardFailLogMode log_level,
                                   bool need_precise_constants,
@@ -295,13 +289,13 @@ class MethodVerifier {
   // has an irrecoverable corruption.
   virtual bool Verify() REQUIRES_SHARED(Locks::mutator_lock_) = 0;
   static MethodVerifier* CreateVerifier(Thread* self,
+                                        VerifierDeps* verifier_deps,
                                         const DexFile* dex_file,
                                         Handle<mirror::DexCache> dex_cache,
                                         Handle<mirror::ClassLoader> class_loader,
                                         const dex::ClassDef& class_def,
                                         const dex::CodeItem* code_item,
                                         uint32_t method_idx,
-                                        ArtMethod* method,
                                         uint32_t access_flags,
                                         bool can_load_classes,
                                         bool allow_soft_failures,
@@ -310,6 +304,8 @@ class MethodVerifier {
                                         bool allow_thread_suspension,
                                         uint32_t api_level)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  virtual bool PotentiallyMarkRuntimeThrow() = 0;
 
   // The thread we're verifying on.
   Thread* const self_;
@@ -332,8 +328,9 @@ class MethodVerifier {
   // Storage for the register status we're saving for later.
   RegisterLineArenaUniquePtr saved_line_;
 
-  const uint32_t dex_method_idx_;  // The method we're working on.
-  const DexFile* const dex_file_;  // The dex file containing the method.
+  const uint32_t dex_method_idx_;   // The method we're working on.
+  const DexFile* const dex_file_;   // The dex file containing the method.
+  const dex::ClassDef& class_def_;  // The class being verified.
   const CodeItemDataAccessor code_item_accessor_;
 
   // Instruction widths and flags, one entry per code unit.
@@ -355,13 +352,6 @@ class MethodVerifier {
     // Note: this flag is reset after processing each instruction.
     bool have_pending_runtime_throw_failure_ : 1;
 
-    // Is there a pending experimental failure?
-    bool have_pending_experimental_failure_ : 1;
-
-    // A version of the above that is not reset and thus captures if there were *any* throw
-    // failures.
-    bool have_any_pending_runtime_throw_failure_ : 1;
-
     // Verify in AoT mode?
     bool aot_mode_ : 1;
   } flags_;
@@ -378,13 +368,12 @@ class MethodVerifier {
   // running and the verifier is called from the class linker.
   const bool allow_soft_failures_;
 
-  // Indicates the method being verified contains at least one check-cast or aput-object
-  // instruction. Aput-object operations implicitly check for array-store exceptions, similar to
-  // check-cast.
-  bool has_check_casts_;
-
   // Classlinker to use when resolving.
   ClassLinker* class_linker_;
+
+  // The verifier deps object we are going to report type assigability
+  // constraints to. Can be null for runtime verification.
+  VerifierDeps* verifier_deps_;
 
   // Link, for the method verifier root linked list.
   MethodVerifier* link_;

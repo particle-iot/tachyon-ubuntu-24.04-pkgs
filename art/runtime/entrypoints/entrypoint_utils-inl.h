@@ -607,8 +607,7 @@ EXPLICIT_FIND_METHOD_FROM_CODE_TYPED_TEMPLATE_DECL(kInterface);
 inline ArtField* FindFieldFast(uint32_t field_idx, ArtMethod* referrer, FindFieldType type,
                                size_t expected_size) {
   ScopedAssertNoThreadSuspension ants(__FUNCTION__);
-  ArtField* resolved_field =
-      referrer->GetDexCache()->GetResolvedField(field_idx, kRuntimePointerSize);
+  ArtField* resolved_field = referrer->GetDexCache()->GetResolvedField(field_idx);
   if (UNLIKELY(resolved_field == nullptr)) {
     return nullptr;
   }
@@ -757,6 +756,26 @@ inline bool NeedsClinitCheckBeforeCall(ArtMethod* method) {
   // compiled code for static methods. See b/18161648 . The class initializer is
   // special as it is invoked during initialization and does not need the check.
   return method->IsStatic() && !method->IsConstructor();
+}
+
+inline jobject GetGenericJniSynchronizationObject(Thread* self, ArtMethod* called)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  DCHECK(!called->IsCriticalNative());
+  DCHECK(!called->IsFastNative());
+  DCHECK(self->GetManagedStack()->GetTopQuickFrame() != nullptr);
+  DCHECK_EQ(*self->GetManagedStack()->GetTopQuickFrame(), called);
+  if (called->IsStatic()) {
+    // Static methods synchronize on the declaring class object.
+    // The `jclass` is a pointer to the method's declaring class.
+    return reinterpret_cast<jobject>(called->GetDeclaringClassAddressWithoutBarrier());
+  } else {
+    // Instance methods synchronize on the `this` object.
+    // The `this` reference is stored in the first out vreg in the caller's frame.
+    // The `jobject` is a pointer to the spill slot.
+    uint8_t* sp = reinterpret_cast<uint8_t*>(self->GetManagedStack()->GetTopQuickFrame());
+    size_t frame_size = RuntimeCalleeSaveFrame::GetFrameSize(CalleeSaveType::kSaveRefsAndArgs);
+    return reinterpret_cast<jobject>(sp + frame_size + static_cast<size_t>(kRuntimePointerSize));
+  }
 }
 
 }  // namespace art

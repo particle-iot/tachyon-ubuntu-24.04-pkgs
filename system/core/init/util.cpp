@@ -41,7 +41,7 @@
 #include <cutils/sockets.h>
 #include <selinux/android.h>
 
-#if defined(__ANDROID__)
+#ifdef INIT_FULL_SOURCES
 #include <android/api-level.h>
 #include <sys/system_properties.h>
 
@@ -246,6 +246,21 @@ void ImportKernelCmdline(const std::function<void(const std::string&, const std:
     }
 }
 
+void ImportBootconfig(const std::function<void(const std::string&, const std::string&)>& fn) {
+    std::string bootconfig;
+    android::base::ReadFileToString("/proc/bootconfig", &bootconfig);
+
+    for (const auto& entry : android::base::Split(bootconfig, "\n")) {
+        std::vector<std::string> pieces = android::base::Split(entry, "=");
+        if (pieces.size() == 2) {
+            // get rid of the extra space between a list of values and remove the quotes.
+            std::string value = android::base::StringReplace(pieces[1], "\", \"", ",", true);
+            value.erase(std::remove(value.begin(), value.end(), '"'), value.end());
+            fn(android::base::Trim(pieces[0]), android::base::Trim(value));
+        }
+    }
+}
+
 bool make_dir(const std::string& path, mode_t mode) {
     std::string secontext;
     if (SelabelLookupFileContext(path, mode, &secontext) && !secontext.empty()) {
@@ -363,6 +378,15 @@ static std::string init_android_dt_dir() {
             android_dt_dir = value;
         }
     });
+    // ..Or bootconfig
+    if (android_dt_dir == kDefaultAndroidDtDir) {
+        ImportBootconfig([&](const std::string& key, const std::string& value) {
+            if (key == "androidboot.android_dt_dir") {
+                android_dt_dir = value;
+            }
+        });
+    }
+
     LOG(INFO) << "Using Android DT directory " << android_dt_dir;
     return android_dt_dir;
 }
@@ -570,6 +594,48 @@ Result<MkdirOptions> ParseMkdir(const std::vector<std::string>& args) {
     return MkdirOptions{args[1], mode, *uid, *gid, fscrypt_action, ref_option};
 }
 
+Result<MountAllOptions> ParseMountAll(const std::vector<std::string>& args) {
+    bool compat_mode = false;
+    bool import_rc = false;
+    if (SelinuxGetVendorAndroidVersion() <= __ANDROID_API_Q__) {
+        if (args.size() <= 1) {
+            return Error() << "mount_all requires at least 1 argument";
+        }
+        compat_mode = true;
+        import_rc = true;
+    }
+
+    std::size_t first_option_arg = args.size();
+    enum mount_mode mode = MOUNT_MODE_DEFAULT;
+
+    // If we are <= Q, then stop looking for non-fstab arguments at slot 2.
+    // Otherwise, stop looking at slot 1 (as the fstab path argument is optional >= R).
+    for (std::size_t na = args.size() - 1; na > (compat_mode ? 1 : 0); --na) {
+        if (args[na] == "--early") {
+            first_option_arg = na;
+            mode = MOUNT_MODE_EARLY;
+        } else if (args[na] == "--late") {
+            first_option_arg = na;
+            mode = MOUNT_MODE_LATE;
+            import_rc = false;
+        }
+    }
+
+    std::string fstab_path;
+    if (first_option_arg > 1) {
+        fstab_path = args[1];
+    } else if (compat_mode) {
+        return Error() << "mount_all argument 1 must be the fstab path";
+    }
+
+    std::vector<std::string> rc_paths;
+    for (std::size_t na = 2; na < first_option_arg; ++na) {
+        rc_paths.push_back(args[na]);
+    }
+
+    return MountAllOptions{rc_paths, fstab_path, mode, import_rc};
+}
+
 Result<std::pair<int, std::vector<std::string>>> ParseRestorecon(
         const std::vector<std::string>& args) {
     struct flag_type {
@@ -608,6 +674,26 @@ Result<std::pair<int, std::vector<std::string>>> ParseRestorecon(
         }
     }
     return std::pair(flag, paths);
+}
+
+Result<std::string> ParseSwaponAll(const std::vector<std::string>& args) {
+    if (args.size() <= 1) {
+        if (SelinuxGetVendorAndroidVersion() <= __ANDROID_API_Q__) {
+            return Error() << "swapon_all requires at least 1 argument";
+        }
+        return {};
+    }
+    return args[1];
+}
+
+Result<std::string> ParseUmountAll(const std::vector<std::string>& args) {
+    if (args.size() <= 1) {
+        if (SelinuxGetVendorAndroidVersion() <= __ANDROID_API_Q__) {
+            return Error() << "umount_all requires at least 1 argument";
+        }
+        return {};
+    }
+    return args[1];
 }
 
 static void InitAborter(const char* abort_message) {
@@ -658,6 +744,17 @@ void InitKernelLogging(char** argv) {
 
 bool IsRecoveryMode() {
     return access("/system/bin/recovery", F_OK) == 0;
+}
+
+// Check if default mount namespace is ready to be used with APEX modules
+static bool is_default_mount_namespace_ready = false;
+
+bool IsDefaultMountNamespaceReady() {
+    return is_default_mount_namespace_ready;
+}
+
+void SetDefaultMountNamespaceReady() {
+    is_default_mount_namespace_ready = true;
 }
 
 }  // namespace init

@@ -2,21 +2,21 @@ Description: get libcutils building
 Forwarded: not-needed
 --- a/system/core/libcutils/include/cutils/threads.h
 +++ b/system/core/libcutils/include/cutils/threads.h
-@@ -33,7 +33,7 @@
+@@ -32,7 +32,7 @@ extern "C" {
  // Deprecated: use android::base::GetThreadId instead, which doesn't truncate on Mac/Windows.
  //
- 
+ #if !defined(__GLIBC__) || __GLIBC__ >= 2 && __GLIBC_MINOR__ < 32
 -extern pid_t gettid();
 +extern pid_t gettid(void) __THROW;
+ #endif
  
- //
- // Deprecated: use `_Thread_local` in C or `thread_local` in C++.
+ #ifdef __cplusplus
 --- a/system/core/libcutils/threads.cpp
 +++ b/system/core/libcutils/threads.cpp
-@@ -33,7 +33,7 @@
- 
+@@ -29,7 +29,7 @@
  // No definition needed for Android because we'll just pick up bionic's copy.
- #ifndef __ANDROID__
+ // No definition needed for Glibc >= 2.32 because it exposes its own copy.
+ #else
 -pid_t gettid() {
 +pid_t gettid(void) __THROW {
  #if defined(__APPLE__)

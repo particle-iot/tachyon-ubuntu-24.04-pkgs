@@ -621,7 +621,7 @@ class RosAlloc {
 
   // A memory allocation request larger than this size is treated as a large object and allocated
   // at a page-granularity.
-  static const size_t kLargeSizeThreshold = 2048;
+  static constexpr size_t kLargeSizeThreshold = 2048;
 
   // If true, check that the returned memory is actually zero.
   static constexpr bool kCheckZeroMemory = kIsDebugBuild;
@@ -662,14 +662,14 @@ class RosAlloc {
   // We use thread-local runs for the size brackets whose indexes
   // are less than this index. We use shared (current) runs for the rest.
   // Sync this with the length of Thread::rosalloc_runs_.
-  static const size_t kNumThreadLocalSizeBrackets = 16;
+  static constexpr size_t kNumThreadLocalSizeBrackets = 16;
   static_assert(kNumThreadLocalSizeBrackets == kNumRosAllocThreadLocalSizeBracketsInThread,
                 "Mismatch between kNumThreadLocalSizeBrackets and "
                 "kNumRosAllocThreadLocalSizeBracketsInThread");
 
   // The size of the largest bracket we use thread-local runs for.
   // This should be equal to bracketSizes[kNumThreadLocalSizeBrackets - 1].
-  static const size_t kMaxThreadLocalBracketSize = 128;
+  static constexpr size_t kMaxThreadLocalBracketSize = 128;
 
   // We use regular (8 or 16-bytes increment) runs for the size brackets whose indexes are less than
   // this index.
@@ -677,7 +677,7 @@ class RosAlloc {
 
   // The size of the largest regular (8 or 16-byte increment) bracket. Non-regular brackets are the
   // 1 KB and the 2 KB brackets. This should be equal to bracketSizes[kNumRegularSizeBrackets - 1].
-  static const size_t kMaxRegularBracketSize = 512;
+  static constexpr size_t kMaxRegularBracketSize = 512;
 
   // The bracket size increment for the thread-local brackets (<= kMaxThreadLocalBracketSize bytes).
   static constexpr size_t kThreadLocalBracketQuantumSize = 8;
@@ -929,18 +929,18 @@ class RosAlloc {
   void Verify() REQUIRES(Locks::mutator_lock_, !Locks::thread_list_lock_, !bulk_free_lock_,
                          !lock_);
 
-  void LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes)
+  bool LogFragmentationAllocFailure(std::ostream& os, size_t failed_alloc_bytes)
       REQUIRES(!bulk_free_lock_, !lock_);
 
   void DumpStats(std::ostream& os)
       REQUIRES(Locks::mutator_lock_) REQUIRES(!lock_) REQUIRES(!bulk_free_lock_);
 
  private:
-  friend std::ostream& operator<<(std::ostream& os, const RosAlloc::PageMapKind& rhs);
+  friend std::ostream& operator<<(std::ostream& os, RosAlloc::PageMapKind rhs);
 
   DISALLOW_COPY_AND_ASSIGN(RosAlloc);
 };
-std::ostream& operator<<(std::ostream& os, const RosAlloc::PageMapKind& rhs);
+std::ostream& operator<<(std::ostream& os, RosAlloc::PageMapKind rhs);
 
 // Callback from rosalloc when it needs to increase the footprint. Must be implemented somewhere
 // else (currently rosalloc_space.cc).

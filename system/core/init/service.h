@@ -54,6 +54,7 @@
                                      // should not be killed during shutdown
 #define SVC_TEMPORARY 0x1000  // This service was started by 'exec' and should be removed from the
                               // service list once it is reaped.
+#define SVC_STOPPING 0x2000  // service is being stopped by init
 
 #define NR_SVC_SUPP_GIDS 12    // twelve supplementary groups
 
@@ -130,6 +131,14 @@ class Service {
     bool is_updatable() const { return updatable_; }
     bool is_post_data() const { return post_data_; }
     bool is_from_apex() const { return from_apex_; }
+    void set_oneshot(bool value) {
+        if (value) {
+            flags_ |= SVC_ONESHOT;
+        } else {
+            flags_ &= ~SVC_ONESHOT;
+        }
+    }
+    Subcontext* subcontext() const { return subcontext_; }
 
   private:
     void NotifyStateChange(const std::string& new_state) const;
@@ -148,6 +157,8 @@ class Service {
     android::base::boot_clock::time_point time_started_;  // time of last start
     android::base::boot_clock::time_point time_crashed_;  // first crash within inspection window
     int crash_count_;                     // number of times crashed within window
+    std::chrono::minutes fatal_crash_window_ = 4min;  // fatal() when more than 4 crashes in it
+    std::optional<std::string> fatal_reboot_target_;  // reboot target of fatal handler
 
     std::optional<CapSet> capabilities_;
     ProcessAttributes proc_attr_;
@@ -159,9 +170,12 @@ class Service {
     std::vector<FileDescriptor> files_;
     std::vector<std::pair<std::string, std::string>> environment_vars_;
 
+    Subcontext* subcontext_;
     Action onrestart_;  // Commands to execute on restart.
 
     std::vector<std::string> writepid_files_;
+
+    std::vector<std::string> task_profiles_;
 
     std::set<std::string> interfaces_;  // e.g. some.package.foo@1.0::IBaz/instance-name
 
@@ -194,7 +208,7 @@ class Service {
 
     std::vector<std::function<void(const siginfo_t& siginfo)>> reap_callbacks_;
 
-    bool pre_apexd_ = false;
+    bool use_bootstrap_ns_ = false;
 
     bool post_data_ = false;
 

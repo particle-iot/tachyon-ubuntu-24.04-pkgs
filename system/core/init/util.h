@@ -22,6 +22,7 @@
 #include <chrono>
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <android-base/chrono_utils.h>
 
@@ -32,6 +33,12 @@ using android::base::boot_clock;
 
 namespace android {
 namespace init {
+
+enum mount_mode {
+    MOUNT_MODE_DEFAULT = 0,
+    MOUNT_MODE_EARLY = 1,
+    MOUNT_MODE_LATE = 2,
+};
 
 static const char kColdBootDoneProp[] = "ro.cold_boot_done";
 
@@ -48,6 +55,7 @@ Result<uid_t> DecodeUid(const std::string& name);
 bool mkdir_recursive(const std::string& pathname, mode_t mode);
 int wait_for_file(const char *filename, std::chrono::nanoseconds timeout);
 void ImportKernelCmdline(const std::function<void(const std::string&, const std::string&)>&);
+void ImportBootconfig(const std::function<void(const std::string&, const std::string&)>&);
 bool make_dir(const std::string& path, mode_t mode);
 bool is_dir(const char* pathname);
 Result<std::string> ExpandProps(const std::string& src);
@@ -73,11 +81,27 @@ struct MkdirOptions {
 
 Result<MkdirOptions> ParseMkdir(const std::vector<std::string>& args);
 
+struct MountAllOptions {
+    std::vector<std::string> rc_paths;
+    std::string fstab_path;
+    mount_mode mode;
+    bool import_rc;
+};
+
+Result<MountAllOptions> ParseMountAll(const std::vector<std::string>& args);
+
 Result<std::pair<int, std::vector<std::string>>> ParseRestorecon(
         const std::vector<std::string>& args);
+
+Result<std::string> ParseSwaponAll(const std::vector<std::string>& args);
+
+Result<std::string> ParseUmountAll(const std::vector<std::string>& args);
 
 void SetStdioToDevNull(char** argv);
 void InitKernelLogging(char** argv);
 bool IsRecoveryMode();
+
+bool IsDefaultMountNamespaceReady();
+void SetDefaultMountNamespaceReady();
 }  // namespace init
 }  // namespace android

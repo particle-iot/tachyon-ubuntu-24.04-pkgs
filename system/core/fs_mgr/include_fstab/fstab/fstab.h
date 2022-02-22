@@ -36,9 +36,10 @@ struct FstabEntry {
     std::string fs_type;
     unsigned long flags = 0;
     std::string fs_options;
+    std::string fs_checkpoint_opts;
     std::string key_loc;
     std::string metadata_key_dir;
-    std::string metadata_cipher;
+    std::string metadata_encryption;
     off64_t length = 0;
     std::string label;
     int partnum = -1;
@@ -46,15 +47,15 @@ struct FstabEntry {
     int max_comp_streams = 0;
     off64_t zram_size = 0;
     off64_t reserved_size = 0;
+    off64_t readahead_size_kb = -1;
     std::string encryption_options;
     off64_t erase_blk_size = 0;
     off64_t logical_blk_size = 0;
     std::string sysfs_path;
     std::string vbmeta_partition;
-    std::string zram_loopback_path;
-    uint64_t zram_loopback_size = 512 * 1024 * 1024;  // 512MB by default;
-    std::string zram_backing_dev_path;
+    uint64_t zram_backingdev_size = 0;
     std::string avb_keys;
+    std::string lowerdir;
 
     struct FsMgrFlags {
         bool wait : 1;
@@ -83,6 +84,8 @@ struct FstabEntry {
         bool first_stage_mount : 1;
         bool slot_select_other : 1;
         bool fs_verity : 1;
+        bool ext_meta_csum : 1;
+        bool fs_compress : 1;
     } fs_mgr_flags = {};
 
     bool is_encryptable() const {
@@ -96,14 +99,13 @@ struct FstabEntry {
 using Fstab = std::vector<FstabEntry>;
 
 bool ReadFstabFromFile(const std::string& path, Fstab* fstab);
-bool ReadFstabFromDt(Fstab* fstab, bool log = true);
+bool ReadFstabFromDt(Fstab* fstab, bool verbose = true);
 bool ReadDefaultFstab(Fstab* fstab);
-bool SkipMountingPartitions(Fstab* fstab);
+bool SkipMountingPartitions(Fstab* fstab, bool verbose = false);
 
 FstabEntry* GetEntryForMountPoint(Fstab* fstab, const std::string& path);
 // The Fstab can contain multiple entries for the same mount point with different configurations.
 std::vector<FstabEntry*> GetEntriesForMountPoint(Fstab* fstab, const std::string& path);
-FstabEntry* GetMountedEntryForUserdata(Fstab* fstab);
 
 // This method builds DSU fstab entries and transfer the fstab.
 //
@@ -113,7 +115,8 @@ FstabEntry* GetMountedEntryForUserdata(Fstab* fstab);
 //     dsu_partitions[0] = "system_gsi"
 //     dsu_partitions[1] = "userdata_gsi"
 //     dsu_partitions[2] = ...
-void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_partitions);
+void TransformFstabForDsu(Fstab* fstab, const std::string& dsu_slot,
+                          const std::vector<std::string>& dsu_partitions);
 
 std::set<std::string> GetBootDevices();
 

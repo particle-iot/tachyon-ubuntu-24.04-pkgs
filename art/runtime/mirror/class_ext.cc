@@ -22,7 +22,7 @@
 #include "base/utils.h"
 #include "class-alloc-inl.h"
 #include "class-inl.h"
-#include "class_root.h"
+#include "class_root-inl.h"
 #include "dex/dex_file-inl.h"
 #include "gc/accounting/card_table-inl.h"
 #include "mirror/object.h"
@@ -118,11 +118,11 @@ ObjPtr<ClassExt> ClassExt::Alloc(Thread* self) {
   return ObjPtr<ClassExt>::DownCast(GetClassRoot<ClassExt>()->AllocObject(self));
 }
 
-void ClassExt::SetVerifyError(ObjPtr<Object> err) {
+void ClassExt::SetErroneousStateError(ObjPtr<Throwable> err) {
   if (Runtime::Current()->IsActiveTransaction()) {
-    SetFieldObject<true>(OFFSET_OF_OBJECT_MEMBER(ClassExt, verify_error_), err);
+    SetFieldObject<true>(OFFSET_OF_OBJECT_MEMBER(ClassExt, erroneous_state_error_), err);
   } else {
-    SetFieldObject<false>(OFFSET_OF_OBJECT_MEMBER(ClassExt, verify_error_), err);
+    SetFieldObject<false>(OFFSET_OF_OBJECT_MEMBER(ClassExt, erroneous_state_error_), err);
   }
 }
 

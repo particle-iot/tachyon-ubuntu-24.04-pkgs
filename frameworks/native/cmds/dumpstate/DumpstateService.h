@@ -24,7 +24,6 @@
 #include <binder/BinderService.h>
 
 #include "android/os/BnDumpstate.h"
-#include "android/os/BnDumpstateToken.h"
 #include "dumpstate.h"
 
 namespace android {
@@ -38,17 +37,14 @@ class DumpstateService : public BinderService<DumpstateService>, public BnDumpst
     static char const* getServiceName();
 
     status_t dump(int fd, const Vector<String16>& args) override;
-    binder::Status setListener(const std::string& name, const sp<IDumpstateListener>& listener,
-                               bool getSectionDetails,
-                               sp<IDumpstateToken>* returned_token) override;
 
     binder::Status startBugreport(int32_t calling_uid, const std::string& calling_package,
                                   android::base::unique_fd bugreport_fd,
                                   android::base::unique_fd screenshot_fd, int bugreport_mode,
-                                  const sp<IDumpstateListener>& listener) override;
+                                  const sp<IDumpstateListener>& listener,
+                                  bool is_screenshot_requested) override;
 
-    // No-op
-    binder::Status cancelBugreport();
+    binder::Status cancelBugreport(int32_t calling_uid, const std::string& calling_package);
 
   private:
     // Dumpstate object which contains all the bugreporting logic.
@@ -56,6 +52,8 @@ class DumpstateService : public BinderService<DumpstateService>, public BnDumpst
     // one bugreport.
     // This service does not own this object.
     Dumpstate* ds_;
+    int32_t calling_uid_;
+    std::string calling_package_;
     std::mutex lock_;
 };
 

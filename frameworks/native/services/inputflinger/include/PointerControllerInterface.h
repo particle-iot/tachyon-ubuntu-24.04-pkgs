@@ -17,6 +17,7 @@
 #ifndef _INPUTFLINGER_POINTER_CONTROLLER_INTERFACE_H
 #define _INPUTFLINGER_POINTER_CONTROLLER_INTERFACE_H
 
+#include <input/DisplayViewport.h>
 #include <input/Input.h>
 #include <utils/BitSet.h>
 #include <utils/RefBase.h>
@@ -32,7 +33,7 @@ namespace android {
  * The pointer controller is responsible for providing synchronization and for tracking
  * display orientation changes if needed.
  */
-class PointerControllerInterface : public virtual RefBase {
+class PointerControllerInterface {
 protected:
     PointerControllerInterface() { }
     virtual ~PointerControllerInterface() { }
@@ -58,11 +59,11 @@ public:
     /* Gets the absolute location of the pointer. */
     virtual void getPosition(float* outX, float* outY) const = 0;
 
-    enum Transition {
+    enum class Transition {
         // Fade/unfade immediately.
-        TRANSITION_IMMEDIATE,
+        IMMEDIATE,
         // Fade/unfade gradually.
-        TRANSITION_GRADUAL,
+        GRADUAL,
     };
 
     /* Fades the pointer out now. */
@@ -74,11 +75,11 @@ public:
      * wants to ensure that the pointer becomes visible again. */
     virtual void unfade(Transition transition) = 0;
 
-    enum Presentation {
+    enum class Presentation {
         // Show the mouse pointer.
-        PRESENTATION_POINTER,
+        POINTER,
         // Show spots and a spot anchor in place of the mouse pointer.
-        PRESENTATION_SPOT,
+        SPOT,
     };
 
     /* Sets the mode of the pointer controller. */
@@ -101,6 +102,9 @@ public:
 
     /* Gets the id of the display where the pointer should be shown. */
     virtual int32_t getDisplayId() const = 0;
+
+    /* Sets the associated display of this pointer. Pointer should show on that display. */
+    virtual void setDisplayViewport(const DisplayViewport& displayViewport) = 0;
 };
 
 } // namespace android

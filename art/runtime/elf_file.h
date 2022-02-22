@@ -32,8 +32,8 @@ template <typename ElfTypes>
 class ElfFileImpl;
 
 // Explicitly instantiated in elf_file.cc
-typedef ElfFileImpl<ElfTypes32> ElfFileImpl32;
-typedef ElfFileImpl<ElfTypes64> ElfFileImpl64;
+using ElfFileImpl32 = ElfFileImpl<ElfTypes32>;
+using ElfFileImpl64 = ElfFileImpl<ElfTypes64>;
 
 // Used for compile time and runtime for ElfFile access. Because of
 // the need for use at runtime, cannot directly use LLVM classes such as
@@ -85,12 +85,6 @@ class ElfFile {
   // Strip an ELF file of unneeded debugging information.
   // Returns true on success, false on failure.
   static bool Strip(File* file, std::string* error_msg);
-
-  // Fixup an ELF file so that that oat header will be loaded at oat_begin.
-  // Returns true on success, false on failure.
-  static bool Fixup(File* file, uint64_t oat_data_begin);
-
-  bool Fixup(uint64_t base_address);
 
   bool Is64Bit() const {
     return elf64_.get() != nullptr;

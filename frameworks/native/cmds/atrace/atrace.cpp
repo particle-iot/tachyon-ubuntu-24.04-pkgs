@@ -62,7 +62,7 @@ using hardware::atrace::V1_0::toString;
 
 using std::string;
 
-#define MAX_SYS_FILES 11
+#define MAX_SYS_FILES 12
 
 const char* k_traceTagsProperty = "debug.atrace.tags.enableflags";
 const char* k_userInitiatedTraceProperty = "debug.atrace.user_initiated";
@@ -124,6 +124,7 @@ static const TracingCategory k_categories[] = {
     { "aidl",       "AIDL calls",               ATRACE_TAG_AIDL, { } },
     { "nnapi",      "NNAPI",                    ATRACE_TAG_NNAPI, { } },
     { "rro",        "Runtime Resource Overlay", ATRACE_TAG_RRO, { } },
+    { "sysprop",    "System Property",          ATRACE_TAG_SYSPROP, { } },
     { k_coreServiceCategory, "Core services", 0, { } },
     { k_pdxServiceCategory, "PDX services", 0, { } },
     { "sched",      "CPU Scheduling",   0, {
@@ -172,6 +173,9 @@ static const TracingCategory k_categories[] = {
         { OPT,      "events/clk/clk_enable/enable" },
         { OPT,      "events/power/cpu_frequency_limits/enable" },
         { OPT,      "events/power/suspend_resume/enable" },
+        { OPT,      "events/cpuhp/cpuhp_enter/enable" },
+        { OPT,      "events/cpuhp/cpuhp_exit/enable" },
+        { OPT,      "events/cpuhp/cpuhp_pause/enable" },
     } },
     { "membus",     "Memory Bus Utilization", 0, {
         { REQ,      "events/memory_bus/enable" },
@@ -233,9 +237,15 @@ static const TracingCategory k_categories[] = {
         { REQ,      "events/filemap/enable" },
     } },
     { "memory",  "Memory", 0, {
+        { OPT,      "events/mm_event/mm_event_record/enable" },
         { OPT,      "events/kmem/rss_stat/enable" },
         { OPT,      "events/kmem/ion_heap_grow/enable" },
         { OPT,      "events/kmem/ion_heap_shrink/enable" },
+        { OPT,      "events/ion/ion_stat/enable" },
+    } },
+    { "thermal",  "Thermal event", 0, {
+        { REQ,      "events/thermal/thermal_temperature/enable" },
+        { OPT,      "events/thermal/cdev_update/enable" },
     } },
 };
 
@@ -309,9 +319,6 @@ static const char* k_funcgraphCpuPath =
 
 static const char* k_funcgraphProcPath =
     "options/funcgraph-proc";
-
-static const char* k_funcgraphFlatPath =
-    "options/funcgraph-flat";
 
 static const char* k_ftraceFilterPath =
     "set_ftrace_filter";
@@ -571,81 +578,6 @@ static bool setPrintTgidEnableIfPresent(bool enable)
     return true;
 }
 
-// Poke all the binder-enabled processes in the system to get them to re-read
-// their system properties.
-static bool pokeBinderServices()
-{
-    sp<IServiceManager> sm = defaultServiceManager();
-    Vector<String16> services = sm->listServices();
-    for (size_t i = 0; i < services.size(); i++) {
-        sp<IBinder> obj = sm->checkService(services[i]);
-        if (obj != nullptr) {
-            Parcel data;
-            if (obj->transact(IBinder::SYSPROPS_TRANSACTION, data,
-                    nullptr, 0) != OK) {
-                if (false) {
-                    // XXX: For some reason this fails on tablets trying to
-                    // poke the "phone" service.  It's not clear whether some
-                    // are expected to fail.
-                    String8 svc(services[i]);
-                    fprintf(stderr, "error poking binder service %s\n",
-                        svc.string());
-                    return false;
-                }
-            }
-        }
-    }
-    return true;
-}
-
-// Poke all the HAL processes in the system to get them to re-read
-// their system properties.
-static void pokeHalServices()
-{
-    using ::android::hidl::base::V1_0::IBase;
-    using ::android::hidl::manager::V1_0::IServiceManager;
-    using ::android::hardware::hidl_string;
-    using ::android::hardware::Return;
-
-    sp<IServiceManager> sm = ::android::hardware::defaultServiceManager();
-
-    if (sm == nullptr) {
-        fprintf(stderr, "failed to get IServiceManager to poke hal services\n");
-        return;
-    }
-
-    auto listRet = sm->list([&](const auto &interfaces) {
-        for (size_t i = 0; i < interfaces.size(); i++) {
-            string fqInstanceName = interfaces[i];
-            string::size_type n = fqInstanceName.find('/');
-            if (n == std::string::npos || interfaces[i].size() == n+1)
-                continue;
-            hidl_string fqInterfaceName = fqInstanceName.substr(0, n);
-            hidl_string instanceName = fqInstanceName.substr(n+1, std::string::npos);
-            Return<sp<IBase>> interfaceRet = sm->get(fqInterfaceName, instanceName);
-            if (!interfaceRet.isOk()) {
-                // ignore
-                continue;
-            }
-
-            sp<IBase> interface = interfaceRet;
-            if (interface == nullptr) {
-                // ignore
-                continue;
-            }
-
-            auto notifyRet = interface->notifySyspropsChanged();
-            if (!notifyRet.isOk()) {
-                // ignore
-            }
-        }
-    });
-    if (!listRet.isOk()) {
-        // TODO(b/34242478) fix this when we determine the correct ACL
-        //fprintf(stderr, "failed to list services: %s\n", listRet.description().c_str());
-    }
-}
-
 // Set the trace tags that userland tracing uses, and poke the running
 // processes to pick up the new value.
 static bool setTagsProperty(uint64_t tags)
@@ -765,7 +697,6 @@ static bool setKernelTraceFuncs(const char* funcs)
         ok &= setKernelOptionEnable(k_funcgraphAbsTimePath, true);
         ok &= setKernelOptionEnable(k_funcgraphCpuPath, true);
         ok &= setKernelOptionEnable(k_funcgraphProcPath, true);
-        ok &= setKernelOptionEnable(k_funcgraphFlatPath, true);
 
         // Set the requested filter functions.
         ok &= truncateFile(k_ftraceFilterPath);
@@ -876,10 +807,6 @@ static bool setUpUserspaceTracing()
     }
     ok &= setAppCmdlineProperty(&packageList[0]);
     ok &= setTagsProperty(tags);
-#if !ATRACE_SHMEM
-    ok &= pokeBinderServices();
-    pokeHalServices();
-#endif
     if (g_tracePdx) {
         ok &= ServiceUtility::PokeServices();
     }
@@ -891,8 +818,6 @@ static void cleanUpUserspaceTracing()
 {
     setTagsProperty(0);
     clearAppProperties();
-    pokeBinderServices();
-    pokeHalServices();
 
     if (g_tracePdx) {
         ServiceUtility::PokeServices();

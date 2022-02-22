@@ -137,11 +137,9 @@ TEST_F(CompilerDriverTest, DISABLED_LARGE_CompileDexLibCore) {
   }
   EXPECT_TRUE(dex_cache->StaticMethodSize() == dex_cache->NumResolvedMethods()
       || dex.NumMethodIds() ==  dex_cache->NumResolvedMethods());
-  auto* cl = Runtime::Current()->GetClassLinker();
-  auto pointer_size = cl->GetImagePointerSize();
   for (size_t i = 0; i < dex_cache->NumResolvedMethods(); i++) {
     // FIXME: This is outdated for hash-based method array.
-    ArtMethod* method = dex_cache->GetResolvedMethod(i, pointer_size);
+    ArtMethod* method = dex_cache->GetResolvedMethod(i);
     EXPECT_TRUE(method != nullptr) << "method_idx=" << i
                                 << " " << dex.GetMethodDeclaringClassDescriptor(dex.GetMethodId(i))
                                 << " " << dex.GetMethodName(dex.GetMethodId(i));
@@ -153,7 +151,7 @@ TEST_F(CompilerDriverTest, DISABLED_LARGE_CompileDexLibCore) {
       || dex.NumFieldIds() ==  dex_cache->NumResolvedFields());
   for (size_t i = 0; i < dex_cache->NumResolvedFields(); i++) {
     // FIXME: This is outdated for hash-based field array.
-    ArtField* field = dex_cache->GetResolvedField(i, cl->GetImagePointerSize());
+    ArtField* field = dex_cache->GetResolvedField(i);
     EXPECT_TRUE(field != nullptr) << "field_idx=" << i
                                << " " << dex.GetFieldDeclaringClassDescriptor(dex.GetFieldId(i))
                                << " " << dex.GetFieldName(dex.GetFieldId(i));
@@ -308,7 +306,7 @@ class CompilerDriverVerifyTest : public CompilerDriverTest {
     bool found = compiler_driver_->GetCompiledClass(
         ClassReference(&klass->GetDexFile(), klass->GetDexTypeIndex().index_), &status);
     ASSERT_TRUE(found);
-    EXPECT_EQ(status, ClassStatus::kVerified);
+    EXPECT_GE(status, ClassStatus::kVerified);
   }
 };
 
@@ -353,8 +351,7 @@ TEST_F(CompilerDriverVerifyTest, RetryVerifcationStatusCheckVerified) {
        ++i) {
     const ClassStatus expected_status = enum_cast<ClassStatus>(i);
     // Skip unsupported status that are not supposed to be ever recorded.
-    if (expected_status == ClassStatus::kVerifyingAtRuntime ||
-        expected_status == ClassStatus::kInitializing ||
+    if (expected_status == ClassStatus::kInitializing ||
         expected_status == ClassStatus::kInitialized) {
       continue;
     }

@@ -64,8 +64,7 @@ class EntrypointsOrderTest : public CommonRuntimeTest {
   void CheckThreadOffsets() {
     CHECKED(OFFSETOF_MEMBER(Thread, tls32_.state_and_flags) == 0, thread_flags_at_zero);
     EXPECT_OFFSET_DIFFP(Thread, tls32_, state_and_flags, suspend_count, 4);
-    EXPECT_OFFSET_DIFFP(Thread, tls32_, suspend_count, debug_suspend_count, 4);
-    EXPECT_OFFSET_DIFFP(Thread, tls32_, debug_suspend_count, thin_lock_thread_id, 4);
+    EXPECT_OFFSET_DIFFP(Thread, tls32_, suspend_count, thin_lock_thread_id, 4);
     EXPECT_OFFSET_DIFFP(Thread, tls32_, thin_lock_thread_id, tid, 4);
     EXPECT_OFFSET_DIFFP(Thread, tls32_, tid, daemon, 4);
     EXPECT_OFFSET_DIFFP(Thread, tls32_, daemon, throwing_OutOfMemoryError, 4);
@@ -147,8 +146,12 @@ class EntrypointsOrderTest : public CommonRuntimeTest {
   void CheckJniEntryPoints() {
     CHECKED(OFFSETOF_MEMBER(JniEntryPoints, pDlsymLookup) == 0,
             JniEntryPoints_start_with_dlsymlookup);
-    CHECKED(OFFSETOF_MEMBER(JniEntryPoints, pDlsymLookup)
-            + sizeof(void*) == sizeof(JniEntryPoints), JniEntryPoints_all);
+    CHECKED(OFFSETOF_MEMBER(JniEntryPoints, pDlsymLookup) + sizeof(void*) ==
+                OFFSETOF_MEMBER(JniEntryPoints, pDlsymLookupCritical),
+            JniEntryPoints_dlsymlookup_critical);
+    CHECKED(OFFSETOF_MEMBER(JniEntryPoints, pDlsymLookupCritical) + sizeof(void*) ==
+                sizeof(JniEntryPoints),
+            JniEntryPoints_all);
   }
 
   void CheckQuickEntryPoints() {

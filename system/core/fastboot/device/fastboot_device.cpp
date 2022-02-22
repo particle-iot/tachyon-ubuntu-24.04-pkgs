@@ -16,22 +16,28 @@
 
 #include "fastboot_device.h"
 
+#include <algorithm>
+
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <android/hardware/boot/1.0/IBootControl.h>
-#include <android/hardware/fastboot/1.0/IFastboot.h>
+#include <android/hardware/fastboot/1.1/IFastboot.h>
+#include <fs_mgr.h>
+#include <fs_mgr/roots.h>
 #include <healthhalutils/HealthHalUtils.h>
-
-#include <algorithm>
 
 #include "constants.h"
 #include "flashing.h"
+#include "tcp_client.h"
 #include "usb_client.h"
 
+using android::fs_mgr::EnsurePathUnmounted;
+using android::fs_mgr::Fstab;
 using ::android::hardware::hidl_string;
 using ::android::hardware::boot::V1_0::IBootControl;
 using ::android::hardware::boot::V1_0::Slot;
-using ::android::hardware::fastboot::V1_0::IFastboot;
+using ::android::hardware::fastboot::V1_1::IFastboot;
 using ::android::hardware::health::V2_0::get_health_service;
 
 namespace sph = std::placeholders;
@@ -55,14 +61,27 @@ FastbootDevice::FastbootDevice()
               {FB_CMD_OEM, OemCmdHandler},
               {FB_CMD_GSI, GsiHandler},
               {FB_CMD_SNAPSHOT_UPDATE, SnapshotUpdateHandler},
+              {FB_CMD_FETCH, FetchHandler},
       }),
-      transport_(std::make_unique<ClientUsbTransport>()),
       boot_control_hal_(IBootControl::getService()),
       health_hal_(get_health_service()),
       fastboot_hal_(IFastboot::getService()),
       active_slot_("") {
+    if (android::base::GetProperty("fastbootd.protocol", "usb") == "tcp") {
+        transport_ = std::make_unique<ClientTcpTransport>();
+    } else {
+        transport_ = std::make_unique<ClientUsbTransport>();
+    }
+
     if (boot_control_hal_) {
         boot1_1_ = android::hardware::boot::V1_1::IBootControl::castFrom(boot_control_hal_);
+    }
+
+    // Make sure cache is unmounted, since recovery will have mounted it for
+    // logging.
+    Fstab fstab;
+    if (ReadDefaultFstab(&fstab)) {
+        EnsurePathUnmounted(&fstab, "/cache");
     }
 }
 
@@ -119,9 +138,19 @@ bool FastbootDevice::WriteStatus(FastbootResult result, const std::string& messa
 }
 
 bool FastbootDevice::HandleData(bool read, std::vector<char>* data) {
-    auto read_write_data_size = read ? this->get_transport()->Read(data->data(), data->size())
-                                     : this->get_transport()->Write(data->data(), data->size());
-    if (read_write_data_size == -1 || static_cast<size_t>(read_write_data_size) != data->size()) {
+    return HandleData(read, data->data(), data->size());
+}
+
+bool FastbootDevice::HandleData(bool read, char* data, uint64_t size) {
+    auto read_write_data_size = read ? this->get_transport()->Read(data, size)
+                                     : this->get_transport()->Write(data, size);
+    if (read_write_data_size == -1) {
+        LOG(ERROR) << (read ? "read from" : "write to") << " transport failed";
+        return false;
+    }
+    if (static_cast<size_t>(read_write_data_size) != size) {
+        LOG(ERROR) << (read ? "read" : "write") << " expected " << size << " bytes, got "
+                   << read_write_data_size;
         return false;
     }
     return true;

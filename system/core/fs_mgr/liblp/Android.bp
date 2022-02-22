@@ -14,6 +14,10 @@
 // limitations under the License.
 //
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 liblp_lib_deps = [
     "libbase",
     "liblog",
@@ -26,6 +30,7 @@ liblp_lib_deps = [
 cc_library {
     name: "liblp",
     host_supported: true,
+    ramdisk_available: true,
     recovery_available: true,
     defaults: ["fs_mgr_defaults"],
     cppflags: [
@@ -97,7 +102,7 @@ cc_test {
 cc_test {
     name: "vts_core_liblp_test",
     defaults: ["liblp_test_defaults"],
-    test_suites: ["vts-core"],
+    test_suites: ["vts"],
     auto_gen_config: true,
     test_min_api_level: 29,
     require_root: true,
@@ -107,4 +112,3 @@ cc_test {
     name: "vts_kernel_liblp_test",
     defaults: ["liblp_test_defaults"],
 }
-

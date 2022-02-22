@@ -46,6 +46,8 @@ enum class StringCompressionFlag : uint32_t {
 // C++ mirror of java.lang.String
 class MANAGED String final : public Object {
  public:
+  MIRROR_CLASS("Ljava/lang/String;");
+
   // Size of java.lang.String.class.
   static uint32_t ClassSize(PointerSize pointer_size);
 
@@ -118,6 +120,13 @@ class MANAGED String final : public Object {
 
   ObjPtr<String> Intern() REQUIRES_SHARED(Locks::mutator_lock_);
 
+  template <bool kIsInstrumented = true, typename PreFenceVisitor>
+  ALWAYS_INLINE static ObjPtr<String> Alloc(Thread* self,
+                                            int32_t utf16_length_with_flag,
+                                            gc::AllocatorType allocator_type,
+                                            const PreFenceVisitor& pre_fence_visitor)
+      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_);
+
   template <bool kIsInstrumented = true>
   ALWAYS_INLINE static ObjPtr<String> AllocFromByteArray(Thread* self,
                                                          int32_t byte_length,
@@ -148,9 +157,7 @@ class MANAGED String final : public Object {
                                                        gc::AllocatorType allocator_type)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_);
 
-  static ObjPtr<String> AllocFromStrings(Thread* self,
-                                         Handle<String> string,
-                                         Handle<String> string2)
+  static ObjPtr<String> DoConcat(Thread* self, Handle<String> h_this, Handle<String> h_arg)
       REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_);
 
   static ObjPtr<String> AllocFromUtf16(Thread* self,
@@ -237,13 +244,13 @@ class MANAGED String final : public Object {
   std::string PrettyStringDescriptor()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
- private:
   static constexpr bool IsASCII(uint16_t c) {
     // Valid ASCII characters are in range 1..0x7f. Zero is not considered ASCII
     // because it would complicate the detection of ASCII strings in Modified-UTF8.
     return (c - 1u) < 0x7fu;
   }
 
+ private:
   static bool AllASCIIExcept(const uint16_t* chars, int32_t length, uint16_t non_ascii);
 
   void SetHashCode(int32_t new_hash_code) REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -252,13 +259,6 @@ class MANAGED String final : public Object {
     DCHECK_EQ(0, GetField32(OFFSET_OF_OBJECT_MEMBER(String, hash_code_)));
     SetField32<false, false>(OFFSET_OF_OBJECT_MEMBER(String, hash_code_), new_hash_code);
   }
-
-  template <bool kIsInstrumented = true, typename PreFenceVisitor>
-  ALWAYS_INLINE static ObjPtr<String> Alloc(Thread* self,
-                                            int32_t utf16_length_with_flag,
-                                            gc::AllocatorType allocator_type,
-                                            const PreFenceVisitor& pre_fence_visitor)
-      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_);
 
   // Field order required by test "ValidateFieldOrderOfJavaCppUnionClasses".
 

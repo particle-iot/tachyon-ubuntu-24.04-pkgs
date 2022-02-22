@@ -70,15 +70,14 @@ public:
     MultiTouchMotionAccumulator();
     ~MultiTouchMotionAccumulator();
 
-    void configure(InputDevice* device, size_t slotCount, bool usingSlotsProtocol);
-    void reset(InputDevice* device);
+    void configure(InputDeviceContext& deviceContext, size_t slotCount, bool usingSlotsProtocol);
+    void reset(InputDeviceContext& deviceContext);
     void process(const RawEvent* rawEvent);
     void finishSync();
     bool hasStylus() const;
 
     inline size_t getSlotCount() const { return mSlotCount; }
     inline const Slot* getSlot(size_t index) const { return &mSlots[index]; }
-    inline uint32_t getDeviceTimestamp() const { return mDeviceTimestamp; }
 
 private:
     int32_t mCurrentSlot;
@@ -86,25 +85,26 @@ private:
     size_t mSlotCount;
     bool mUsingSlotsProtocol;
     bool mHaveStylus;
-    uint32_t mDeviceTimestamp;
 
     void clearSlots(int32_t initialSlot);
 };
 
 class MultiTouchInputMapper : public TouchInputMapper {
 public:
-    explicit MultiTouchInputMapper(InputDevice* device);
-    virtual ~MultiTouchInputMapper();
+    explicit MultiTouchInputMapper(InputDeviceContext& deviceContext);
+    ~MultiTouchInputMapper() override;
 
-    virtual void reset(nsecs_t when);
-    virtual void process(const RawEvent* rawEvent);
+    void reset(nsecs_t when) override;
+    void process(const RawEvent* rawEvent) override;
 
 protected:
-    virtual void syncTouch(nsecs_t when, RawState* outState);
-    virtual void configureRawPointerAxes();
-    virtual bool hasStylus() const;
+    void syncTouch(nsecs_t when, RawState* outState) override;
+    void configureRawPointerAxes() override;
+    bool hasStylus() const override;
 
 private:
+    // If the slot is in use, return the bit id. Return std::nullopt otherwise.
+    std::optional<int32_t> getActiveBitId(const MultiTouchMotionAccumulator::Slot& inSlot);
     MultiTouchMotionAccumulator mMultiTouchMotionAccumulator;
 
     // Specifies the pointer id bits that are in use, and their associated tracking id.

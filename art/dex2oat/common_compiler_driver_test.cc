@@ -41,8 +41,7 @@ void CommonCompilerDriverTest::CompileAll(jobject class_loader,
   compiler_driver_->PreCompile(class_loader,
                                dex_files,
                                timings,
-                               &compiler_options_->image_classes_,
-                               verification_results_.get());
+                               &compiler_options_->image_classes_);
 
   // Verification results in the `callback_` should not be used during compilation.
   down_cast<QuickCompilerCallbacks*>(callbacks_.get())->SetVerificationResults(
@@ -59,7 +58,6 @@ void CommonCompilerDriverTest::CompileAll(jobject class_loader,
 void CommonCompilerDriverTest::SetDexFilesForOatFile(const std::vector<const DexFile*>& dex_files) {
   compiler_options_->dex_files_for_oat_file_ = dex_files;
   compiler_driver_->compiled_classes_.AddDexFiles(dex_files);
-  compiler_driver_->dex_to_dex_compiler_.SetDexFiles(dex_files);
 }
 
 void CommonCompilerDriverTest::ReserveImageSpace() {

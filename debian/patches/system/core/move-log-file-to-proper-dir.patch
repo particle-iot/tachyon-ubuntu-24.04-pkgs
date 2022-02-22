@@ -2,8 +2,8 @@ Description: Update log file directory.
 Author: Umang Parmar <umangjparmar@gmail.com>
 Last Updated: 2018-05-17
 
---- a/system/core/adb/adb_utils.cpp
-+++ b/system/core/adb/adb_utils.cpp
+--- a/packages/modules/adb/adb_utils.cpp
++++ b/packages/modules/adb/adb_utils.cpp
 @@ -339,6 +339,11 @@
  
      return temp_path_utf8 + log_name;

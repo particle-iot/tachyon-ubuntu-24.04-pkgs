@@ -16,6 +16,7 @@
 
 #include "ueventd.h"
 
+#include <android/api-level.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -114,11 +115,13 @@ class ColdBoot {
   public:
     ColdBoot(UeventListener& uevent_listener,
              std::vector<std::unique_ptr<UeventHandler>>& uevent_handlers,
-             bool enable_parallel_restorecon)
+             bool enable_parallel_restorecon,
+             std::vector<std::string> parallel_restorecon_queue)
         : uevent_listener_(uevent_listener),
           uevent_handlers_(uevent_handlers),
           num_handler_subprocesses_(std::thread::hardware_concurrency() ?: 4),
-          enable_parallel_restorecon_(enable_parallel_restorecon) {}
+          enable_parallel_restorecon_(enable_parallel_restorecon),
+          parallel_restorecon_queue_(parallel_restorecon_queue) {}
 
     void Run();
 
@@ -141,6 +144,8 @@ class ColdBoot {
     std::set<pid_t> subprocess_pids_;
 
     std::vector<std::string> restorecon_queue_;
+
+    std::vector<std::string> parallel_restorecon_queue_;
 };
 
 void ColdBoot::UeventHandlerMain(unsigned int process_num, unsigned int total_processes) {
@@ -154,17 +159,34 @@ void ColdBoot::UeventHandlerMain(unsigned int process_num, unsigned int total_pr
 }
 
 void ColdBoot::RestoreConHandler(unsigned int process_num, unsigned int total_processes) {
+    android::base::Timer t_process;
+
     for (unsigned int i = process_num; i < restorecon_queue_.size(); i += total_processes) {
+        android::base::Timer t;
         auto& dir = restorecon_queue_[i];
 
         selinux_android_restorecon(dir.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
+
+        //Mark a dir restorecon operation for 50ms,
+        //Maybe you can add this dir to the ueventd.rc script to parallel processing
+        if (t.duration() > 50ms) {
+            LOG(INFO) << "took " << t.duration().count() <<"ms restorecon '"
+                        << dir.c_str() << "' on process '" << process_num  <<"'";
+        }
     }
+
+    //Calculate process restorecon time
+    LOG(VERBOSE) << "took " << t_process.duration().count() << "ms on process '"
+                << process_num  << "'";
 }
 
 void ColdBoot::GenerateRestoreCon(const std::string& directory) {
     std::unique_ptr<DIR, decltype(&closedir)> dir(opendir(directory.c_str()), &closedir);
 
-    if (!dir) return;
+    if (!dir) {
+        PLOG(WARNING) << "opendir " << directory.c_str();
+        return;
+    }
 
     struct dirent* dent;
     while ((dent = readdir(dir.get())) != NULL) {
@@ -175,7 +197,10 @@ void ColdBoot::GenerateRestoreCon(const std::string& directory) {
 
         if (S_ISDIR(st.st_mode)) {
             std::string fullpath = directory + "/" + dent->d_name;
-            if (fullpath != "/sys/devices") {
+            auto parallel_restorecon =
+                std::find(parallel_restorecon_queue_.begin(),
+                    parallel_restorecon_queue_.end(), fullpath);
+            if (parallel_restorecon == parallel_restorecon_queue_.end()) {
                 restorecon_queue_.emplace_back(fullpath);
             }
         }
@@ -247,11 +272,16 @@ void ColdBoot::Run() {
     RegenerateUevents();
 
     if (enable_parallel_restorecon_) {
-        selinux_android_restorecon("/sys", 0);
-        selinux_android_restorecon("/sys/devices", 0);
-        GenerateRestoreCon("/sys");
-        // takes long time for /sys/devices, parallelize it
-        GenerateRestoreCon("/sys/devices");
+        if (parallel_restorecon_queue_.empty()) {
+            parallel_restorecon_queue_.emplace_back("/sys");
+            // takes long time for /sys/devices, parallelize it
+            parallel_restorecon_queue_.emplace_back("/sys/devices");
+            LOG(INFO) << "Parallel processing directory is not set, set the default";
+        }
+        for (const auto& dir : parallel_restorecon_queue_) {
+            selinux_android_restorecon(dir.c_str(), 0);
+            GenerateRestoreCon(dir);
+        }
     }
 
     ForkSubProcesses();
@@ -264,6 +294,30 @@ void ColdBoot::Run() {
 
     android::base::SetProperty(kColdBootDoneProp, "true");
     LOG(INFO) << "Coldboot took " << cold_boot_timer.duration().count() / 1000.0f << " seconds";
+}
+
+static UeventdConfiguration GetConfiguration() {
+    auto hardware = android::base::GetProperty("ro.hardware", "");
+    std::vector<std::string> legacy_paths{"/vendor/ueventd.rc", "/odm/ueventd.rc",
+                                          "/ueventd." + hardware + ".rc"};
+
+    std::vector<std::string> canonical{"/system/etc/ueventd.rc"};
+
+    if (android::base::GetIntProperty("ro.product.first_api_level", 10000) <= __ANDROID_API_S__) {
+        // TODO: Remove these legacy paths once Android S is no longer supported.
+        canonical.insert(canonical.end(), legacy_paths.begin(), legacy_paths.end());
+    } else {
+        // Warn if newer device is using legacy paths.
+        for (const auto& path : legacy_paths) {
+            if (access(path.c_str(), F_OK) == 0) {
+                LOG(FATAL_WITHOUT_ABORT)
+                        << "Legacy ueventd configuration file detected and will not be parsed: "
+                        << path;
+            }
+        }
+    }
+
+    return ParseConfig(canonical);
 }
 
 int ueventd_main(int argc, char** argv) {
@@ -283,13 +337,7 @@ int ueventd_main(int argc, char** argv) {
 
     std::vector<std::unique_ptr<UeventHandler>> uevent_handlers;
 
-    // Keep the current product name base configuration so we remain backwards compatible and
-    // allow it to override everything.
-    // TODO: cleanup platform ueventd.rc to remove vendor specific device node entries (b/34968103)
-    auto hardware = android::base::GetProperty("ro.hardware", "");
-
-    auto ueventd_configuration = ParseConfig({"/system/etc/ueventd.rc", "/vendor/ueventd.rc",
-                                              "/odm/ueventd.rc", "/ueventd." + hardware + ".rc"});
+    auto ueventd_configuration = GetConfiguration();
 
     uevent_handlers.emplace_back(std::make_unique<DeviceHandler>(
             std::move(ueventd_configuration.dev_permissions),
@@ -307,7 +355,8 @@ int ueventd_main(int argc, char** argv) {
 
     if (!android::base::GetBoolProperty(kColdBootDoneProp, false)) {
         ColdBoot cold_boot(uevent_listener, uevent_handlers,
-                           ueventd_configuration.enable_parallel_restorecon);
+                           ueventd_configuration.enable_parallel_restorecon,
+                           ueventd_configuration.parallel_restorecon_dirs);
         cold_boot.Run();
     }
 
@@ -322,6 +371,8 @@ int ueventd_main(int argc, char** argv) {
     while (waitpid(-1, nullptr, WNOHANG) > 0) {
     }
 
+    // Restore prio before main loop
+    setpriority(PRIO_PROCESS, 0, 0);
     uevent_listener.Poll([&uevent_handlers](const Uevent& uevent) {
         for (auto& uevent_handler : uevent_handlers) {
             uevent_handler->HandleUevent(uevent);

@@ -65,13 +65,13 @@ class OatDumpTest : public CommonRuntimeTest {
   }
 
   // Linking flavor.
-  enum Flavor {
+  enum class Flavor {
     kDynamic,  // oatdump(d), dex2oat(d)
     kStatic,   // oatdump(d)s, dex2oat(d)s
   };
 
   // Returns path to the oatdump/dex2oat/dexdump binary.
-  std::string GetExecutableFilePath(const char* name, bool is_debug, bool is_static) {
+  std::string GetExecutableFilePath(const char* name, bool is_debug, bool is_static, bool bitness) {
     std::string path = GetArtBinDir() + '/' + name;
     if (is_debug) {
       path += 'd';
@@ -79,11 +79,14 @@ class OatDumpTest : public CommonRuntimeTest {
     if (is_static) {
       path += 's';
     }
+    if (bitness) {
+      path += Is64BitInstructionSet(kRuntimeISA) ? "64" : "32";
+    }
     return path;
   }
 
-  std::string GetExecutableFilePath(Flavor flavor, const char* name) {
-    return GetExecutableFilePath(name, kIsDebugBuild, flavor == kStatic);
+  std::string GetExecutableFilePath(Flavor flavor, const char* name, bool bitness) {
+    return GetExecutableFilePath(name, kIsDebugBuild, flavor == Flavor::kStatic, bitness);
   }
 
   enum Mode {
@@ -124,7 +127,8 @@ class OatDumpTest : public CommonRuntimeTest {
 
   ::testing::AssertionResult GenerateAppOdexFile(Flavor flavor,
                                                  const std::vector<std::string>& args) {
-    std::string dex2oat_path = GetExecutableFilePath(flavor, "dex2oat");
+    std::string dex2oat_path =
+        GetExecutableFilePath(flavor, "dex2oat", /* bitness= */ kIsTargetBuild);
     std::vector<std::string> exec_argv = {
         dex2oat_path,
         "--runtime-arg",
@@ -167,7 +171,7 @@ class OatDumpTest : public CommonRuntimeTest {
                                   const std::vector<std::string>& args,
                                   Display display,
                                   bool expect_failure = false) {
-    std::string file_path = GetExecutableFilePath(flavor, "oatdump");
+    std::string file_path = GetExecutableFilePath(flavor, "oatdump", /* bitness= */ false);
 
     if (!OS::FileExists(file_path.c_str())) {
       return ::testing::AssertionFailure() << file_path << " should be a valid file path";
@@ -224,6 +228,7 @@ class OatDumpTest : public CommonRuntimeTest {
         exec_argv.push_back("--app-image=" + GetAppImageName());
       } else if (mode == kModeCoreOat) {
         exec_argv.push_back("--oat-file=" + core_oat_location_);
+        exec_argv.push_back("--dex-file=" + GetLibCoreDexFileNames()[0]);
       } else {
         CHECK_EQ(static_cast<size_t>(mode), static_cast<size_t>(kModeOat));
         exec_argv.push_back("--oat-file=" + GetAppOdexName());
@@ -337,8 +342,11 @@ class OatDumpTest : public CommonRuntimeTest {
         // Avoid crash as valid exit.
         return ::testing::AssertionSuccess();
       }
-      return ::testing::AssertionFailure() << "Did not terminate successfully: " << res.status_code
-          << " " << error_buf.data();
+      std::ostringstream cmd;
+      std::copy(exec_argv.begin(), exec_argv.end(), std::ostream_iterator<std::string>(cmd, " "));
+      LOG(ERROR) << "Output: " << error_buf.data();  // Output first as it might be extremely  long.
+      LOG(ERROR) << "Failed command: " << cmd.str();  // Useful to reproduce the failure separately.
+      return ::testing::AssertionFailure() << "Did not terminate successfully: " << res.status_code;
     } else if (expect_failure) {
       return ::testing::AssertionFailure() << "Expected failure";
     }

@@ -54,7 +54,7 @@ class TransactionTest : public CommonRuntimeTest {
     ASSERT_TRUE(h_klass->IsInitialized());
 
     h_klass.Assign(class_linker_->FindSystemClass(soa.Self(),
-                                                  Transaction::kAbortExceptionSignature));
+                                                  Transaction::kAbortExceptionDescriptor));
     ASSERT_TRUE(h_klass != nullptr);
     class_linker_->EnsureInitialized(soa.Self(), h_klass, true, true);
     ASSERT_TRUE(h_klass->IsInitialized());
@@ -63,13 +63,13 @@ class TransactionTest : public CommonRuntimeTest {
     h_klass.Assign(class_linker_->FindClass(soa.Self(), "LTransaction$AbortHelperClass;",
                                             class_loader));
     ASSERT_TRUE(h_klass != nullptr);
-    class_linker_->VerifyClass(soa.Self(), h_klass);
+    class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
     ASSERT_TRUE(h_klass->IsVerified());
 
     // Load and verify tested class.
     h_klass.Assign(class_linker_->FindClass(soa.Self(), tested_class_signature, class_loader));
     ASSERT_TRUE(h_klass != nullptr);
-    class_linker_->VerifyClass(soa.Self(), h_klass);
+    class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
     ASSERT_TRUE(h_klass->IsVerified());
 
     ClassStatus old_status = h_klass->GetStatus();
@@ -531,6 +531,39 @@ TEST_F(TransactionTest, ResolveString) {
   ASSERT_FALSE(soa.Self()->IsExceptionPending());
 }
 
+// Tests rolling back resolved method types in dex cache.
+TEST_F(TransactionTest, ResolveMethodType) {
+  ScopedObjectAccess soa(Thread::Current());
+  StackHandleScope<3> hs(soa.Self());
+  Handle<mirror::ClassLoader> class_loader(
+      hs.NewHandle(soa.Decode<mirror::ClassLoader>(LoadDex("Transaction"))));
+  ASSERT_TRUE(class_loader != nullptr);
+
+  Handle<mirror::Class> h_klass(
+      hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction;", class_loader)));
+  ASSERT_TRUE(h_klass != nullptr);
+
+  Handle<mirror::DexCache> h_dex_cache(hs.NewHandle(h_klass->GetDexCache()));
+  ASSERT_TRUE(h_dex_cache != nullptr);
+  const DexFile* const dex_file = h_dex_cache->GetDexFile();
+  ASSERT_TRUE(dex_file != nullptr);
+
+  ASSERT_NE(dex_file->NumProtoIds(), 0u);
+  dex::ProtoIndex proto_index(0u);
+  ASSERT_TRUE(h_dex_cache->GetResolvedMethodType(proto_index) == nullptr);
+
+  // Do the transaction, then roll back.
+  EnterTransactionMode();
+  ObjPtr<mirror::MethodType> method_type =
+      class_linker_->ResolveMethodType(soa.Self(), proto_index, h_dex_cache, class_loader);
+  ASSERT_TRUE(method_type != nullptr);
+  // Make sure the method type was recorded in the dex cache.
+  ASSERT_TRUE(h_dex_cache->GetResolvedMethodType(proto_index) == method_type);
+  RollbackAndExitTransactionMode();
+  // Check that the method type was removed from the dex cache.
+  ASSERT_TRUE(h_dex_cache->GetResolvedMethodType(proto_index) == nullptr);
+}
+
 // Tests successful class initialization without class initializer.
 TEST_F(TransactionTest, EmptyClass) {
   ScopedObjectAccess soa(Thread::Current());
@@ -543,7 +576,7 @@ TEST_F(TransactionTest, EmptyClass) {
       hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction$EmptyStatic;",
                                             class_loader)));
   ASSERT_TRUE(h_klass != nullptr);
-  class_linker_->VerifyClass(soa.Self(), h_klass);
+  class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
   ASSERT_TRUE(h_klass->IsVerified());
 
   EnterTransactionMode();
@@ -566,7 +599,7 @@ TEST_F(TransactionTest, StaticFieldClass) {
       hs.NewHandle(class_linker_->FindClass(soa.Self(), "LTransaction$StaticFieldClass;",
                                             class_loader)));
   ASSERT_TRUE(h_klass != nullptr);
-  class_linker_->VerifyClass(soa.Self(), h_klass);
+  class_linker_->VerifyClass(soa.Self(), /* verifier_deps= */ nullptr, h_klass);
   ASSERT_TRUE(h_klass->IsVerified());
 
   EnterTransactionMode();
@@ -599,6 +632,18 @@ TEST_F(TransactionTest, MultipleNativeCallAbortClass) {
   testTransactionAbort("LTransaction$MultipleNativeCallAbortClass;");
 }
 
+// Tests failing class initialization due to Class.forName() not finding the class,
+// even if an "all" catch handler catches the exception thrown when aborting the transaction.
+TEST_F(TransactionTest, CatchClassForNameAbortClass) {
+  testTransactionAbort("LTransaction$CatchClassForNameAbortClass;");
+}
+
+// Same as CatchClassForNameAbortClass but the class initializer tries to do the work twice.
+// This would trigger a DCHECK() if we continued executing bytecode with an aborted transaction.
+TEST_F(TransactionTest, CatchClassForNameAbortClassTwice) {
+  testTransactionAbort("LTransaction$CatchClassForNameAbortClassTwice;");
+}
+
 // Tests failing class initialization due to allocating instance of finalizable class.
 TEST_F(TransactionTest, FinalizableAbortClass) {
   testTransactionAbort("LTransaction$FinalizableAbortClass;");
@@ -615,15 +660,13 @@ TEST_F(TransactionTest, Constraints) {
       class_linker_->FindClass(soa.Self(), "Ljava/lang/Boolean;", class_loader));
   ASSERT_TRUE(boolean_class != nullptr);
   ASSERT_TRUE(heap->ObjectIsInBootImageSpace(boolean_class.Get()));
-  ArtField* true_field =
-      mirror::Class::FindField(soa.Self(), boolean_class.Get(), "TRUE", "Ljava/lang/Boolean;");
+  ArtField* true_field = boolean_class->FindDeclaredStaticField("TRUE", "Ljava/lang/Boolean;");
   ASSERT_TRUE(true_field != nullptr);
   ASSERT_TRUE(true_field->IsStatic());
   Handle<mirror::Object> true_value = hs.NewHandle(true_field->GetObject(boolean_class.Get()));
   ASSERT_TRUE(true_value != nullptr);
   ASSERT_TRUE(heap->ObjectIsInBootImageSpace(true_value.Get()));
-  ArtField* value_field =
-      mirror::Class::FindField(soa.Self(), boolean_class.Get(), "value", "Z");
+  ArtField* value_field = boolean_class->FindDeclaredInstanceField("value", "Z");
   ASSERT_TRUE(value_field != nullptr);
   ASSERT_FALSE(value_field->IsStatic());
 
@@ -631,8 +674,7 @@ TEST_F(TransactionTest, Constraints) {
       class_linker_->FindClass(soa.Self(), "LTransaction$StaticFieldClass;", class_loader)));
   ASSERT_TRUE(static_field_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(static_field_class.Get()));
-  ArtField* int_field =
-      mirror::Class::FindField(soa.Self(), static_field_class.Get(), "intField", "I");
+  ArtField* int_field = static_field_class->FindDeclaredStaticField("intField", "I");
   ASSERT_TRUE(int_field != nullptr);
 
   Handle<mirror::Class> static_fields_test_class(hs.NewHandle(
@@ -640,7 +682,7 @@ TEST_F(TransactionTest, Constraints) {
   ASSERT_TRUE(static_fields_test_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(static_fields_test_class.Get()));
   ArtField* static_fields_test_int_field =
-      mirror::Class::FindField(soa.Self(), static_fields_test_class.Get(), "intField", "I");
+      static_fields_test_class->FindDeclaredStaticField("intField", "I");
   ASSERT_TRUE(static_fields_test_int_field != nullptr);
 
   Handle<mirror::Class> instance_fields_test_class(hs.NewHandle(
@@ -648,93 +690,99 @@ TEST_F(TransactionTest, Constraints) {
   ASSERT_TRUE(instance_fields_test_class != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(instance_fields_test_class.Get()));
   ArtField* instance_fields_test_int_field =
-      mirror::Class::FindField(soa.Self(), instance_fields_test_class.Get(), "intField", "I");
+      instance_fields_test_class->FindDeclaredInstanceField("intField", "I");
   ASSERT_TRUE(instance_fields_test_int_field != nullptr);
   Handle<mirror::Object> instance_fields_test_object = hs.NewHandle(
       instance_fields_test_class->Alloc(soa.Self(), heap->GetCurrentAllocator()));
   ASSERT_TRUE(instance_fields_test_object != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(instance_fields_test_object.Get()));
 
-  Handle<mirror::Class> long_array_dim2_class = hs.NewHandle(
-      class_linker_->FindClass(soa.Self(), "[[J", class_loader));
-  ASSERT_TRUE(long_array_dim2_class != nullptr);
-  ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array_dim2_class.Get()));
-  ASSERT_TRUE(heap->ObjectIsInBootImageSpace(long_array_dim2_class->GetComponentType()));
-  Handle<mirror::Array> long_array_dim2 = hs.NewHandle(mirror::Array::Alloc(
+  // The `long[].class` should be in the boot image but `long[][][].class` should not.
+  // (We have seen `long[][].class` both present and missing from the boot image,
+  // depending on the libcore code, so we do not use it for this test.)
+  Handle<mirror::Class> long_array_dim3_class = hs.NewHandle(
+      class_linker_->FindClass(soa.Self(), "[[[J", class_loader));
+  ASSERT_TRUE(long_array_dim3_class != nullptr);
+  ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array_dim3_class.Get()));
+  ASSERT_TRUE(heap->ObjectIsInBootImageSpace(
+      long_array_dim3_class->GetComponentType()->GetComponentType()));
+  Handle<mirror::Array> long_array_dim3 = hs.NewHandle(mirror::Array::Alloc(
       soa.Self(),
-      long_array_dim2_class.Get(),
+      long_array_dim3_class.Get(),
       /*component_count=*/ 1,
-      long_array_dim2_class->GetComponentSizeShift(),
+      long_array_dim3_class->GetComponentSizeShift(),
       heap->GetCurrentAllocator()));
-  ASSERT_TRUE(long_array_dim2 != nullptr);
-  ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array_dim2.Get()));
+  ASSERT_TRUE(long_array_dim3 != nullptr);
+  ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array_dim3.Get()));
   Handle<mirror::Array> long_array = hs.NewHandle(mirror::Array::Alloc(
       soa.Self(),
-      long_array_dim2_class->GetComponentType(),
+      long_array_dim3_class->GetComponentType()->GetComponentType(),
       /*component_count=*/ 1,
-      long_array_dim2_class->GetComponentType()->GetComponentSizeShift(),
+      long_array_dim3_class->GetComponentType()->GetComponentType()->GetComponentSizeShift(),
       heap->GetCurrentAllocator()));
   ASSERT_TRUE(long_array != nullptr);
   ASSERT_FALSE(heap->ObjectIsInBootImageSpace(long_array.Get()));
 
   // Use the Array's IfTable as an array from the boot image.
   Handle<mirror::ObjectArray<mirror::Object>> array_iftable =
-      hs.NewHandle(long_array_dim2_class->GetIfTable());
+      hs.NewHandle(long_array_dim3_class->GetIfTable());
   ASSERT_TRUE(array_iftable != nullptr);
   ASSERT_TRUE(heap->ObjectIsInBootImageSpace(array_iftable.Get()));
 
   // Test non-strict transaction.
-  Transaction transaction(/*strict=*/ false, /*root=*/ nullptr);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
+  Transaction transaction(
+      /*strict=*/ false, /*root=*/ nullptr, /*arena_stack=*/ nullptr, arena_pool);
   // Static field in boot image.
-  EXPECT_TRUE(transaction.WriteConstraint(soa.Self(), boolean_class.Get()));
-  EXPECT_FALSE(transaction.ReadConstraint(soa.Self(), boolean_class.Get()));
+  EXPECT_TRUE(transaction.WriteConstraint(boolean_class.Get()));
+  EXPECT_FALSE(transaction.ReadConstraint(boolean_class.Get()));
   // Instance field or array element in boot image.
   // Do not check ReadConstraint(), it expects only static fields (checks for class object).
-  EXPECT_TRUE(transaction.WriteConstraint(soa.Self(), true_value.Get()));
-  EXPECT_TRUE(transaction.WriteConstraint(soa.Self(), array_iftable.Get()));
+  EXPECT_TRUE(transaction.WriteConstraint(true_value.Get()));
+  EXPECT_TRUE(transaction.WriteConstraint(array_iftable.Get()));
   // Static field not in boot image.
-  EXPECT_FALSE(transaction.WriteConstraint(soa.Self(), static_fields_test_class.Get()));
-  EXPECT_FALSE(transaction.ReadConstraint(soa.Self(), static_fields_test_class.Get()));
+  EXPECT_FALSE(transaction.WriteConstraint(static_fields_test_class.Get()));
+  EXPECT_FALSE(transaction.ReadConstraint(static_fields_test_class.Get()));
   // Instance field or array element not in boot image.
   // Do not check ReadConstraint(), it expects only static fields (checks for class object).
-  EXPECT_FALSE(transaction.WriteConstraint(soa.Self(), instance_fields_test_object.Get()));
-  EXPECT_FALSE(transaction.WriteConstraint(soa.Self(), long_array_dim2.Get()));
+  EXPECT_FALSE(transaction.WriteConstraint(instance_fields_test_object.Get()));
+  EXPECT_FALSE(transaction.WriteConstraint(long_array_dim3.Get()));
   // Write value constraints.
-  EXPECT_FALSE(transaction.WriteValueConstraint(soa.Self(), static_fields_test_class.Get()));
-  EXPECT_FALSE(transaction.WriteValueConstraint(soa.Self(), instance_fields_test_object.Get()));
-  EXPECT_TRUE(transaction.WriteValueConstraint(soa.Self(), long_array_dim2->GetClass()));
-  EXPECT_TRUE(transaction.WriteValueConstraint(soa.Self(), long_array_dim2.Get()));
-  EXPECT_FALSE(transaction.WriteValueConstraint(soa.Self(), long_array->GetClass()));
-  EXPECT_FALSE(transaction.WriteValueConstraint(soa.Self(), long_array.Get()));
+  EXPECT_FALSE(transaction.WriteValueConstraint(static_fields_test_class.Get()));
+  EXPECT_FALSE(transaction.WriteValueConstraint(instance_fields_test_object.Get()));
+  EXPECT_TRUE(transaction.WriteValueConstraint(long_array_dim3->GetClass()));
+  EXPECT_TRUE(transaction.WriteValueConstraint(long_array_dim3.Get()));
+  EXPECT_FALSE(transaction.WriteValueConstraint(long_array->GetClass()));
+  EXPECT_FALSE(transaction.WriteValueConstraint(long_array.Get()));
 
   // Test strict transaction.
-  Transaction strict_transaction(/*strict=*/ true, /*root=*/ static_field_class.Get());
+  Transaction strict_transaction(
+      /*strict=*/ true, /*root=*/ static_field_class.Get(), /*arena_stack=*/ nullptr, arena_pool);
   // Static field in boot image.
-  EXPECT_TRUE(strict_transaction.WriteConstraint(soa.Self(), boolean_class.Get()));
-  EXPECT_TRUE(strict_transaction.ReadConstraint(soa.Self(), boolean_class.Get()));
+  EXPECT_TRUE(strict_transaction.WriteConstraint(boolean_class.Get()));
+  EXPECT_TRUE(strict_transaction.ReadConstraint(boolean_class.Get()));
   // Instance field or array element in boot image.
   // Do not check ReadConstraint(), it expects only static fields (checks for class object).
-  EXPECT_TRUE(strict_transaction.WriteConstraint(soa.Self(), true_value.Get()));
-  EXPECT_TRUE(strict_transaction.WriteConstraint(soa.Self(), array_iftable.Get()));
+  EXPECT_TRUE(strict_transaction.WriteConstraint(true_value.Get()));
+  EXPECT_TRUE(strict_transaction.WriteConstraint(array_iftable.Get()));
   // Static field in another class not in boot image.
-  EXPECT_TRUE(strict_transaction.WriteConstraint(soa.Self(), static_fields_test_class.Get()));
-  EXPECT_TRUE(strict_transaction.ReadConstraint(soa.Self(), static_fields_test_class.Get()));
+  EXPECT_TRUE(strict_transaction.WriteConstraint(static_fields_test_class.Get()));
+  EXPECT_TRUE(strict_transaction.ReadConstraint(static_fields_test_class.Get()));
   // Instance field or array element not in boot image.
   // Do not check ReadConstraint(), it expects only static fields (checks for class object).
-  EXPECT_FALSE(strict_transaction.WriteConstraint(soa.Self(), instance_fields_test_object.Get()));
-  EXPECT_FALSE(strict_transaction.WriteConstraint(soa.Self(), long_array_dim2.Get()));
+  EXPECT_FALSE(strict_transaction.WriteConstraint(instance_fields_test_object.Get()));
+  EXPECT_FALSE(strict_transaction.WriteConstraint(long_array_dim3.Get()));
   // Static field in the same class.
-  EXPECT_FALSE(strict_transaction.WriteConstraint(soa.Self(), static_field_class.Get()));
-  EXPECT_FALSE(strict_transaction.ReadConstraint(soa.Self(), static_field_class.Get()));
+  EXPECT_FALSE(strict_transaction.WriteConstraint(static_field_class.Get()));
+  EXPECT_FALSE(strict_transaction.ReadConstraint(static_field_class.Get()));
   // Write value constraints.
-  EXPECT_FALSE(strict_transaction.WriteValueConstraint(soa.Self(), static_fields_test_class.Get()));
-  EXPECT_FALSE(
-      strict_transaction.WriteValueConstraint(soa.Self(), instance_fields_test_object.Get()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(static_fields_test_class.Get()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(instance_fields_test_object.Get()));
   // TODO: The following may be revised, see a TODO in Transaction::WriteValueConstraint().
-  EXPECT_FALSE(strict_transaction.WriteValueConstraint(soa.Self(), long_array_dim2->GetClass()));
-  EXPECT_FALSE(strict_transaction.WriteValueConstraint(soa.Self(), long_array_dim2.Get()));
-  EXPECT_FALSE(strict_transaction.WriteValueConstraint(soa.Self(), long_array->GetClass()));
-  EXPECT_FALSE(strict_transaction.WriteValueConstraint(soa.Self(), long_array.Get()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(long_array_dim3->GetClass()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(long_array_dim3.Get()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(long_array->GetClass()));
+  EXPECT_FALSE(strict_transaction.WriteValueConstraint(long_array.Get()));
 }
 
 }  // namespace art

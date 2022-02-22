@@ -26,18 +26,18 @@
 #include <sys/capability.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <android-base/logging.h>
 #include <android-base/macros.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#include <art_image_values.h>
 #include <cutils/fs.h>
 #include <cutils/properties.h>
-#include <dex2oat_return_codes.h>
 #include <log/log.h>
 #include <private/android_filesystem_config.h>
 
+#include "android-base/file.h"
 #include "dexopt.h"
 #include "file_parsing.h"
 #include "globals.h"
@@ -83,7 +83,7 @@ static_assert(DEXOPT_ENABLE_HIDDEN_API_CHECKS == 1 << 10,
 static_assert(DEXOPT_GENERATE_COMPACT_DEX == 1 << 11, "DEXOPT_GENERATE_COMPACT_DEX unexpected");
 static_assert(DEXOPT_GENERATE_APP_IMAGE == 1 << 12, "DEXOPT_GENERATE_APP_IMAGE unexpected");
 
-static_assert(DEXOPT_MASK           == (0x1dfe | DEXOPT_IDLE_BACKGROUND_JOB),
+static_assert(DEXOPT_MASK           == (0x3dfe | DEXOPT_IDLE_BACKGROUND_JOB),
               "DEXOPT_MASK unexpected.");
 
 
@@ -96,7 +96,7 @@ static constexpr bool IsPowerOfTwo(T x) {
 
 template<typename T>
 static constexpr T RoundDown(T x, typename std::decay<T>::type n) {
-    return DCHECK_CONSTEXPR(IsPowerOfTwo(n), , T(0))(x & -n);
+    return (x & -n);
 }
 
 template<typename T>
@@ -138,10 +138,10 @@ class OTAPreoptService {
             return 4;
         }
 
-        PrepareEnvironment();
+        PrepareEnvironmentVariables();
 
-        if (!PrepareBootImage(/* force */ false)) {
-            LOG(ERROR) << "Failed preparing boot image.";
+        if (!EnsureBootImageAndDalvikCache()) {
+            LOG(ERROR) << "Bad boot image.";
             return 5;
         }
 
@@ -177,8 +177,10 @@ class OTAPreoptService {
 private:
 
     bool ReadSystemProperties() {
+        // TODO This file does not have a stable format. It should be read by
+        // code shared by init and otapreopt. See b/181182967#comment80
         static constexpr const char* kPropertyFiles[] = {
-                "/default.prop", "/system/build.prop"
+                "/system/build.prop"
         };
 
         for (size_t i = 0; i < arraysize(kPropertyFiles); ++i) {
@@ -195,26 +197,61 @@ private:
         //   export NAME VALUE
         // For simplicity, don't respect string quotation. The values we are interested in can be
         // encoded without them.
+        //
+        // init.environ.rc and derive_classpath all have the same format for
+        // environment variable exports (since they are all meant to be read by
+        // init) and can be matched by the same regex.
+
         std::regex export_regex("\\s*export\\s+(\\S+)\\s+(\\S+)");
-        bool parse_result = ParseFile("/init.environ.rc", [&](const std::string& line) {
-            std::smatch export_match;
-            if (!std::regex_match(line, export_match, export_regex)) {
-                return true;
-            }
+        auto parse_results = [&](auto& input) {
+          ParseFile(input, [&](const std::string& line) {
+              std::smatch export_match;
+              if (!std::regex_match(line, export_match, export_regex)) {
+                  return true;
+              }
 
-            if (export_match.size() != 3) {
-                return true;
-            }
+              if (export_match.size() != 3) {
+                  return true;
+              }
 
-            std::string name = export_match[1].str();
-            std::string value = export_match[2].str();
+              std::string name = export_match[1].str();
+              std::string value = export_match[2].str();
 
-            system_properties_.SetProperty(name, value);
+              system_properties_.SetProperty(name, value);
 
-            return true;
-        });
-        if (!parse_result) {
+              return true;
+          });
+        };
+
+        // TODO Just like with the system-properties above we really should have
+        // common code between init and otapreopt to deal with reading these
+        // things. See b/181182967
+        // There have been a variety of places the various env-vars have been
+        // over the years.  Expand or reduce this list as needed.
+        static constexpr const char* kEnvironmentVariableSources[] = {
+                "/init.environ.rc",
+        };
+        // First get everything from the static files.
+        for (const char* env_vars_file : kEnvironmentVariableSources) {
+          parse_results(env_vars_file);
+        }
+
+        // Next get everything from derive_classpath, since we're already in the
+        // chroot it will get the new versions of any dependencies.
+        {
+          android::base::unique_fd fd(memfd_create("derive_classpath_temp", MFD_CLOEXEC));
+          if (!fd.ok()) {
+            LOG(ERROR) << "Unable to create fd for derive_classpath";
             return false;
+          }
+          std::string memfd_file = StringPrintf("/proc/%d/fd/%d", getpid(), fd.get());
+          std::string error_msg;
+          if (!Exec({"/apex/com.android.sdkext/bin/derive_classpath", memfd_file}, &error_msg)) {
+            PLOG(ERROR) << "Running derive_classpath failed: " << error_msg;
+            return false;
+          }
+          std::ifstream ifs(memfd_file);
+          parse_results(ifs);
         }
 
         if (system_properties_.GetProperty(kAndroidDataPathPropertyName) == nullptr) {
@@ -302,7 +339,7 @@ private:
         return parameters_.ReadArguments(argc, const_cast<const char**>(argv));
     }
 
-    void PrepareEnvironment() {
+    void PrepareEnvironmentVariables() {
         environ_.push_back(StringPrintf("BOOTCLASSPATH=%s", boot_classpath_.c_str()));
         environ_.push_back(StringPrintf("ANDROID_DATA=%s", GetOTADataDirectory().c_str()));
         environ_.push_back(StringPrintf("ANDROID_ROOT=%s", android_root_.c_str()));
@@ -312,9 +349,8 @@ private:
         }
     }
 
-    // Ensure that we have the right boot image. The first time any app is
-    // compiled, we'll try to generate it.
-    bool PrepareBootImage(bool force) const {
+    // Ensure that we have the right boot image and cache file structures.
+    bool EnsureBootImageAndDalvikCache() const {
         if (parameters_.instruction_set == nullptr) {
             LOG(ERROR) << "Instruction set missing.";
             return false;
@@ -340,34 +376,16 @@ private:
             }
         }
 
-        // Check whether we have files in /data.
+        // Check whether we have a boot image.
         // TODO: check that the files are correct wrt/ jars.
-        std::string art_path = isa_path + "/system@framework@boot.art";
-        std::string oat_path = isa_path + "/system@framework@boot.oat";
-        bool cleared = false;
-        if (access(art_path.c_str(), F_OK) == 0 && access(oat_path.c_str(), F_OK) == 0) {
-            // Files exist, assume everything is alright if not forced. Otherwise clean up.
-            if (!force) {
-                return true;
-            }
-            ClearDirectory(isa_path);
-            cleared = true;
+        std::string preopted_boot_art_path =
+            StringPrintf("/apex/com.android.art/javalib/%s/boot.art", isa);
+        if (access(preopted_boot_art_path.c_str(), F_OK) != 0) {
+            PLOG(ERROR) << "Bad access() to " << preopted_boot_art_path;
+            return false;
         }
 
-        // Check whether we have an image in /system.
-        // TODO: check that the files are correct wrt/ jars.
-        std::string preopted_boot_art_path = StringPrintf("/system/framework/%s/boot.art", isa);
-        if (access(preopted_boot_art_path.c_str(), F_OK) == 0) {
-            // Note: we ignore |force| here.
-            return true;
-        }
-
-
-        if (!cleared) {
-            ClearDirectory(isa_path);
-        }
-
-        return Dex2oatBootImage(boot_classpath_, art_path, oat_path, isa);
+        return true;
     }
 
     static bool CreatePath(const std::string& path) {
@@ -399,108 +417,6 @@ private:
         }
         PLOG(ERROR) << "Could not create " << path;
         return false;
-    }
-
-    static void ClearDirectory(const std::string& dir) {
-        DIR* c_dir = opendir(dir.c_str());
-        if (c_dir == nullptr) {
-            PLOG(WARNING) << "Unable to open " << dir << " to delete it's contents";
-            return;
-        }
-
-        for (struct dirent* de = readdir(c_dir); de != nullptr; de = readdir(c_dir)) {
-            const char* name = de->d_name;
-            if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
-                continue;
-            }
-            // We only want to delete regular files and symbolic links.
-            std::string file = StringPrintf("%s/%s", dir.c_str(), name);
-            if (de->d_type != DT_REG && de->d_type != DT_LNK) {
-                LOG(WARNING) << "Unexpected file "
-                             << file
-                             << " of type "
-                             << std::hex
-                             << de->d_type
-                             << " encountered.";
-            } else {
-                // Try to unlink the file.
-                if (unlink(file.c_str()) != 0) {
-                    PLOG(ERROR) << "Unable to unlink " << file;
-                }
-            }
-        }
-        CHECK_EQ(0, closedir(c_dir)) << "Unable to close directory.";
-    }
-
-    bool Dex2oatBootImage(const std::string& boot_cp,
-                          const std::string& art_path,
-                          const std::string& oat_path,
-                          const char* isa) const {
-        // This needs to be kept in sync with ART, see art/runtime/gc/space/image_space.cc.
-        std::vector<std::string> cmd;
-        cmd.push_back(kDex2oatPath);
-        cmd.push_back(StringPrintf("--image=%s", art_path.c_str()));
-        for (const std::string& boot_part : Split(boot_cp, ":")) {
-            cmd.push_back(StringPrintf("--dex-file=%s", boot_part.c_str()));
-        }
-        cmd.push_back(StringPrintf("--oat-file=%s", oat_path.c_str()));
-
-        int32_t base_offset = ChooseRelocationOffsetDelta(
-                art::imagevalues::GetImageMinBaseAddressDelta(),
-                art::imagevalues::GetImageMaxBaseAddressDelta());
-        cmd.push_back(StringPrintf("--base=0x%x",
-                art::imagevalues::GetImageBaseAddress() + base_offset));
-
-        cmd.push_back(StringPrintf("--instruction-set=%s", isa));
-
-        // These things are pushed by AndroidRuntime, see frameworks/base/core/jni/AndroidRuntime.cpp.
-        AddCompilerOptionFromSystemProperty("dalvik.vm.image-dex2oat-Xms",
-                "-Xms",
-                true,
-                cmd);
-        AddCompilerOptionFromSystemProperty("dalvik.vm.image-dex2oat-Xmx",
-                "-Xmx",
-                true,
-                cmd);
-        AddCompilerOptionFromSystemProperty("dalvik.vm.image-dex2oat-filter",
-                "--compiler-filter=",
-                false,
-                cmd);
-        cmd.push_back("--profile-file=/system/etc/boot-image.prof");
-        // TODO: Compiled-classes.
-        const std::string* extra_opts =
-                system_properties_.GetProperty("dalvik.vm.image-dex2oat-flags");
-        if (extra_opts != nullptr) {
-            std::vector<std::string> extra_vals = Split(*extra_opts, " ");
-            cmd.insert(cmd.end(), extra_vals.begin(), extra_vals.end());
-        }
-        // TODO: Should we lower this? It's usually set close to max, because
-        //       normally there's not much else going on at boot.
-        AddCompilerOptionFromSystemProperty("dalvik.vm.image-dex2oat-threads",
-                "-j",
-                false,
-                cmd);
-        AddCompilerOptionFromSystemProperty("dalvik.vm.image-dex2oat-cpu-set",
-                "--cpu-set=",
-                false,
-                cmd);
-        AddCompilerOptionFromSystemProperty(
-                StringPrintf("dalvik.vm.isa.%s.variant", isa).c_str(),
-                "--instruction-set-variant=",
-                false,
-                cmd);
-        AddCompilerOptionFromSystemProperty(
-                StringPrintf("dalvik.vm.isa.%s.features", isa).c_str(),
-                "--instruction-set-features=",
-                false,
-                cmd);
-
-        std::string error_msg;
-        bool result = Exec(cmd, &error_msg);
-        if (!result) {
-            LOG(ERROR) << "Could not generate boot image: " << error_msg;
-        }
-        return result;
     }
 
     static const char* ParseNull(const char* arg) {
@@ -562,24 +478,29 @@ private:
     // Run dexopt with the parameters of parameters_.
     // TODO(calin): embed the profile name in the parameters.
     int Dexopt() {
-        std::string dummy;
-        return dexopt(parameters_.apk_path,
-                      parameters_.uid,
-                      parameters_.pkgName,
-                      parameters_.instruction_set,
-                      parameters_.dexopt_needed,
-                      parameters_.oat_dir,
-                      parameters_.dexopt_flags,
-                      parameters_.compiler_filter,
-                      parameters_.volume_uuid,
-                      parameters_.shared_libraries,
-                      parameters_.se_info,
-                      parameters_.downgrade,
-                      parameters_.target_sdk_version,
-                      parameters_.profile_name,
-                      parameters_.dex_metadata_path,
-                      parameters_.compilation_reason,
-                      &dummy);
+        std::string error;
+        int res = dexopt(parameters_.apk_path,
+                         parameters_.uid,
+                         parameters_.pkgName,
+                         parameters_.instruction_set,
+                         parameters_.dexopt_needed,
+                         parameters_.oat_dir,
+                         parameters_.dexopt_flags,
+                         parameters_.compiler_filter,
+                         parameters_.volume_uuid,
+                         parameters_.shared_libraries,
+                         parameters_.se_info,
+                         parameters_.downgrade,
+                         parameters_.target_sdk_version,
+                         parameters_.profile_name,
+                         parameters_.dex_metadata_path,
+                         parameters_.compilation_reason,
+                         &error);
+        if (res != 0) {
+            LOG(ERROR) << "During preopt of " << parameters_.apk_path << " got result " << res
+                       << " error: " << error;
+        }
+        return res;
     }
 
     int RunPreopt() {
@@ -590,22 +511,6 @@ private:
         int dexopt_result = Dexopt();
         if (dexopt_result == 0) {
             return 0;
-        }
-
-        // If the dexopt failed, we may have a stale boot image from a previous OTA run.
-        // Then regenerate and retry.
-        if (WEXITSTATUS(dexopt_result) ==
-                static_cast<int>(::art::dex2oat::ReturnCode::kCreateRuntime)) {
-            if (!PrepareBootImage(/* force */ true)) {
-                LOG(ERROR) << "Forced boot image creating failed. Original error return was "
-                        << dexopt_result;
-                return dexopt_result;
-            }
-
-            int dexopt_result_boot_image_retry = Dexopt();
-            if (dexopt_result_boot_image_retry == 0) {
-                return 0;
-            }
         }
 
         // If this was a profile-guided run, we may have profile version issues. Try to downgrade,
@@ -626,6 +531,7 @@ private:
     // Choose a random relocation offset. Taken from art/runtime/gc/image_space.cc.
     static int32_t ChooseRelocationOffsetDelta(int32_t min_delta, int32_t max_delta) {
         constexpr size_t kPageSize = PAGE_SIZE;
+        static_assert(IsPowerOfTwo(kPageSize), "page size must be power of two");
         CHECK_EQ(min_delta % kPageSize, 0u);
         CHECK_EQ(max_delta % kPageSize, 0u);
         CHECK_LT(min_delta, max_delta);

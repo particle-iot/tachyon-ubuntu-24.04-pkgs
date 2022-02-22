@@ -51,13 +51,13 @@ int AHardwareBuffer_allocate(const AHardwareBuffer_Desc* desc, AHardwareBuffer**
             std::string("AHardwareBuffer pid [") + std::to_string(getpid()) + "]"));
 
     status_t err = gbuffer->initCheck();
-    if (err != 0 || gbuffer->handle == 0) {
+    if (err != 0 || gbuffer->handle == nullptr) {
         if (err == NO_MEMORY) {
             GraphicBuffer::dumpAllocationsToSystemLog();
         }
         ALOGE("GraphicBuffer(w=%u, h=%u, lc=%u) failed (%s), handle=%p",
                 desc->width, desc->height, desc->layers, strerror(-err), gbuffer->handle);
-        return err;
+        return err == 0 ? UNKNOWN_ERROR : err;
     }
 
     *outBuffer = AHardwareBuffer_from_GraphicBuffer(gbuffer.get());
@@ -643,6 +643,8 @@ uint32_t AHardwareBuffer_bytesPerPixel(uint32_t format) {
       case AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM:
       case AHARDWAREBUFFER_FORMAT_D24_UNORM_S8_UINT:
           return 4;
+      case AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT:
+          return 8;
       default:
           return 0;
   }
@@ -685,6 +687,10 @@ uint64_t AHardwareBuffer_convertToGrallocUsageBits(uint64_t usage) {
     static_assert(AHARDWAREBUFFER_USAGE_GPU_CUBE_MAP == (uint64_t)BufferUsage::GPU_CUBE_MAP,
             "gralloc and AHardwareBuffer flags don't match");
     static_assert(AHARDWAREBUFFER_USAGE_GPU_MIPMAP_COMPLETE == (uint64_t)BufferUsage::GPU_MIPMAP_COMPLETE,
+            "gralloc and AHardwareBuffer flags don't match");
+    static_assert(AHARDWAREBUFFER_USAGE_CAMERA_WRITE == (uint64_t)BufferUsage::CAMERA_OUTPUT,
+            "gralloc and AHardwareBuffer flags don't match");
+    static_assert(AHARDWAREBUFFER_USAGE_CAMERA_READ == (uint64_t)BufferUsage::CAMERA_INPUT,
             "gralloc and AHardwareBuffer flags don't match");
     return usage;
 }

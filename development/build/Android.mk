@@ -58,13 +58,10 @@ $(sample_props) : $(HOST_OUT)/development/samples/%_source.properties : $(TOPDIR
 # ===== SDK jar file of stubs =====
 # A.k.a the "current" version of the public SDK (android.jar inside the SDK package).
 full_target := $(call intermediates-dir-for,JAVA_LIBRARIES,android_stubs_current,,COMMON)/classes.jar
-full_src_target := $(OUT_DOCS)/api-stubs-docs-stubs.srcjar
-
-.PHONY: android_stubs
-android_stubs: $(full_target) $(full_src_target)
+full_src_target := $(call intermediates-dir-for,ETC,frameworks-base-api-current.srcjar)/frameworks-base-api-current.srcjar
 
 # android.jar is what we put in the SDK package.
-android_jar_intermediates := $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/android_jar_intermediates
+android_jar_intermediates := $(call intermediates-dir-for,PACKAGING,android_jar,,COMMON)
 android_jar_full_target := $(android_jar_intermediates)/android.jar
 android_jar_src_target := $(android_jar_intermediates)/android-stubs-src.jar
 
@@ -89,6 +86,10 @@ $(android_jar_src_target): $(full_src_target)
 ALL_SDK_FILES += $(android_jar_full_target)
 ALL_SDK_FILES += $(android_jar_src_target)
 
+# ===== SDK for system modules =====
+# A subset of the public SDK to convert to system modules for use with javac -source 9 -target 9
+ALL_SDK_FILES += $(call intermediates-dir-for,JAVA_LIBRARIES,core-current-stubs-for-system-modules,,COMMON)/classes.jar
+
 # ====================================================
 
 # The uiautomator stubs
@@ -96,6 +97,9 @@ ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/android_uiaut
 
 # org.apache.http.legacy.jar stubs
 ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/org.apache.http.legacy.stubs_intermediates/classes.jar
+
+# Android Automotive OS stubs
+ALL_SDK_FILES += $(OUT_DIR)/target/common/obj/JAVA_LIBRARIES/android.car-stubs_intermediates/classes.jar
 
 # test stubs
 ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/android.test.mock.stubs_intermediates/classes.jar
@@ -109,28 +113,23 @@ ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/core-lambda-s
 ALL_SDK_FILES += $(HOST_OUT_COMMON_INTERMEDIATES)/JAVA_LIBRARIES/shrinkedAndroid_intermediates/shrinkedAndroid.jar
 
 # ======= Lint API XML ===========
-ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/api-stubs-docs_generated-api-versions.xml
+full_target := $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework-doc-stubs_generated-api-versions.xml
+ALL_SDK_FILES += $(full_target)
+$(call dist-for-goals,sdk win_sdk,$(full_target):data/api-versions.xml)
+
+# ======= Lint Annotations zip ===========
+full_target := $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework-doc-stubs_annotations.zip
+ALL_SDK_FILES += $(full_target)
+$(call dist-for-goals,sdk win_sdk,$(full_target):data/annotations.zip)
+
+# ======= Lint system API XML ===========
+full_target := $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework-doc-system-stubs_generated-api-versions.xml
+$(call dist-for-goals,sdk win_sdk,$(full_target):system-data/api-versions.xml)
+
+# ======= Lint system Annotations zip ===========
+full_target := $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework-doc-system-stubs_annotations.zip
+$(call dist-for-goals,sdk win_sdk,$(full_target):system-data/annotations.zip)
 
 # ============ SDK AIDL ============
 $(eval $(call copy-one-file,$(FRAMEWORK_AIDL),$(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework.aidl))
 ALL_SDK_FILES += $(TARGET_OUT_COMMON_INTERMEDIATES)/PACKAGING/framework.aidl
-
-# ============ System SDK ============
-full_target := $(call intermediates-dir-for,JAVA_LIBRARIES,android_system_stubs_current,,COMMON)/classes.jar
-
-.PHONY: android_system_stubs
-android_system_stubs: $(full_target)
-
-# Build and store the android_system.jar.
-$(call dist-for-goals,sdk win_sdk,$(full_target):android_system.jar)
-$(call dist-for-goals,sdk win_sdk,$(full_target):apistubs/android/system/android.jar)
-
-# ============ Test SDK ============
-full_target := $(call intermediates-dir-for,JAVA_LIBRARIES,android_test_stubs_current,,COMMON)/classes.jar
-
-.PHONY: android_test_stubs
-android_test_stubs: $(full_target)
-
-# Build and store the android_test.jar.
-$(call dist-for-goals,sdk win_sdk,$(full_target):android_test.jar)
-$(call dist-for-goals,sdk win_sdk,$(full_target):apistubs/android/test/android.jar)

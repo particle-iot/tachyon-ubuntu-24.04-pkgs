@@ -54,12 +54,6 @@ static ::std::vector<CodegenTargetConfig> GetTargetConfigs() {
 #ifdef ART_ENABLE_CODEGEN_x86_64
     CodegenTargetConfig(InstructionSet::kX86_64, create_codegen_x86_64),
 #endif
-#ifdef ART_ENABLE_CODEGEN_mips
-    CodegenTargetConfig(InstructionSet::kMips, create_codegen_mips),
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips64
-    CodegenTargetConfig(InstructionSet::kMips64, create_codegen_mips64)
-#endif
   };
 
   for (const CodegenTargetConfig& test_config : test_config_candidates) {
@@ -194,9 +188,10 @@ class SchedulerTest : public OptimizingUnitTest {
       HInstructionScheduling scheduling(graph, target_config.GetInstructionSet());
       scheduling.Run(/*only_optimize_loop_blocks*/ false, /*schedule_randomly*/ true);
 
-      OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
+      std::unique_ptr<CompilerOptions> compiler_options =
+          CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
       RunCode(target_config,
-              *compiler_options_,
+              *compiler_options,
               graph,
               [](HGraph* graph_arg) { RemoveSuspendChecks(graph_arg); },
               has_result, expected);
@@ -278,7 +273,8 @@ class SchedulerTest : public OptimizingUnitTest {
       entry->AddInstruction(instr);
     }
 
-    HeapLocationCollector heap_location_collector(graph_);
+    HeapLocationCollector heap_location_collector(
+        graph_, GetScopedAllocator(), LoadStoreAnalysisType::kBasic);
     heap_location_collector.VisitBasicBlock(entry);
     heap_location_collector.BuildAliasingMatrix();
     TestSchedulingGraph scheduling_graph(GetScopedAllocator(), &heap_location_collector);

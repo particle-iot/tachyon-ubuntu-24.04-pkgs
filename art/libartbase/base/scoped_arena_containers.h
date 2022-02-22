@@ -18,6 +18,7 @@
 #define ART_LIBARTBASE_BASE_SCOPED_ARENA_CONTAINERS_H_
 
 #include <deque>
+#include <forward_list>
 #include <queue>
 #include <set>
 #include <type_traits>
@@ -26,6 +27,8 @@
 
 #include "arena_containers.h"  // For ArenaAllocatorAdapterKind.
 #include "dchecked_vector.h"
+#include "hash_map.h"
+#include "hash_set.h"
 #include "safe_map.h"
 #include "scoped_arena_allocator.h"
 
@@ -44,6 +47,9 @@ class ScopedArenaAllocatorAdapter;
 
 template <typename T>
 using ScopedArenaDeque = std::deque<T, ScopedArenaAllocatorAdapter<T>>;
+
+template <typename T>
+using ScopedArenaForwardList = std::forward_list<T, ScopedArenaAllocatorAdapter<T>>;
 
 template <typename T>
 using ScopedArenaQueue = std::queue<T, ScopedArenaDeque<T>>;
@@ -72,7 +78,7 @@ using ScopedArenaHashSet = HashSet<T, EmptyFn, HashFn, Pred, ScopedArenaAllocato
 
 template <typename Key,
           typename Value,
-          typename EmptyFn = DefaultEmptyFn<std::pair<Key, Value>>,
+          typename EmptyFn = DefaultMapEmptyFn<Key, Value>,
           typename HashFn = DefaultHashFn<Key>,
           typename Pred = DefaultPred<Key>>
 using ScopedArenaHashMap = HashMap<Key,
@@ -101,13 +107,13 @@ class ScopedArenaAllocatorAdapter<void>
     : private DebugStackReference, private DebugStackIndirectTopRef,
       private ArenaAllocatorAdapterKind {
  public:
-  typedef void value_type;
-  typedef void* pointer;
-  typedef const void* const_pointer;
+  using value_type    = void;
+  using pointer       = void*;
+  using const_pointer = const void*;
 
   template <typename U>
   struct rebind {
-    typedef ScopedArenaAllocatorAdapter<U> other;
+    using other = ScopedArenaAllocatorAdapter<U>;
   };
 
   explicit ScopedArenaAllocatorAdapter(ScopedArenaAllocator* allocator,
@@ -140,17 +146,17 @@ class ScopedArenaAllocatorAdapter
     : private DebugStackReference, private DebugStackIndirectTopRef,
       private ArenaAllocatorAdapterKind {
  public:
-  typedef T value_type;
-  typedef T* pointer;
-  typedef T& reference;
-  typedef const T* const_pointer;
-  typedef const T& const_reference;
-  typedef size_t size_type;
-  typedef ptrdiff_t difference_type;
+  using value_type      = T;
+  using pointer         = T*;
+  using reference       = T&;
+  using const_pointer   = const T*;
+  using const_reference = const T&;
+  using size_type       = size_t;
+  using difference_type = ptrdiff_t;
 
   template <typename U>
   struct rebind {
-    typedef ScopedArenaAllocatorAdapter<U> other;
+    using other = ScopedArenaAllocatorAdapter<U>;
   };
 
   explicit ScopedArenaAllocatorAdapter(ScopedArenaAllocator* allocator,

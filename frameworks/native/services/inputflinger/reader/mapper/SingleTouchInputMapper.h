@@ -24,16 +24,16 @@ namespace android {
 
 class SingleTouchInputMapper : public TouchInputMapper {
 public:
-    explicit SingleTouchInputMapper(InputDevice* device);
-    virtual ~SingleTouchInputMapper();
+    explicit SingleTouchInputMapper(InputDeviceContext& deviceContext);
+    ~SingleTouchInputMapper() override;
 
-    virtual void reset(nsecs_t when);
-    virtual void process(const RawEvent* rawEvent);
+    void reset(nsecs_t when) override;
+    void process(const RawEvent* rawEvent) override;
 
 protected:
-    virtual void syncTouch(nsecs_t when, RawState* outState);
-    virtual void configureRawPointerAxes();
-    virtual bool hasStylus() const;
+    void syncTouch(nsecs_t when, RawState* outState) override;
+    void configureRawPointerAxes() override;
+    bool hasStylus() const override;
 
 private:
     SingleTouchMotionAccumulator mSingleTouchMotionAccumulator;

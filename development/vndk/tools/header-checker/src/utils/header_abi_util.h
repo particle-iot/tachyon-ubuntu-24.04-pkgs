@@ -26,11 +26,6 @@ namespace header_checker {
 namespace utils {
 
 
-std::string RealPath(const std::string &path);
-
-std::set<std::string> CollectAllExportedHeaders(
-    const std::vector<std::string> &exported_header_dirs);
-
 inline std::string FindAndReplace(const std::string &candidate_str,
                                   const std::string &find_str,
                                   const std::string &replace_str) {

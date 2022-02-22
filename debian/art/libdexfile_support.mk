@@ -9,8 +9,8 @@ CPPFLAGS += \
   -Iart/libartbase \
   -Iart/libdexfile \
   -Iart/libdexfile/external/include \
-  -Isystem/core/base/include \
-  -Isystem/core/liblog/include \
+  -Isystem/libbase/include \
+  -Isystem/logging/liblog/include \
   -Umips \
 
 debian/out/art/$(NAME).a: $(OBJECTS)

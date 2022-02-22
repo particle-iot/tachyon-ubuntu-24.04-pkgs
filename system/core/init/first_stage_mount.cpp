@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <set>
@@ -41,13 +42,17 @@
 #include <liblp/liblp.h>
 #include <libsnapshot/snapshot.h>
 
+#include "block_dev_initializer.h"
 #include "devices.h"
+#include "result.h"
+#include "snapuserd_transition.h"
 #include "switch_root.h"
 #include "uevent.h"
 #include "uevent_listener.h"
 #include "util.h"
 
 using android::base::ReadFileToString;
+using android::base::Result;
 using android::base::Split;
 using android::base::StringPrintf;
 using android::base::Timer;
@@ -78,30 +83,29 @@ class FirstStageMount {
 
     // The factory method to create either FirstStageMountVBootV1 or FirstStageMountVBootV2
     // based on device tree configurations.
-    static std::unique_ptr<FirstStageMount> Create();
+    static Result<std::unique_ptr<FirstStageMount>> Create();
+    bool DoCreateDevices();    // Creates devices and logical partitions from storage devices
     bool DoFirstStageMount();  // Mounts fstab entries read from device tree.
     bool InitDevices();
 
   protected:
-    ListenerAction HandleBlockDevice(const std::string& name, const Uevent&,
-                                     std::set<std::string>* required_devices);
     bool InitRequiredDevices(std::set<std::string> devices);
-    bool InitMappedDevice(const std::string& verity_device);
-    bool InitDeviceMapper();
     bool CreateLogicalPartitions();
+    bool CreateSnapshotPartitions(android::snapshot::SnapshotManager* sm);
     bool MountPartition(const Fstab::iterator& begin, bool erase_same_mounts,
                         Fstab::iterator* end = nullptr);
 
     bool MountPartitions();
     bool TrySwitchSystemAsRoot();
-    bool TrySkipMountingPartitions();
     bool IsDmLinearEnabled();
-    void GetDmLinearMetadataDevice(std::set<std::string>* devices);
+    void GetSuperDeviceName(std::set<std::string>* devices);
     bool InitDmLinearBackingDevices(const android::fs_mgr::LpMetadata& metadata);
     void UseDsuIfPresent();
+    // Reads all fstab.avb_keys from the ramdisk for first-stage mount.
     void PreloadAvbKeys();
-
-    ListenerAction UeventCallback(const Uevent& uevent, std::set<std::string>* required_devices);
+    // Copies /avb/*.avbpubkey used for DSU from the ramdisk to /metadata for key
+    // revocation check by DSU installation service.
+    void CopyDsuAvbKeys();
 
     // Pure virtual functions.
     virtual bool GetDmVerityDevices(std::set<std::string>* devices) = 0;
@@ -109,12 +113,13 @@ class FirstStageMount {
 
     bool need_dm_verity_;
     bool dsu_not_on_userdata_ = false;
+    bool use_snapuserd_ = false;
 
     Fstab fstab_;
-    std::string lp_metadata_partition_;
+    // The super path is only set after InitDevices, and is invalid before.
+    std::string super_path_;
     std::string super_partition_name_;
-    std::unique_ptr<DeviceHandler> device_handler_;
-    UeventListener uevent_listener_;
+    BlockDevInitializer block_dev_init_;
     // Reads all AVB keys before chroot into /system, as they might be used
     // later when mounting other partitions, e.g., /vendor and /product.
     std::map<std::string, std::vector<std::string>> preload_avb_key_blobs_;
@@ -156,7 +161,7 @@ static inline bool IsDtVbmetaCompatible(const Fstab& fstab) {
     return is_android_dt_value_expected("vbmeta/compatible", "android,vbmeta");
 }
 
-static Fstab ReadFirstStageFstab() {
+static Result<Fstab> ReadFirstStageFstab() {
     Fstab fstab;
     if (!ReadFstabFromDt(&fstab)) {
         if (ReadDefaultFstab(&fstab)) {
@@ -166,7 +171,7 @@ static Fstab ReadFirstStageFstab() {
                                        }),
                         fstab.end());
         } else {
-            LOG(INFO) << "Failed to fstab for first stage mount";
+            return Error() << "failed to read default fstab for first stage mount";
         }
     }
     return fstab;
@@ -228,23 +233,43 @@ static bool IsStandaloneImageRollback(const AvbHandle& builtin_vbmeta,
 
 // Class Definitions
 // -----------------
-FirstStageMount::FirstStageMount(Fstab fstab)
-    : need_dm_verity_(false), fstab_(std::move(fstab)), uevent_listener_(16 * 1024 * 1024) {
-    auto boot_devices = android::fs_mgr::GetBootDevices();
-    device_handler_ = std::make_unique<DeviceHandler>(
-            std::vector<Permissions>{}, std::vector<SysfsPermissions>{}, std::vector<Subsystem>{},
-            std::move(boot_devices), false);
-
+FirstStageMount::FirstStageMount(Fstab fstab) : need_dm_verity_(false), fstab_(std::move(fstab)) {
     super_partition_name_ = fs_mgr_get_super_partition_name();
 }
 
-std::unique_ptr<FirstStageMount> FirstStageMount::Create() {
+Result<std::unique_ptr<FirstStageMount>> FirstStageMount::Create() {
     auto fstab = ReadFirstStageFstab();
-    if (IsDtVbmetaCompatible(fstab)) {
-        return std::make_unique<FirstStageMountVBootV2>(std::move(fstab));
-    } else {
-        return std::make_unique<FirstStageMountVBootV1>(std::move(fstab));
+    if (!fstab.ok()) {
+        return fstab.error();
     }
+
+    if (IsDtVbmetaCompatible(*fstab)) {
+        return std::make_unique<FirstStageMountVBootV2>(std::move(*fstab));
+    } else {
+        return std::make_unique<FirstStageMountVBootV1>(std::move(*fstab));
+    }
+}
+
+bool FirstStageMount::DoCreateDevices() {
+    if (!InitDevices()) return false;
+
+    // Mount /metadata before creating logical partitions, since we need to
+    // know whether a snapshot merge is in progress.
+    auto metadata_partition = std::find_if(fstab_.begin(), fstab_.end(), [](const auto& entry) {
+        return entry.mount_point == "/metadata";
+    });
+    if (metadata_partition != fstab_.end()) {
+        if (MountPartition(metadata_partition, true /* erase_same_mounts */)) {
+            // Copies DSU AVB keys from the ramdisk to /metadata.
+            // Must be done before the following TrySwitchSystemAsRoot().
+            // Otherwise, ramdisk will be inaccessible after switching root.
+            CopyDsuAvbKeys();
+        }
+    }
+
+    if (!CreateLogicalPartitions()) return false;
+
+    return true;
 }
 
 bool FirstStageMount::DoFirstStageMount() {
@@ -254,8 +279,6 @@ bool FirstStageMount::DoFirstStageMount() {
         return true;
     }
 
-    if (!InitDevices()) return false;
-
     if (!MountPartitions()) return false;
 
     return true;
@@ -263,12 +286,23 @@ bool FirstStageMount::DoFirstStageMount() {
 
 bool FirstStageMount::InitDevices() {
     std::set<std::string> devices;
-    GetDmLinearMetadataDevice(&devices);
+    GetSuperDeviceName(&devices);
 
     if (!GetDmVerityDevices(&devices)) {
         return false;
     }
-    return InitRequiredDevices(std::move(devices));
+    if (!InitRequiredDevices(std::move(devices))) {
+        return false;
+    }
+
+    if (IsDmLinearEnabled()) {
+        auto super_symlink = "/dev/block/by-name/"s + super_partition_name_;
+        if (!android::base::Realpath(super_symlink, &super_path_)) {
+            PLOG(ERROR) << "realpath failed: " << super_symlink;
+            return false;
+        }
+    }
+    return true;
 }
 
 bool FirstStageMount::IsDmLinearEnabled() {
@@ -278,7 +312,7 @@ bool FirstStageMount::IsDmLinearEnabled() {
     return false;
 }
 
-void FirstStageMount::GetDmLinearMetadataDevice(std::set<std::string>* devices) {
+void FirstStageMount::GetSuperDeviceName(std::set<std::string>* devices) {
     // Add any additional devices required for dm-linear mappings.
     if (!IsDmLinearEnabled()) {
         return;
@@ -291,62 +325,13 @@ void FirstStageMount::GetDmLinearMetadataDevice(std::set<std::string>* devices) 
 // Found partitions will then be removed from it for the subsequent member
 // function to check which devices are NOT created.
 bool FirstStageMount::InitRequiredDevices(std::set<std::string> devices) {
-    if (!InitDeviceMapper()) {
+    if (!block_dev_init_.InitDeviceMapper()) {
         return false;
     }
-
     if (devices.empty()) {
         return true;
     }
-
-    auto uevent_callback = [&, this](const Uevent& uevent) {
-        return UeventCallback(uevent, &devices);
-    };
-    uevent_listener_.RegenerateUevents(uevent_callback);
-
-    // UeventCallback() will remove found partitions from |devices|. So if it
-    // isn't empty here, it means some partitions are not found.
-    if (!devices.empty()) {
-        LOG(INFO) << __PRETTY_FUNCTION__
-                  << ": partition(s) not found in /sys, waiting for their uevent(s): "
-                  << android::base::Join(devices, ", ");
-        Timer t;
-        uevent_listener_.Poll(uevent_callback, 10s);
-        LOG(INFO) << "Wait for partitions returned after " << t;
-    }
-
-    if (!devices.empty()) {
-        LOG(ERROR) << __PRETTY_FUNCTION__ << ": partition(s) not found after polling timeout: "
-                   << android::base::Join(devices, ", ");
-        return false;
-    }
-
-    return true;
-}
-
-bool FirstStageMount::InitDeviceMapper() {
-    const std::string dm_path = "/devices/virtual/misc/device-mapper";
-    bool found = false;
-    auto dm_callback = [this, &dm_path, &found](const Uevent& uevent) {
-        if (uevent.path == dm_path) {
-            device_handler_->HandleUevent(uevent);
-            found = true;
-            return ListenerAction::kStop;
-        }
-        return ListenerAction::kContinue;
-    };
-    uevent_listener_.RegenerateUeventsForPath("/sys" + dm_path, dm_callback);
-    if (!found) {
-        LOG(INFO) << "device-mapper device not found in /sys, waiting for its uevent";
-        Timer t;
-        uevent_listener_.Poll(dm_callback, 10s);
-        LOG(INFO) << "Wait for device-mapper returned after " << t;
-    }
-    if (!found) {
-        LOG(ERROR) << "device-mapper device not found after polling timeout";
-        return false;
-    }
-    return true;
+    return block_dev_init_.InitDevices(std::move(devices));
 }
 
 bool FirstStageMount::InitDmLinearBackingDevices(const android::fs_mgr::LpMetadata& metadata) {
@@ -370,7 +355,7 @@ bool FirstStageMount::CreateLogicalPartitions() {
     if (!IsDmLinearEnabled()) {
         return true;
     }
-    if (lp_metadata_partition_.empty()) {
+    if (super_path_.empty()) {
         LOG(ERROR) << "Could not locate logical partition tables in partition "
                    << super_partition_name_;
         return false;
@@ -382,96 +367,49 @@ bool FirstStageMount::CreateLogicalPartitions() {
             return false;
         }
         if (sm->NeedSnapshotsInFirstStageMount()) {
-            // When COW images are present for snapshots, they are stored on
-            // the data partition.
-            if (!InitRequiredDevices({"userdata"})) {
-                return false;
-            }
-            return sm->CreateLogicalAndSnapshotPartitions(lp_metadata_partition_);
+            return CreateSnapshotPartitions(sm.get());
         }
     }
 
-    auto metadata = android::fs_mgr::ReadCurrentMetadata(lp_metadata_partition_);
+    auto metadata = android::fs_mgr::ReadCurrentMetadata(super_path_);
     if (!metadata) {
-        LOG(ERROR) << "Could not read logical partition metadata from " << lp_metadata_partition_;
+        LOG(ERROR) << "Could not read logical partition metadata from " << super_path_;
         return false;
     }
     if (!InitDmLinearBackingDevices(*metadata.get())) {
         return false;
     }
-    return android::fs_mgr::CreateLogicalPartitions(*metadata.get(), lp_metadata_partition_);
+    return android::fs_mgr::CreateLogicalPartitions(*metadata.get(), super_path_);
 }
 
-ListenerAction FirstStageMount::HandleBlockDevice(const std::string& name, const Uevent& uevent,
-                                                  std::set<std::string>* required_devices) {
-    // Matches partition name to create device nodes.
-    // Both required_devices_partition_names_ and uevent->partition_name have A/B
-    // suffix when A/B is used.
-    auto iter = required_devices->find(name);
-    if (iter != required_devices->end()) {
-        LOG(VERBOSE) << __PRETTY_FUNCTION__ << ": found partition: " << *iter;
-        if (IsDmLinearEnabled() && name == super_partition_name_) {
-            std::vector<std::string> links = device_handler_->GetBlockDeviceSymlinks(uevent);
-            lp_metadata_partition_ = links[0];
-        }
-        required_devices->erase(iter);
-        device_handler_->HandleUevent(uevent);
-        if (required_devices->empty()) {
-            return ListenerAction::kStop;
-        } else {
-            return ListenerAction::kContinue;
-        }
-    }
-    return ListenerAction::kContinue;
-}
-
-ListenerAction FirstStageMount::UeventCallback(const Uevent& uevent,
-                                               std::set<std::string>* required_devices) {
-    // Ignores everything that is not a block device.
-    if (uevent.subsystem != "block") {
-        return ListenerAction::kContinue;
-    }
-
-    if (!uevent.partition_name.empty()) {
-        return HandleBlockDevice(uevent.partition_name, uevent, required_devices);
-    } else {
-        size_t base_idx = uevent.path.rfind('/');
-        if (base_idx != std::string::npos) {
-            return HandleBlockDevice(uevent.path.substr(base_idx + 1), uevent, required_devices);
-        }
-    }
-    // Not found a partition or find an unneeded partition, continue to find others.
-    return ListenerAction::kContinue;
-}
-
-// Creates "/dev/block/dm-XX" for dm-verity by running coldboot on /sys/block/dm-XX.
-bool FirstStageMount::InitMappedDevice(const std::string& dm_device) {
-    const std::string device_name(basename(dm_device.c_str()));
-    const std::string syspath = "/sys/block/" + device_name;
-    bool found = false;
-
-    auto verity_callback = [&device_name, &dm_device, this, &found](const Uevent& uevent) {
-        if (uevent.device_name == device_name) {
-            LOG(VERBOSE) << "Creating device-mapper device : " << dm_device;
-            device_handler_->HandleUevent(uevent);
-            found = true;
-            return ListenerAction::kStop;
-        }
-        return ListenerAction::kContinue;
-    };
-
-    uevent_listener_.RegenerateUeventsForPath(syspath, verity_callback);
-    if (!found) {
-        LOG(INFO) << "dm device '" << dm_device << "' not found in /sys, waiting for its uevent";
-        Timer t;
-        uevent_listener_.Poll(verity_callback, 10s);
-        LOG(INFO) << "wait for dm device '" << dm_device << "' returned after " << t;
-    }
-    if (!found) {
-        LOG(ERROR) << "dm device '" << dm_device << "' not found after polling timeout";
+bool FirstStageMount::CreateSnapshotPartitions(SnapshotManager* sm) {
+    // When COW images are present for snapshots, they are stored on
+    // the data partition.
+    if (!InitRequiredDevices({"userdata"})) {
         return false;
     }
 
+    use_snapuserd_ = sm->IsSnapuserdRequired();
+    if (use_snapuserd_) {
+        LaunchFirstStageSnapuserd();
+    }
+
+    sm->SetUeventRegenCallback([this](const std::string& device) -> bool {
+        if (android::base::StartsWith(device, "/dev/block/dm-")) {
+            return block_dev_init_.InitDmDevice(device);
+        }
+        if (android::base::StartsWith(device, "/dev/dm-user/")) {
+            return block_dev_init_.InitDmUser(android::base::Basename(device));
+        }
+        return block_dev_init_.InitDevices({device});
+    });
+    if (!sm->CreateLogicalAndSnapshotPartitions(super_path_)) {
+        return false;
+    }
+
+    if (use_snapuserd_) {
+        CleanupSnapuserdSocket();
+    }
     return true;
 }
 
@@ -482,11 +420,15 @@ bool FirstStageMount::MountPartition(const Fstab::iterator& begin, bool erase_sa
         *end = begin + 1;
     }
 
+    if (!fs_mgr_create_canonical_mount_point(begin->mount_point)) {
+        return false;
+    }
+
     if (begin->fs_mgr_flags.logical) {
         if (!fs_mgr_update_logical_partition(&(*begin))) {
             return false;
         }
-        if (!InitMappedDevice(begin->blk_device)) {
+        if (!block_dev_init_.InitDmDevice(begin->blk_device)) {
             return false;
         }
     }
@@ -574,6 +516,10 @@ bool FirstStageMount::TrySwitchSystemAsRoot() {
 
     if (system_partition == fstab_.end()) return true;
 
+    if (use_snapuserd_) {
+        SaveRamdiskPathToSnapuserd();
+    }
+
     if (MountPartition(system_partition, false /* erase_same_mounts */)) {
         if (dsu_not_on_userdata_ && fs_mgr_verity_is_check_at_most_once(*system_partition)) {
             LOG(ERROR) << "check_most_at_once forbidden on external media";
@@ -589,24 +535,19 @@ bool FirstStageMount::TrySwitchSystemAsRoot() {
 }
 
 bool FirstStageMount::MountPartitions() {
-    // Mount /metadata before creating logical partitions, since we need to
-    // know whether a snapshot merge is in progress.
-    auto metadata_partition = std::find_if(fstab_.begin(), fstab_.end(), [](const auto& entry) {
-        return entry.mount_point == "/metadata";
-    });
-    if (metadata_partition != fstab_.end()) {
-        MountPartition(metadata_partition, true /* erase_same_mounts */);
-    }
-
-    if (!CreateLogicalPartitions()) return false;
-
     if (!TrySwitchSystemAsRoot()) return false;
 
-    if (!SkipMountingPartitions(&fstab_)) return false;
+    if (!SkipMountingPartitions(&fstab_, true /* verbose */)) return false;
 
     for (auto current = fstab_.begin(); current != fstab_.end();) {
         // We've already mounted /system above.
         if (current->mount_point == "/system") {
+            ++current;
+            continue;
+        }
+
+        // Handle overlayfs entries later.
+        if (current->fs_type == "overlay") {
             ++current;
             continue;
         }
@@ -635,6 +576,12 @@ bool FirstStageMount::MountPartitions() {
         current = end;
     }
 
+    for (const auto& entry : fstab_) {
+        if (entry.fs_type == "overlay") {
+            fs_mgr_mount_overlayfs_fstab_entry(entry);
+        }
+    }
+
     // If we don't see /system or / in the fstab, then we need to create an root entry for
     // overlayfs.
     if (!GetEntryForMountPoint(&fstab_, "/system") && !GetEntryForMountPoint(&fstab_, "/")) {
@@ -648,7 +595,9 @@ bool FirstStageMount::MountPartitions() {
     auto init_devices = [this](std::set<std::string> devices) -> bool {
         for (auto iter = devices.begin(); iter != devices.end();) {
             if (android::base::StartsWith(*iter, "/dev/block/dm-")) {
-                if (!InitMappedDevice(*iter)) return false;
+                if (!block_dev_init_.InitDmDevice(*iter)) {
+                    return false;
+                }
                 iter = devices.erase(iter);
             } else {
                 iter++;
@@ -661,6 +610,27 @@ bool FirstStageMount::MountPartitions() {
     fs_mgr_overlayfs_mount_all(&fstab_);
 
     return true;
+}
+
+// Preserves /avb/*.avbpubkey to /metadata/gsi/dsu/avb/, so they can be used for
+// key revocation check by DSU installation service.  Note that failing to
+// copy files to /metadata is NOT fatal, because it is auxiliary to perform
+// public key matching before booting into DSU images on next boot. The actual
+// public key matching will still be done on next boot to DSU.
+void FirstStageMount::CopyDsuAvbKeys() {
+    std::error_code ec;
+    // Removing existing keys in gsi::kDsuAvbKeyDir as they might be stale.
+    std::filesystem::remove_all(gsi::kDsuAvbKeyDir, ec);
+    if (ec) {
+        LOG(ERROR) << "Failed to remove directory " << gsi::kDsuAvbKeyDir << ": " << ec.message();
+    }
+    // Copy keys from the ramdisk /avb/* to gsi::kDsuAvbKeyDir.
+    static constexpr char kRamdiskAvbKeyDir[] = "/avb";
+    std::filesystem::copy(kRamdiskAvbKeyDir, gsi::kDsuAvbKeyDir, ec);
+    if (ec) {
+        LOG(ERROR) << "Failed to copy " << kRamdiskAvbKeyDir << " into " << gsi::kDsuAvbKeyDir
+                   << ": " << ec.message();
+    }
 }
 
 void FirstStageMount::UseDsuIfPresent() {
@@ -702,7 +672,7 @@ void FirstStageMount::UseDsuIfPresent() {
     }
     // Publish the logical partition names for TransformFstabForDsu
     WriteFile(gsi::kGsiLpNamesFile, lp_names);
-    TransformFstabForDsu(&fstab_, dsu_partitions);
+    TransformFstabForDsu(&fstab_, active_dsu, dsu_partitions);
 }
 
 bool FirstStageMountVBootV1::GetDmVerityDevices(std::set<std::string>* devices) {
@@ -723,6 +693,10 @@ bool FirstStageMountVBootV1::GetDmVerityDevices(std::set<std::string>* devices) 
     // Includes the partition names of fstab records.
     // Notes that fstab_rec->blk_device has A/B suffix updated by fs_mgr when A/B is used.
     for (const auto& fstab_entry : fstab_) {
+        // Skip pseudo filesystems.
+        if (fstab_entry.fs_type == "overlay") {
+            continue;
+        }
         if (!fstab_entry.fs_mgr_flags.logical) {
             devices->emplace(basename(fstab_entry.blk_device.c_str()));
         }
@@ -743,7 +717,7 @@ bool FirstStageMountVBootV1::SetUpDmVerity(FstabEntry* fstab_entry) {
                 // The exact block device name (fstab_rec->blk_device) is changed to
                 // "/dev/block/dm-XX". Needs to create it because ueventd isn't started in init
                 // first stage.
-                return InitMappedDevice(fstab_entry->blk_device);
+                return block_dev_init_.InitDmDevice(fstab_entry->blk_device);
             default:
                 return false;
         }
@@ -784,6 +758,10 @@ bool FirstStageMountVBootV2::GetDmVerityDevices(std::set<std::string>* devices) 
     for (const auto& fstab_entry : fstab_) {
         if (fstab_entry.fs_mgr_flags.avb) {
             need_dm_verity_ = true;
+        }
+        // Skip pseudo filesystems.
+        if (fstab_entry.fs_type == "overlay") {
+            continue;
         }
         if (fstab_entry.fs_mgr_flags.logical) {
             // Don't try to find logical partitions via uevent regeneration.
@@ -863,7 +841,7 @@ bool FirstStageMountVBootV2::SetUpDmVerity(FstabEntry* fstab_entry) {
             // The exact block device name (fstab_rec->blk_device) is changed to
             // "/dev/block/dm-XX". Needs to create it because ueventd isn't started in init
             // first stage.
-            return InitMappedDevice(fstab_entry->blk_device);
+            return block_dev_init_.InitDmDevice(fstab_entry->blk_device);
         default:
             return false;
     }
@@ -885,20 +863,35 @@ bool FirstStageMountVBootV2::InitAvbHandle() {
 
 // Public functions
 // ----------------
+// Creates devices and logical partitions from storage devices
+bool DoCreateDevices() {
+    auto fsm = FirstStageMount::Create();
+    if (!fsm.ok()) {
+        LOG(ERROR) << "Failed to create FirstStageMount: " << fsm.error();
+        return false;
+    }
+    return (*fsm)->DoCreateDevices();
+}
+
 // Mounts partitions specified by fstab in device tree.
-bool DoFirstStageMount() {
+bool DoFirstStageMount(bool create_devices) {
     // Skips first stage mount if we're in recovery mode.
     if (IsRecoveryMode()) {
         LOG(INFO) << "First stage mount skipped (recovery mode)";
         return true;
     }
 
-    std::unique_ptr<FirstStageMount> handle = FirstStageMount::Create();
-    if (!handle) {
-        LOG(ERROR) << "Failed to create FirstStageMount";
+    auto fsm = FirstStageMount::Create();
+    if (!fsm.ok()) {
+        LOG(ERROR) << "Failed to create FirstStageMount " << fsm.error();
         return false;
     }
-    return handle->DoFirstStageMount();
+
+    if (create_devices) {
+        if (!(*fsm)->DoCreateDevices()) return false;
+    }
+
+    return (*fsm)->DoFirstStageMount();
 }
 
 void SetInitAvbVersionInRecovery() {
@@ -908,8 +901,12 @@ void SetInitAvbVersionInRecovery() {
     }
 
     auto fstab = ReadFirstStageFstab();
+    if (!fstab.ok()) {
+        LOG(ERROR) << fstab.error();
+        return;
+    }
 
-    if (!IsDtVbmetaCompatible(fstab)) {
+    if (!IsDtVbmetaCompatible(*fstab)) {
         LOG(INFO) << "Skipped setting INIT_AVB_VERSION (not vbmeta compatible)";
         return;
     }
@@ -919,7 +916,7 @@ void SetInitAvbVersionInRecovery() {
     // We only set INIT_AVB_VERSION when the AVB verification succeeds, i.e., the
     // Open() function returns a valid handle.
     // We don't need to mount partitions here in recovery mode.
-    FirstStageMountVBootV2 avb_first_mount(std::move(fstab));
+    FirstStageMountVBootV2 avb_first_mount(std::move(*fstab));
     if (!avb_first_mount.InitDevices()) {
         LOG(ERROR) << "Failed to init devices for INIT_AVB_VERSION";
         return;

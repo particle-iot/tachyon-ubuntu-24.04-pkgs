@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "frameworks_native_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: ["frameworks_native_license"],
+}
+
 cc_test {
     name: "libsurfaceflinger_unittest",
     defaults: ["libsurfaceflinger_defaults"],
@@ -36,26 +45,39 @@ cc_test {
         ":libsurfaceflinger_sources",
         "libsurfaceflinger_unittest_main.cpp",
         "CachingTest.cpp",
-	"CompositionTest.cpp",
+        "CompositionTest.cpp",
         "DispSyncSourceTest.cpp",
         "DisplayIdentificationTest.cpp",
         "DisplayTransactionTest.cpp",
         "EventControlThreadTest.cpp",
         "EventThreadTest.cpp",
-        "IdleTimerTest.cpp",
+        "HWComposerTest.cpp",
+        "OneShotTimerTest.cpp",
         "LayerHistoryTest.cpp",
+        "LayerHistoryTestV2.cpp",
         "LayerMetadataTest.cpp",
+        "PhaseOffsetsTest.cpp",
+        "PromiseTest.cpp",
         "SchedulerTest.cpp",
         "SchedulerUtilsTest.cpp",
+        "SetFrameRateTest.cpp",
         "RefreshRateConfigsTest.cpp",
+        "RefreshRateSelectionTest.cpp",
         "RefreshRateStatsTest.cpp",
         "RegionSamplingTest.cpp",
         "TimeStatsTest.cpp",
+        "FrameTracerTest.cpp",
+        "TimerTest.cpp",
+        "TransactionApplicationTest.cpp",
+        "StrongTypingTest.cpp",
+        "VSyncDispatchTimerQueueTest.cpp",
+        "VSyncDispatchRealtimeTest.cpp",
+        "VSyncModulatorTest.cpp",
+        "VSyncPredictorTest.cpp",
+        "VSyncReactorTest.cpp",
         "mock/DisplayHardware/MockComposer.cpp",
         "mock/DisplayHardware/MockDisplay.cpp",
         "mock/DisplayHardware/MockPowerAdvisor.cpp",
-        "mock/gui/MockGraphicBufferConsumer.cpp",
-        "mock/gui/MockGraphicBufferProducer.cpp",
         "mock/MockDispSync.cpp",
         "mock/MockEventControlThread.cpp",
         "mock/MockEventThread.cpp",
@@ -63,13 +85,24 @@ cc_test {
         "mock/MockNativeWindowSurface.cpp",
         "mock/MockSurfaceInterceptor.cpp",
         "mock/MockTimeStats.cpp",
+        "mock/MockFrameTracer.cpp",
         "mock/system/window/MockNativeWindow.cpp",
     ],
     static_libs: [
         "libgmock",
         "libcompositionengine",
         "libcompositionengine_mocks",
+        "libgui_mocks",
+        "libperfetto_client_experimental",
         "librenderengine_mocks",
+        "perfetto_trace_protos",
+    ],
+    shared_libs: [
+        "libprotoutil",
+        "libstatssocket",
+        "libsurfaceflinger",
+        "libtimestats",
+        "libtimestats_proto",
     ],
     header_libs: [
         "libsurfaceflinger_headers",

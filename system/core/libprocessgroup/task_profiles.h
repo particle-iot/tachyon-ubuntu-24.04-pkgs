@@ -33,6 +33,7 @@ class ProfileAttribute {
 
     const CgroupController* controller() const { return &controller_; }
     const std::string& file_name() const { return file_name_; }
+    void Reset(const CgroupController& controller, const std::string& file_name);
 
     bool GetPathForTask(int tid, std::string* path) const;
 
@@ -138,6 +139,21 @@ class SetCgroupAction : public ProfileAction {
     bool IsFdValid() const { return fd_ > FDS_INACCESSIBLE; }
 };
 
+// Write to file action
+class WriteFileAction : public ProfileAction {
+  public:
+    WriteFileAction(const std::string& filepath, const std::string& value,
+                    bool logfailures) noexcept
+        : filepath_(filepath), value_(value), logfailures_(logfailures) {}
+
+    virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
+    virtual bool ExecuteForTask(int tid) const;
+
+  private:
+    std::string filepath_, value_;
+    bool logfailures_;
+};
+
 class TaskProfile {
   public:
     TaskProfile() : res_cached_(false) {}
@@ -163,6 +179,8 @@ class ApplyProfileAction : public ProfileAction {
 
     virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     virtual bool ExecuteForTask(int tid) const;
+    virtual void EnableResourceCaching();
+    virtual void DropResourceCaching();
 
   private:
     std::vector<std::shared_ptr<TaskProfile>> profiles_;
@@ -176,8 +194,7 @@ class TaskProfiles {
     TaskProfile* GetProfile(const std::string& name) const;
     const ProfileAttribute* GetAttribute(const std::string& name) const;
     void DropResourceCaching() const;
-    bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles,
-                            bool use_fd_cache);
+    bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles);
     bool SetTaskProfiles(int tid, const std::vector<std::string>& profiles, bool use_fd_cache);
 
   private:

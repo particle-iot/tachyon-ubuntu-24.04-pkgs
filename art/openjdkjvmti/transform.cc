@@ -68,7 +68,6 @@
 #include "ti_redefine.h"
 #include "ti_logging.h"
 #include "transform.h"
-#include "utils/dex_cache_arrays_layout-inl.h"
 
 namespace openjdkjvmti {
 
@@ -92,15 +91,18 @@ class TransformationFaultHandler final : public art::FaultHandler {
   bool Action(int sig, siginfo_t* siginfo, void* context ATTRIBUTE_UNUSED) override {
     DCHECK_EQ(sig, SIGSEGV);
     art::Thread* self = art::Thread::Current();
-    if (UNLIKELY(uninitialized_class_definitions_lock_.IsExclusiveHeld(self))) {
-      if (self != nullptr) {
-        LOG(FATAL) << "Recursive call into Transformation fault handler!";
-        UNREACHABLE();
-      } else {
-        LOG(ERROR) << "Possible deadlock due to recursive signal delivery of segv.";
-      }
-    }
     uintptr_t ptr = reinterpret_cast<uintptr_t>(siginfo->si_addr);
+    if (UNLIKELY(uninitialized_class_definitions_lock_.IsExclusiveHeld(self))) {
+      // It's possible this is just some other unrelated segv that should be
+      // handled separately, continue to later handlers. This is likely due to
+      // running out of memory somewhere along the FixedUpDexFile pipeline and
+      // is likely unrecoverable. By returning false here though we will get a
+      // better, more accurate, stack-trace later that points to the actual
+      // issue.
+      LOG(WARNING) << "Recursive SEGV occurred during Transformation dequickening at 0x" << std::hex
+                   << ptr;
+      return false;
+    }
     ArtClassDefinition* res = nullptr;
 
     {

@@ -216,9 +216,11 @@ TEST_F(AvbUtilTest, GetAvbFooter) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     1088 bytes\n"
             "Auxiliary Block:          2304 bytes\n"
+            "Public key (sha1):        5227b569de003adc7f8ec3fc03e05dfbd969abad\n"
             "Algorithm:                SHA512_RSA8192\n"
             "Rollback Index:           20\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Hashtree descriptor:\n"
@@ -346,9 +348,11 @@ TEST_F(AvbUtilTest, GetVBMetaHeader) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     576 bytes\n"
             "Auxiliary Block:          1216 bytes\n"
+            "Public key (sha1):        2597c218aae470a130f61162feaae70afd97f011\n"
             "Algorithm:                SHA256_RSA4096\n"
             "Rollback Index:           10\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Hash descriptor:\n"
@@ -639,9 +643,11 @@ TEST_F(AvbUtilTest, VerifyVBMetaDataWithoutFooter) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     1088 bytes\n"
             "Auxiliary Block:          3840 bytes\n"
+            "Public key (sha1):        5227b569de003adc7f8ec3fc03e05dfbd969abad\n"
             "Algorithm:                SHA256_RSA8192\n"
             "Rollback Index:           0\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Chain Partition descriptor:\n"
@@ -749,6 +755,7 @@ TEST_F(AvbUtilTest, VerifyVBMetaDataError) {
     std::string out_public_key_data;
     std::unique_ptr<VBMetaData> vbmeta = VerifyVBMetaData(
             fd, "system", "" /*expected_public_key_blob */, &out_public_key_data, &verify_result);
+    ASSERT_EQ(0, close(fd.release()));
     EXPECT_NE(nullptr, vbmeta);
     EXPECT_EQ(VBMetaVerifyResult::kSuccess, verify_result);
 
@@ -770,6 +777,7 @@ TEST_F(AvbUtilTest, VerifyVBMetaDataError) {
     // Should return ErrorVerification.
     vbmeta = VerifyVBMetaData(hash_modified_fd, "system", "" /*expected_public_key_blob */,
                               nullptr /* out_public_key_data */, &verify_result);
+    ASSERT_EQ(0, close(hash_modified_fd.release()));
     EXPECT_NE(nullptr, vbmeta);
     EXPECT_TRUE(CompareVBMeta(system_path, *vbmeta));
     EXPECT_EQ(VBMetaVerifyResult::kErrorVerification, verify_result);
@@ -785,6 +793,7 @@ TEST_F(AvbUtilTest, VerifyVBMetaDataError) {
     // Should return ErrorVerification.
     vbmeta = VerifyVBMetaData(aux_modified_fd, "system", "" /*expected_public_key_blob */,
                               nullptr /* out_public_key_data */, &verify_result);
+    ASSERT_EQ(0, close(aux_modified_fd.release()));
     EXPECT_NE(nullptr, vbmeta);
     EXPECT_TRUE(CompareVBMeta(system_path, *vbmeta));
     EXPECT_EQ(VBMetaVerifyResult::kErrorVerification, verify_result);
@@ -796,6 +805,7 @@ TEST_F(AvbUtilTest, VerifyVBMetaDataError) {
     // Should return ResultOK..
     vbmeta = VerifyVBMetaData(ok_fd, "system", "" /*expected_public_key_blob */,
                               nullptr /* out_public_key_data */, &verify_result);
+    ASSERT_EQ(0, close(ok_fd.release()));
     EXPECT_NE(nullptr, vbmeta);
     EXPECT_TRUE(CompareVBMeta(system_path, *vbmeta));
     EXPECT_EQ(VBMetaVerifyResult::kSuccess, verify_result);
@@ -854,9 +864,11 @@ TEST_F(AvbUtilTest, GetChainPartitionInfo) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     1088 bytes\n"
             "Auxiliary Block:          3840 bytes\n"
+            "Public key (sha1):        5227b569de003adc7f8ec3fc03e05dfbd969abad\n"
             "Algorithm:                SHA256_RSA8192\n"
             "Rollback Index:           0\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Chain Partition descriptor:\n"
@@ -886,9 +898,11 @@ TEST_F(AvbUtilTest, GetChainPartitionInfo) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     576 bytes\n"
             "Auxiliary Block:          2176 bytes\n"
+            "Public key (sha1):        2597c218aae470a130f61162feaae70afd97f011\n"
             "Algorithm:                SHA256_RSA4096\n"
             "Rollback Index:           0\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Chain Partition descriptor:\n"
@@ -936,9 +950,11 @@ TEST_F(AvbUtilTest, GetChainPartitionInfoNone) {
             "Header Block:             256 bytes\n"
             "Authentication Block:     320 bytes\n"
             "Auxiliary Block:          960 bytes\n"
+            "Public key (sha1):        cdbb77177f731920bbe0a0f94f84d9038ae0617d\n"
             "Algorithm:                SHA256_RSA2048\n"
             "Rollback Index:           0\n"
             "Flags:                    0\n"
+            "Rollback Index Location:  0\n"
             "Release String:           'unit test'\n"
             "Descriptors:\n"
             "    Hash descriptor:\n"

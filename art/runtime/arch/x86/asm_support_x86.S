@@ -18,6 +18,7 @@
 #define ART_RUNTIME_ARCH_X86_ASM_SUPPORT_X86_S_
 
 #include "asm_support_x86.h"
+#include "interpreter/cfi_asm_support.h"
 
 // Regular gas(1) & current clang/llvm assembler support named macro parameters.
 #define MACRO0(macro_name) .macro macro_name
@@ -77,13 +78,18 @@
     #define CFI_DEF_CFA_REGISTER(reg) .cfi_def_cfa_register reg
     #define CFI_RESTORE(reg) .cfi_restore reg
     #define CFI_REL_OFFSET(reg,size) .cfi_rel_offset reg,size
+    #define CFI_REGISTER(orig_reg, current_reg) .cfi_register orig_reg, current_reg
     #define CFI_REMEMBER_STATE .cfi_remember_state
     // The spec is not clear whether the CFA is part of the saved state and tools
     // differ in the behaviour, so explicitly set the CFA to avoid any ambiguity.
     // The restored CFA state should match the CFA state during CFI_REMEMBER_STATE.
     // `objdump -Wf libart.so | egrep "_cfa|_state"` is useful to audit the opcodes.
-    #define CFI_RESTORE_STATE_AND_DEF_CFA(reg,off) .cfi_restore_state .cfi_def_cfa reg,off
+    MACRO2(CFI_RESTORE_STATE_AND_DEF_CFA, reg, off)
+        .cfi_restore_state
+        .cfi_def_cfa \reg,\off
+    END_MACRO
     #define CFI_ESCAPE(...) .cfi_escape __VA_ARGS__
+    #define CFI_RESTORE_STATE .cfi_restore_state
 #else
     // Mac OS' doesn't like cfi_* directives.
     #define CFI_STARTPROC
@@ -93,10 +99,51 @@
     #define CFI_DEF_CFA_REGISTER(reg)
     #define CFI_RESTORE(reg)
     #define CFI_REL_OFFSET(reg,size)
+    #define CFI_REGISTER(orig_reg, current_reg)
     #define CFI_REMEMBER_STATE
-    #define CFI_RESTORE_STATE_AND_DEF_CFA(off)
+    MACRO2(CFI_RESTORE_STATE_AND_DEF_CFA, reg, off)
+    END_MACRO
     #define CFI_ESCAPE(...)
+    #define CFI_RESTORE_STATE
 #endif
+
+#define CFI_REG_eax 0
+#define CFI_REG_ecx 1
+#define CFI_REG_edx 2
+#define CFI_REG_ebx 3
+#define CFI_REG_esp 4
+#define CFI_REG_ebp 5
+#define CFI_REG_esi 6
+#define CFI_REG_edi 7
+#define CFI_REG_eip 8
+
+#define CFI_REG(reg) CFI_REG_##reg
+
+MACRO3(CFI_EXPRESSION_BREG, n, b, offset)
+    .if (-0x40 <= (\offset)) && ((\offset) < 0x40)
+        CFI_EXPRESSION_BREG_1(\n, \b, \offset)
+    .elseif (-0x2000 <= (\offset)) && ((\offset) < 0x2000)
+        CFI_EXPRESSION_BREG_2(\n, \b, \offset)
+    .else
+        .error "Unsupported offset"
+    .endif
+END_MACRO
+
+MACRO3(CFI_DEF_CFA_BREG_PLUS_UCONST, reg, offset, size)
+    .if ((\size) < 0)
+        .error "Size should be positive"
+    .endif
+    .if (((\offset) < -0x40) || ((\offset) >= 0x40))
+        .error "Unsupported offset"
+    .endif
+    .if ((\size) < 0x80)
+        CFI_DEF_CFA_BREG_PLUS_UCONST_1_1(\reg, \offset, \size)
+    .elseif ((\size) < 0x4000)
+        CFI_DEF_CFA_BREG_PLUS_UCONST_1_2(\reg, \offset, \size)
+    .else
+        .error "Unsupported size"
+    .endif
+END_MACRO
 
     // Symbols. On a Mac, we need a leading underscore.
 #if !defined(__APPLE__)
@@ -131,7 +178,7 @@ MACRO2(DEFINE_FUNCTION_CUSTOM_CFA, c_name, cfa_offset)
     ALIGN_FUNCTION_ENTRY
 CALLVAR(c_name):
     CFI_STARTPROC
-    // Ensure we get a sane starting CFA.
+    // Ensure we get an appropriate starting CFA.
     CFI_DEF_CFA(esp, RAW_VAR(cfa_offset))
 END_MACRO
 
@@ -156,8 +203,30 @@ MACRO1(POP, reg)
     CFI_RESTORE(REG_VAR(reg))
 END_MACRO
 
+// Arguments do not need .cfi_rel_offset as they are caller-saved and
+// therefore cannot hold caller's variables or unwinding data.
+MACRO1(PUSH_ARG, reg)
+    pushl REG_VAR(reg)
+    CFI_ADJUST_CFA_OFFSET(4)
+END_MACRO
+
+MACRO1(POP_ARG, reg)
+    popl REG_VAR(reg)
+    CFI_ADJUST_CFA_OFFSET(-4)
+END_MACRO
+
 MACRO1(CFI_RESTORE_REG, reg)
     CFI_RESTORE(REG_VAR(reg))
+END_MACRO
+
+MACRO1(INCREASE_FRAME, frame_adjustment)
+    subl MACRO_LITERAL(RAW_VAR(frame_adjustment)), %esp
+    CFI_ADJUST_CFA_OFFSET((RAW_VAR(frame_adjustment)))
+END_MACRO
+
+MACRO1(DECREASE_FRAME, frame_adjustment)
+    addl MACRO_LITERAL(RAW_VAR(frame_adjustment)), %esp
+    CFI_ADJUST_CFA_OFFSET(-(RAW_VAR(frame_adjustment)))
 END_MACRO
 
 #define UNREACHABLE int3
@@ -174,15 +243,26 @@ VAR(name):
     SIZE(\name)
 END_MACRO
 
-MACRO1(SETUP_GOT_NOSAVE, got_reg)
-#ifndef __APPLE__
-    .ifc VAR(got_reg), ebx
-      call __x86.get_pc_thunk.bx
-      addl $_GLOBAL_OFFSET_TABLE_, %ebx
-    .else
-      .error "Unknown GOT register \got_reg"
-    .endif
-#endif
+MACRO3(SETUP_PC_REL_BASE_IMPL, reg, label, call_label)
+    call RAW_VAR(call_label)
+    CFI_ADJUST_CFA_OFFSET(4)
+RAW_VAR(label):
+    popl REG_VAR(reg)
+    CFI_ADJUST_CFA_OFFSET(-4)
+END_MACRO
+
+MACRO1(SETUP_PC_REL_BASE_0, reg)
+    SETUP_PC_REL_BASE_IMPL \reg, 0, 0f
+END_MACRO
+
+MACRO2(SETUP_PC_REL_BASE, reg, label)
+    SETUP_PC_REL_BASE_IMPL \reg, \label, \label
+END_MACRO
+
+MACRO1(LOAD_RUNTIME_INSTANCE, reg)
+    SETUP_PC_REL_BASE_0 \reg
+    // Load Runtime::instance_.
+    movl SYMBOL(_ZN3art7Runtime9instance_E) - 0b(REG_VAR(reg)), REG_VAR(reg)
 END_MACRO
 
 // Macros to poison (negate) the reference for heap poisoning.
@@ -199,5 +279,134 @@ MACRO1(UNPOISON_HEAP_REF, rRef)
 #endif  // USE_HEAP_POISONING
 END_MACRO
 
+    /*
+     * Macro that sets up the callee save frame to conform with
+     * Runtime::CreateCalleeSaveMethod(kSaveRefsOnly)
+     */
+MACRO1(SETUP_SAVE_REFS_ONLY_FRAME, temp_reg)
+    PUSH edi  // Save callee saves (ebx is saved/restored by the upcall)
+    PUSH esi
+    PUSH ebp
+    subl MACRO_LITERAL(12), %esp  // Grow stack by 3 words.
+    CFI_ADJUST_CFA_OFFSET(12)
+    LOAD_RUNTIME_INSTANCE \temp_reg
+    // Push save all callee-save method.
+    pushl RUNTIME_SAVE_REFS_ONLY_METHOD_OFFSET(REG_VAR(temp_reg))
+    CFI_ADJUST_CFA_OFFSET(4)
+    // Store esp as the top quick frame.
+    movl %esp, %fs:THREAD_TOP_QUICK_FRAME_OFFSET
+
+    // Ugly compile-time check, but we only have the preprocessor.
+    // Last +4: implicit return address pushed on stack when caller made call.
+#if (FRAME_SIZE_SAVE_REFS_ONLY != 3*4 + 16 + 4)
+#error "FRAME_SIZE_SAVE_REFS_ONLY(X86) size not as expected."
+#endif
+END_MACRO
+
+MACRO0(RESTORE_SAVE_REFS_ONLY_FRAME)
+    addl MACRO_LITERAL(16), %esp  // Unwind stack up to saved values
+    CFI_ADJUST_CFA_OFFSET(-16)
+    POP ebp  // Restore callee saves (ebx is saved/restored by the upcall)
+    POP esi
+    POP edi
+END_MACRO
+
+    /*
+     * Macro that sets up the callee save frame to conform with
+     * Runtime::CreateCalleeSaveMethod(kSaveAllCalleeSaves)
+     */
+MACRO1(SETUP_SAVE_ALL_CALLEE_SAVES_FRAME, temp_reg)
+    PUSH edi  // Save callee saves (ebx is saved/restored by the upcall)
+    PUSH esi
+    PUSH ebp
+    subl MACRO_LITERAL(12), %esp  // Grow stack by 3 words.
+    CFI_ADJUST_CFA_OFFSET(12)
+    LOAD_RUNTIME_INSTANCE \temp_reg
+    // Push save all callee-save method.
+    pushl RUNTIME_SAVE_ALL_CALLEE_SAVES_METHOD_OFFSET(REG_VAR(temp_reg))
+    CFI_ADJUST_CFA_OFFSET(4)
+    // Store esp as the top quick frame.
+    movl %esp, %fs:THREAD_TOP_QUICK_FRAME_OFFSET
+    // Ugly compile-time check, but we only have the preprocessor.
+    // Last +4: implicit return address pushed on stack when caller made call.
+#if (FRAME_SIZE_SAVE_ALL_CALLEE_SAVES != 3*4 + 16 + 4)
+#error "FRAME_SIZE_SAVE_ALL_CALLEE_SAVES(X86) size not as expected."
+#endif
+END_MACRO
+
+    /*
+     * Macro that sets up the callee save frame to conform with
+     * Runtime::CreateCalleeSaveMethod(kSaveRefsAndArgs), except for pushing the method
+     */
+MACRO0(SETUP_SAVE_REFS_AND_ARGS_FRAME_REGISTERS_ONLY)
+    PUSH edi      // Save callee saves
+    PUSH esi
+    PUSH ebp
+    PUSH_ARG ebx  // Save args.
+    PUSH_ARG edx
+    PUSH_ARG ecx
+    // Create space for FPR args.
+    INCREASE_FRAME 4 * 8
+    // Save FPRs.
+    movsd %xmm0, 0(%esp)
+    movsd %xmm1, 8(%esp)
+    movsd %xmm2, 16(%esp)
+    movsd %xmm3, 24(%esp)
+
+    // Ugly compile-time check, but we only have the preprocessor.
+    // First +4: implicit return address pushed on stack when caller made call.
+    // Last +4: we're not pushing the method on the stack here.
+#if (FRAME_SIZE_SAVE_REFS_AND_ARGS != 4 + 6*4 + 4*8 + 4)
+#error "FRAME_SIZE_SAVE_REFS_AND_ARGS(X86) size not as expected."
+#endif
+END_MACRO
+
+MACRO0(RESTORE_SAVE_REFS_AND_ARGS_FRAME)
+    // Restore FPRs. EAX is still on the stack.
+    movsd 4(%esp), %xmm0
+    movsd 12(%esp), %xmm1
+    movsd 20(%esp), %xmm2
+    movsd 28(%esp), %xmm3
+
+    DECREASE_FRAME 36             // Remove FPRs and method pointer.
+
+    POP_ARG ecx                   // Restore args
+    POP_ARG edx
+    POP_ARG ebx
+    POP ebp                       // Restore callee saves
+    POP esi
+    POP edi
+END_MACRO
+
+    /*
+     * Macro that calls through to artDeliverPendingExceptionFromCode, where the pending
+     * exception is Thread::Current()->exception_ when the runtime method frame is ready.
+     */
+MACRO0(DELIVER_PENDING_EXCEPTION_FRAME_READY)
+    // Outgoing argument set up
+    INCREASE_FRAME 12                          // alignment padding
+    pushl %fs:THREAD_SELF_OFFSET               // pass Thread::Current()
+    CFI_ADJUST_CFA_OFFSET(4)
+    call SYMBOL(artDeliverPendingExceptionFromCode)  // artDeliverPendingExceptionFromCode(Thread*)
+    UNREACHABLE
+    CFI_ADJUST_CFA_OFFSET(-16)                 // Reset CFA in case there is more code afterwards.
+END_MACRO
+
+    /*
+     * Macro that calls through to artDeliverPendingExceptionFromCode, where the pending
+     * exception is Thread::Current()->exception_.
+     */
+MACRO0(DELIVER_PENDING_EXCEPTION)
+    SETUP_SAVE_ALL_CALLEE_SAVES_FRAME ebx      // save callee saves for throw
+    DELIVER_PENDING_EXCEPTION_FRAME_READY
+END_MACRO
+
+MACRO0(RETURN_OR_DELIVER_PENDING_EXCEPTION)
+    cmpl MACRO_LITERAL(0),%fs:THREAD_EXCEPTION_OFFSET // exception field == 0 ?
+    jne 1f                                            // if exception field != 0 goto 1
+    ret                                               // return
+1:                                                    // deliver exception on current thread
+    DELIVER_PENDING_EXCEPTION
+END_MACRO
 
 #endif  // ART_RUNTIME_ARCH_X86_ASM_SUPPORT_X86_S_

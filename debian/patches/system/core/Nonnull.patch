@@ -1,11 +1,11 @@
 Description: Bring Clang's _Nonnull keyword to GCC
 Author: Kai-Chung Yan
 Forwarded: not-needed
---- a/system/core/adb/sysdeps.h
-+++ b/system/core/adb/sysdeps.h
-@@ -40,11 +40,12 @@
- #include "sysdeps/network.h"
- #include "sysdeps/stat.h"
+--- a/packages/modules/adb/sysdeps.h
++++ b/packages/modules/adb/sysdeps.h
+@@ -49,11 +49,12 @@
+ }
+ #endif
  
 +#define _Nonnull
 +#define _Nullable

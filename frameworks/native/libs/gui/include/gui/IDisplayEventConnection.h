@@ -18,7 +18,7 @@
 
 #include <binder/IInterface.h>
 #include <binder/SafeInterface.h>
-
+#include <gui/ISurfaceComposer.h>
 #include <utils/Errors.h>
 
 #include <cstdint>

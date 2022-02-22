@@ -17,10 +17,11 @@
 #include "method_verifier.h"
 
 #include <stdio.h>
+
 #include <memory>
 
 #include "android-base/strings.h"
-
+#include "base/metrics/metrics_test.h"
 #include "base/utils.h"
 #include "class_linker-inl.h"
 #include "class_verifier.h"
@@ -32,18 +33,34 @@
 namespace art {
 namespace verifier {
 
+using metrics::test::CounterValue;
+
 class MethodVerifierTest : public CommonRuntimeTest {
  protected:
   void VerifyClass(const std::string& descriptor)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     ASSERT_FALSE(descriptor.empty());
     Thread* self = Thread::Current();
-    ObjPtr<mirror::Class> klass = class_linker_->FindSystemClass(self, descriptor.c_str());
+    StackHandleScope<3> hs(self);
+    Handle<mirror::Class> klass(
+        hs.NewHandle(class_linker_->FindSystemClass(self, descriptor.c_str())));
+    Handle<mirror::DexCache> dex_cache(hs.NewHandle(klass->GetDexCache()));
+    Handle<mirror::ClassLoader> loader(hs.NewHandle(klass->GetClassLoader()));
 
     // Verify the class
     std::string error_msg;
-    FailureKind failure = ClassVerifier::VerifyClass(
-        self, klass, nullptr, true, HardFailLogMode::kLogWarning, /* api_level= */ 0u, &error_msg);
+    FailureKind failure = ClassVerifier::VerifyClass(self,
+                                                     /* verifier_deps= */ nullptr,
+                                                     dex_cache->GetDexFile(),
+                                                     klass,
+                                                     dex_cache,
+                                                     loader,
+                                                     *klass->GetClassDef(),
+                                                     nullptr,
+                                                     true,
+                                                     HardFailLogMode::kLogWarning,
+                                                     /* api_level= */ 0u,
+                                                     &error_msg);
 
     if (android::base::StartsWith(descriptor, "Ljava/lang/invoke")) {
       ASSERT_TRUE(failure == FailureKind::kSoftFailure ||
@@ -69,6 +86,19 @@ TEST_F(MethodVerifierTest, LibCore) {
   ScopedObjectAccess soa(Thread::Current());
   ASSERT_TRUE(java_lang_dex_file_ != nullptr);
   VerifyDexFile(*java_lang_dex_file_);
+}
+
+// Make sure verification time metrics are collected.
+TEST_F(MethodVerifierTest, VerificationTimeMetrics) {
+  ScopedObjectAccess soa(Thread::Current());
+  ASSERT_TRUE(java_lang_dex_file_ != nullptr);
+  auto* class_verification_total_time = GetMetrics()->ClassVerificationTotalTime();
+  auto* class_verification_count = GetMetrics()->ClassVerificationCount();
+  const uint64_t original_time = CounterValue(*class_verification_total_time);
+  const uint64_t original_count = CounterValue(*class_verification_count);
+  VerifyDexFile(*java_lang_dex_file_);
+  ASSERT_GT(CounterValue(*class_verification_total_time), original_time);
+  ASSERT_GT(CounterValue(*class_verification_count), original_count);
 }
 
 }  // namespace verifier

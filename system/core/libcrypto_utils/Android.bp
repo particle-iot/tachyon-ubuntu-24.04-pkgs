@@ -14,16 +14,21 @@
 // limitations under the License.
 //
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_library {
     name: "libcrypto_utils",
     vendor_available: true,
+    ramdisk_available: true,
     recovery_available: true,
     vndk: {
         enabled: true,
     },
     host_supported: true,
     srcs: [
-        "android_pubkey.c",
+        "android_pubkey.cpp",
     ],
     cflags: [
         "-Wall",
@@ -38,4 +43,8 @@ cc_library {
             enabled: true,
         },
     },
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.adbd",
+    ],
 }

@@ -23,7 +23,6 @@
 #include "art_method-inl.h"
 #include "base/enums.h"
 #include "base/globals.h"
-#include "class_root.h"
 #include "handle_scope.h"
 #include "jni/jni_internal.h"
 #include "jni_id_type.h"
@@ -145,9 +144,8 @@ inline bool ClassExt::HasMethodPointerIdMarker() {
   return !arr.IsNull() && !arr->IsArrayInstance();
 }
 
-
-inline ObjPtr<Object> ClassExt::GetVerifyError() {
-  return GetFieldObject<ClassExt>(OFFSET_OF_OBJECT_MEMBER(ClassExt, verify_error_));
+inline ObjPtr<Throwable> ClassExt::GetErroneousStateError() {
+  return GetFieldObject<Throwable>(OFFSET_OF_OBJECT_MEMBER(ClassExt, erroneous_state_error_));
 }
 
 inline ObjPtr<ObjectArray<DexCache>> ClassExt::GetObsoleteDexCaches() {

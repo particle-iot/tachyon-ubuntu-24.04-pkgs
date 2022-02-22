@@ -425,7 +425,6 @@ void FreeListSpace::RemoveFreePrev(AllocationInfo* info) {
 }
 
 size_t FreeListSpace::Free(Thread* self, mirror::Object* obj) {
-  MutexLock mu(self, lock_);
   DCHECK(Contains(obj)) << reinterpret_cast<void*>(Begin()) << " " << obj << " "
                         << reinterpret_cast<void*>(End());
   DCHECK_ALIGNED(obj, kAlignment);
@@ -434,6 +433,15 @@ size_t FreeListSpace::Free(Thread* self, mirror::Object* obj) {
   const size_t allocation_size = info->ByteSize();
   DCHECK_GT(allocation_size, 0U);
   DCHECK_ALIGNED(allocation_size, kAlignment);
+
+  // madvise the pages without lock
+  madvise(obj, allocation_size, MADV_DONTNEED);
+  if (kIsDebugBuild) {
+    // Can't disallow reads since we use them to find next chunks during coalescing.
+    CheckedCall(mprotect, __FUNCTION__, obj, allocation_size, PROT_READ);
+  }
+
+  MutexLock mu(self, lock_);
   info->SetByteSize(allocation_size, true);  // Mark as free.
   // Look at the next chunk.
   AllocationInfo* next_info = info->GetNextInfo();
@@ -475,11 +483,6 @@ size_t FreeListSpace::Free(Thread* self, mirror::Object* obj) {
   --num_objects_allocated_;
   DCHECK_LE(allocation_size, num_bytes_allocated_);
   num_bytes_allocated_ -= allocation_size;
-  madvise(obj, allocation_size, MADV_DONTNEED);
-  if (kIsDebugBuild) {
-    // Can't disallow reads since we use them to find next chunks during coalescing.
-    CheckedCall(mprotect, __FUNCTION__, obj, allocation_size, PROT_READ);
-  }
   return allocation_size;
 }
 
@@ -638,9 +641,10 @@ collector::ObjectBytePair LargeObjectSpace::Sweep(bool swap_bitmaps) {
   return scc.freed;
 }
 
-void LargeObjectSpace::LogFragmentationAllocFailure(std::ostream& /*os*/,
+bool LargeObjectSpace::LogFragmentationAllocFailure(std::ostream& /*os*/,
                                                     size_t /*failed_alloc_bytes*/) {
   UNIMPLEMENTED(FATAL);
+  UNREACHABLE();
 }
 
 std::pair<uint8_t*, uint8_t*> LargeObjectMapSpace::GetBeginEndAtomic() const {

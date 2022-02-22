@@ -8,7 +8,6 @@ libbacktrace_SOURCES = \
   BacktraceMap.cpp \
   BacktracePtrace.cpp \
   ThreadEntry.cpp \
-  UnwindMap.cpp \
   UnwindStack.cpp \
   UnwindStackMap.cpp \
 
@@ -24,7 +23,6 @@ libunwindstack_SOURCES := \
   ElfInterfaceArm.cpp \
   Global.cpp \
   JitDebug.cpp \
-  Log.cpp \
   MapInfo.cpp \
   Maps.cpp \
   Memory.cpp \
@@ -71,24 +69,25 @@ SOURCES = \
   $(foreach source, $(filter %.cpp, $(libunwindstack_SOURCES)), libunwindstack/$(source)) \
   $(foreach source, $(filter %.cpp, $(libunwindstack_dexfile_SOURCES)), libunwindstack/$(source)) \
 
-SOURCES := $(foreach source, $(SOURCES), system/core/$(source))
+SOURCES := $(foreach source, $(SOURCES), system/unwinding/$(source))
 OBJECTS_CXX = $(SOURCES:.cpp=.o)
-SOURCES_ASSEMBLY := $(foreach source, $(SOURCES_ASSEMBLY), system/core/$(source))
+SOURCES_ASSEMBLY := $(foreach source, $(SOURCES_ASSEMBLY), system/unwinding/$(source))
 OBJECTS_ASSEMBLY := $(SOURCES_ASSEMBLY:.S=.o)
 
 CXXFLAGS += -std=gnu++2a -fno-omit-frame-pointer
 CPPFLAGS += \
+  -I/usr/include \
   -I/usr/include/android \
   -I/usr/include/android/lzma \
   -Iart/libdexfile/external/include \
-  -Iexternal/libunwind/include \
   -Idebian/include/external/libunwind \
-  -Isystem/core/include \
-  -Isystem/core/base/include \
   -Isystem/core/demangle/include \
-  -Isystem/core/liblog/include \
-  -Isystem/core/libprocinfo/include \
-  -Isystem/core/libunwindstack/include \
+  -Isystem/core/include \
+  -Isystem/libbase/include \
+  -Isystem/libprocinfo/include \
+  -Isystem/logging/liblog/include \
+  -Isystem/unwinding/libbacktrace/include \
+  -Isystem/unwinding/libunwindstack/include \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
 	mkdir --parents debian/out/system/core

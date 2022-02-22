@@ -23,8 +23,6 @@
 namespace art {
 namespace arm64 {
 
-constexpr size_t kFramePointerSize = static_cast<size_t>(PointerSize::k64);
-
 class Arm64ManagedRuntimeCallingConvention final : public ManagedRuntimeCallingConvention {
  public:
   Arm64ManagedRuntimeCallingConvention(bool is_static, bool is_synchronized, const char* shorty)
@@ -35,18 +33,14 @@ class Arm64ManagedRuntimeCallingConvention final : public ManagedRuntimeCallingC
   ~Arm64ManagedRuntimeCallingConvention() override {}
   // Calling convention
   ManagedRegister ReturnRegister() override;
-  ManagedRegister InterproceduralScratchRegister() const override;
   // Managed runtime calling convention
   ManagedRegister MethodRegister() override;
   bool IsCurrentParamInRegister() override;
   bool IsCurrentParamOnStack() override;
   ManagedRegister CurrentParamRegister() override;
   FrameOffset CurrentParamStackOffset() override;
-  const ManagedRegisterEntrySpills& EntrySpills() override;
 
  private:
-  ManagedRegisterEntrySpills entry_spills_;
-
   DISALLOW_COPY_AND_ASSIGN(Arm64ManagedRuntimeCallingConvention);
 };
 
@@ -60,11 +54,11 @@ class Arm64JniCallingConvention final : public JniCallingConvention {
   // Calling convention
   ManagedRegister ReturnRegister() override;
   ManagedRegister IntReturnRegister() override;
-  ManagedRegister InterproceduralScratchRegister() const override;
   // JNI calling convention
   size_t FrameSize() const override;
-  size_t OutArgSize() const override;
+  size_t OutFrameSize() const override;
   ArrayRef<const ManagedRegister> CalleeSaveRegisters() const override;
+  ManagedRegister SavedLocalReferenceCookieRegister() const override;
   ManagedRegister ReturnScratchRegister() const override;
   uint32_t CoreSpillMask() const override;
   uint32_t FpSpillMask() const override;

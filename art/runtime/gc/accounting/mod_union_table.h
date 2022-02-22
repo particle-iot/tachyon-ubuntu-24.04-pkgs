@@ -52,9 +52,10 @@ class ModUnionTable {
   // A callback for visiting an object in the heap.
   using ObjectCallback = void (*)(mirror::Object*, void*);
 
-  typedef std::set<uint8_t*, std::less<uint8_t*>,
-                   TrackingAllocator<uint8_t*, kAllocatorTagModUnionCardSet>> CardSet;
-  typedef MemoryRangeBitmap<CardTable::kCardSize> CardBitmap;
+  using CardSet = std::set<uint8_t*,
+                           std::less<uint8_t*>,
+                           TrackingAllocator<uint8_t*, kAllocatorTagModUnionCardSet>>;
+  using CardBitmap = MemoryRangeBitmap<CardTable::kCardSize>;
 
   explicit ModUnionTable(const std::string& name, Heap* heap, space::ContinuousSpace* space)
       : name_(name),
@@ -82,8 +83,8 @@ class ModUnionTable {
   // Visit all of the objects that may contain references to other spaces.
   virtual void VisitObjects(ObjectCallback callback, void* arg) = 0;
 
-  // Verification, sanity checks that we don't have clean cards which conflict with out cached data
-  // for said cards. Exclusive lock is required since verify sometimes uses
+  // Verification: consistency checks that we don't have clean cards which conflict with out
+  // cached data for said cards. Exclusive lock is required since verify sometimes uses
   // SpaceBitmap::VisitMarkedRange and VisitMarkedRange can't know if the callback will modify the
   // bitmap or not.
   virtual void Verify() REQUIRES(Locks::heap_bitmap_lock_) = 0;

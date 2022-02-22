@@ -103,10 +103,12 @@ bool AotClassLinker::InitializeClass(Thread* self,
   return success;
 }
 
-verifier::FailureKind AotClassLinker::PerformClassVerification(Thread* self,
-                                                               Handle<mirror::Class> klass,
-                                                               verifier::HardFailLogMode log_level,
-                                                               std::string* error_msg) {
+verifier::FailureKind AotClassLinker::PerformClassVerification(
+    Thread* self,
+    verifier::VerifierDeps* verifier_deps,
+    Handle<mirror::Class> klass,
+    verifier::HardFailLogMode log_level,
+    std::string* error_msg) {
   Runtime* const runtime = Runtime::Current();
   CompilerCallbacks* callbacks = runtime->GetCompilerCallbacks();
   ClassStatus old_status = callbacks->GetPreviousClassState(
@@ -115,6 +117,9 @@ verifier::FailureKind AotClassLinker::PerformClassVerification(Thread* self,
   if (old_status >= ClassStatus::kVerified) {
     return verifier::FailureKind::kNoFailure;
   }
+  if (old_status >= ClassStatus::kVerifiedNeedsAccessChecks) {
+    return verifier::FailureKind::kAccessChecksFailure;
+  }
   // Does it need to be verified at runtime? Report soft failure.
   if (old_status >= ClassStatus::kRetryVerificationAtRuntime) {
     // Error messages from here are only reported through -verbose:class. It is not worth it to
@@ -122,7 +127,7 @@ verifier::FailureKind AotClassLinker::PerformClassVerification(Thread* self,
     return verifier::FailureKind::kSoftFailure;
   }
   // Do the actual work.
-  return ClassLinker::PerformClassVerification(self, klass, log_level, error_msg);
+  return ClassLinker::PerformClassVerification(self, verifier_deps, klass, log_level, error_msg);
 }
 
 bool AotClassLinker::CanReferenceInBootImageExtension(ObjPtr<mirror::Class> klass, gc::Heap* heap) {
@@ -194,6 +199,75 @@ bool AotClassLinker::CanReferenceInBootImageExtension(ObjPtr<mirror::Class> klas
   }
 
   return true;
+}
+
+bool AotClassLinker::SetUpdatableBootClassPackages(const std::vector<std::string>& packages) {
+  DCHECK(updatable_boot_class_path_descriptor_prefixes_.empty());
+  // Transform package names to descriptor prefixes.
+  std::vector<std::string> prefixes;
+  prefixes.reserve(packages.size());
+  for (const std::string& package : packages) {
+    if (package.empty() || package.find('/') != std::string::npos) {
+      LOG(ERROR) << "Invalid package name: " << package;
+      return false;
+    }
+    std::string prefix = 'L' + package + '/';
+    std::replace(prefix.begin(), prefix.end(), '.', '/');
+    prefixes.push_back(std::move(prefix));
+  }
+  // Sort and remove unnecessary prefixes.
+  std::sort(prefixes.begin(), prefixes.end());
+  std::string last_prefix;
+  auto end_it = std::remove_if(
+      prefixes.begin(),
+      prefixes.end(),
+      [&last_prefix](const std::string& s) {
+        if (!last_prefix.empty() && StartsWith(s, last_prefix)) {
+          return true;
+        } else {
+          last_prefix = s;
+          return false;
+        }
+      });
+  prefixes.resize(std::distance(prefixes.begin(), end_it));
+  prefixes.shrink_to_fit();
+  updatable_boot_class_path_descriptor_prefixes_.swap(prefixes);
+  return true;
+}
+
+bool AotClassLinker::IsUpdatableBootClassPathDescriptor(const char* descriptor) {
+  std::string_view descriptor_sv(descriptor);
+  for (const std::string& prefix : updatable_boot_class_path_descriptor_prefixes_) {
+    if (StartsWith(descriptor_sv, prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+void AotClassLinker::SetSdkChecker(std::unique_ptr<SdkChecker>&& sdk_checker) {
+  sdk_checker_ = std::move(sdk_checker);
+}
+
+const SdkChecker* AotClassLinker::GetSdkChecker() const {
+  return sdk_checker_.get();
+}
+
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtMethod* art_method) const
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(art_method);
+}
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(ArtField* art_field) const
+    REQUIRES_SHARED(Locks::mutator_lock_) {
+  return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(art_field);
+}
+bool AotClassLinker::DenyAccessBasedOnPublicSdk(const char* type_descriptor) const {
+  return sdk_checker_ != nullptr && sdk_checker_->ShouldDenyAccess(type_descriptor);
+}
+
+void AotClassLinker::SetEnablePublicSdkChecks(bool enabled) {
+  if (sdk_checker_ != nullptr) {
+    sdk_checker_->SetEnabled(enabled);
+  }
 }
 
 }  // namespace art

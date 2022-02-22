@@ -32,23 +32,16 @@
 #include "code_generator_x86_64.h"
 #endif
 
-#ifdef ART_ENABLE_CODEGEN_mips
-#include "code_generator_mips.h"
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips64
-#include "code_generator_mips64.h"
-#endif
-
+#include "art_method-inl.h"
 #include "base/bit_utils.h"
 #include "base/bit_utils_iterator.h"
 #include "base/casts.h"
 #include "base/leb128.h"
 #include "class_linker.h"
+#include "class_root-inl.h"
 #include "compiled_method.h"
 #include "dex/bytecode_utils.h"
 #include "dex/code_item_accessors-inl.h"
-#include "dex/verified_method.h"
 #include "graph_visualizer.h"
 #include "image.h"
 #include "gc/space/image_space.h"
@@ -441,7 +434,7 @@ void CodeGenerator::Compile(CodeAllocator* allocator) {
   // Finalize instructions in assember;
   Finalize(allocator);
 
-  GetStackMapStream()->EndMethod();
+  GetStackMapStream()->EndMethod(GetAssembler()->CodeSize());
 }
 
 void CodeGenerator::Finalize(CodeAllocator* allocator) {
@@ -511,26 +504,77 @@ void CodeGenerator::CreateCommonInvokeLocationSummary(
 
   if (invoke->IsInvokeStaticOrDirect()) {
     HInvokeStaticOrDirect* call = invoke->AsInvokeStaticOrDirect();
-    switch (call->GetMethodLoadKind()) {
-      case HInvokeStaticOrDirect::MethodLoadKind::kRecursive:
-        locations->SetInAt(call->GetSpecialInputIndex(), visitor->GetMethodLocation());
-        break;
-      case HInvokeStaticOrDirect::MethodLoadKind::kRuntimeCall:
-        locations->AddTemp(visitor->GetMethodLocation());
-        locations->SetInAt(call->GetSpecialInputIndex(), Location::RequiresRegister());
-        break;
-      default:
-        locations->AddTemp(visitor->GetMethodLocation());
-        break;
+    MethodLoadKind method_load_kind = call->GetMethodLoadKind();
+    CodePtrLocation code_ptr_location = call->GetCodePtrLocation();
+    if (code_ptr_location == CodePtrLocation::kCallCriticalNative) {
+      locations->AddTemp(Location::RequiresRegister());  // For target method.
+    }
+    if (code_ptr_location == CodePtrLocation::kCallCriticalNative ||
+        method_load_kind == MethodLoadKind::kRecursive) {
+      // For `kCallCriticalNative` we need the current method as the hidden argument
+      // if we reach the dlsym lookup stub for @CriticalNative.
+      locations->SetInAt(call->GetCurrentMethodIndex(), visitor->GetMethodLocation());
+    } else {
+      locations->AddTemp(visitor->GetMethodLocation());
+      if (method_load_kind == MethodLoadKind::kRuntimeCall) {
+        locations->SetInAt(call->GetCurrentMethodIndex(), Location::RequiresRegister());
+      }
     }
   } else if (!invoke->IsInvokePolymorphic()) {
     locations->AddTemp(visitor->GetMethodLocation());
   }
 }
 
+void CodeGenerator::PrepareCriticalNativeArgumentMoves(
+    HInvokeStaticOrDirect* invoke,
+    /*inout*/InvokeDexCallingConventionVisitor* visitor,
+    /*out*/HParallelMove* parallel_move) {
+  LocationSummary* locations = invoke->GetLocations();
+  for (size_t i = 0, num = invoke->GetNumberOfArguments(); i != num; ++i) {
+    Location in_location = locations->InAt(i);
+    DataType::Type type = invoke->InputAt(i)->GetType();
+    DCHECK_NE(type, DataType::Type::kReference);
+    Location out_location = visitor->GetNextLocation(type);
+    if (out_location.IsStackSlot() || out_location.IsDoubleStackSlot()) {
+      // Stack arguments will need to be moved after adjusting the SP.
+      parallel_move->AddMove(in_location, out_location, type, /*instruction=*/ nullptr);
+    } else {
+      // Register arguments should have been assigned their final locations for register allocation.
+      DCHECK(out_location.Equals(in_location)) << in_location << " -> " << out_location;
+    }
+  }
+}
+
+void CodeGenerator::FinishCriticalNativeFrameSetup(size_t out_frame_size,
+                                                   /*inout*/HParallelMove* parallel_move) {
+  DCHECK_NE(out_frame_size, 0u);
+  IncreaseFrame(out_frame_size);
+  // Adjust the source stack offsets by `out_frame_size`, i.e. the additional
+  // frame size needed for outgoing stack arguments.
+  for (size_t i = 0, num = parallel_move->NumMoves(); i != num; ++i) {
+    MoveOperands* operands = parallel_move->MoveOperandsAt(i);
+    Location source = operands->GetSource();
+    if (operands->GetSource().IsStackSlot()) {
+      operands->SetSource(Location::StackSlot(source.GetStackIndex() +  out_frame_size));
+    } else if (operands->GetSource().IsDoubleStackSlot()) {
+      operands->SetSource(Location::DoubleStackSlot(source.GetStackIndex() +  out_frame_size));
+    }
+  }
+  // Emit the moves.
+  GetMoveResolver()->EmitNativeCode(parallel_move);
+}
+
+const char* CodeGenerator::GetCriticalNativeShorty(HInvokeStaticOrDirect* invoke,
+                                                   uint32_t* shorty_len) {
+  ScopedObjectAccess soa(Thread::Current());
+  DCHECK(invoke->GetResolvedMethod()->IsCriticalNative());
+  return invoke->GetResolvedMethod()->GetShorty(shorty_len);
+}
+
 void CodeGenerator::GenerateInvokeStaticOrDirectRuntimeCall(
     HInvokeStaticOrDirect* invoke, Location temp, SlowPathCode* slow_path) {
-  MoveConstant(temp, invoke->GetDexMethodIndex());
+  MethodReference method_reference(invoke->GetMethodReference());
+  MoveConstant(temp, method_reference.index);
 
   // The access check is unnecessary but we do not want to introduce
   // extra entrypoints for the codegens that do not support some
@@ -559,7 +603,8 @@ void CodeGenerator::GenerateInvokeStaticOrDirectRuntimeCall(
   InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), slow_path);
 }
 void CodeGenerator::GenerateInvokeUnresolvedRuntimeCall(HInvokeUnresolved* invoke) {
-  MoveConstant(invoke->GetLocations()->GetTemp(0), invoke->GetDexMethodIndex());
+  MethodReference method_reference(invoke->GetMethodReference());
+  MoveConstant(invoke->GetLocations()->GetTemp(0), method_reference.index);
 
   // Initialize to anything to silent compiler warnings.
   QuickEntrypointEnum entrypoint = kQuickInvokeStaticTrampolineWithAccessCheck;
@@ -587,12 +632,13 @@ void CodeGenerator::GenerateInvokeUnresolvedRuntimeCall(HInvokeUnresolved* invok
   InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), nullptr);
 }
 
-void CodeGenerator::GenerateInvokePolymorphicCall(HInvokePolymorphic* invoke) {
+void CodeGenerator::GenerateInvokePolymorphicCall(HInvokePolymorphic* invoke,
+                                                  SlowPathCode* slow_path) {
   // invoke-polymorphic does not use a temporary to convey any additional information (e.g. a
   // method index) since it requires multiple info from the instruction (registers A, B, H). Not
   // using the reservation has no effect on the registers used in the runtime call.
   QuickEntrypointEnum entrypoint = kQuickInvokePolymorphic;
-  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), nullptr);
+  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), slow_path);
 }
 
 void CodeGenerator::GenerateInvokeCustomCall(HInvokeCustom* invoke) {
@@ -845,7 +891,6 @@ void CodeGenerator::GenerateLoadMethodTypeRuntimeCall(HLoadMethodType* method_ty
 
 static uint32_t GetBootImageOffsetImpl(const void* object, ImageHeader::ImageSections section) {
   Runtime* runtime = Runtime::Current();
-  DCHECK(runtime->IsAotCompiler());
   const std::vector<gc::space::ImageSpace*>& boot_image_spaces =
       runtime->GetHeap()->GetBootImageSpaces();
   // Check that the `object` is in the expected section of one of the boot image files.
@@ -859,6 +904,10 @@ static uint32_t GetBootImageOffsetImpl(const void* object, ImageHeader::ImageSec
   uintptr_t begin = reinterpret_cast<uintptr_t>(boot_image_spaces.front()->Begin());
   uintptr_t offset = reinterpret_cast<uintptr_t>(object) - begin;
   return dchecked_integral_cast<uint32_t>(offset);
+}
+
+uint32_t CodeGenerator::GetBootImageOffset(ObjPtr<mirror::Object> object) {
+  return GetBootImageOffsetImpl(object.Ptr(), ImageHeader::kSectionObjects);
 }
 
 // NO_THREAD_SAFETY_ANALYSIS: Avoid taking the mutator lock, boot image classes are non-moveable.
@@ -877,11 +926,26 @@ uint32_t CodeGenerator::GetBootImageOffset(HLoadString* load_string) NO_THREAD_S
   return GetBootImageOffsetImpl(string.Ptr(), ImageHeader::kSectionObjects);
 }
 
-uint32_t CodeGenerator::GetBootImageOffset(HInvokeStaticOrDirect* invoke) {
-  DCHECK_EQ(invoke->GetMethodLoadKind(), HInvokeStaticOrDirect::MethodLoadKind::kBootImageRelRo);
+uint32_t CodeGenerator::GetBootImageOffset(HInvoke* invoke) {
   ArtMethod* method = invoke->GetResolvedMethod();
   DCHECK(method != nullptr);
   return GetBootImageOffsetImpl(method, ImageHeader::kSectionArtMethods);
+}
+
+// NO_THREAD_SAFETY_ANALYSIS: Avoid taking the mutator lock, boot image objects are non-moveable.
+uint32_t CodeGenerator::GetBootImageOffset(ClassRoot class_root) NO_THREAD_SAFETY_ANALYSIS {
+  ObjPtr<mirror::Class> klass = GetClassRoot<kWithoutReadBarrier>(class_root);
+  return GetBootImageOffsetImpl(klass.Ptr(), ImageHeader::kSectionObjects);
+}
+
+// NO_THREAD_SAFETY_ANALYSIS: Avoid taking the mutator lock, boot image classes are non-moveable.
+uint32_t CodeGenerator::GetBootImageOffsetOfIntrinsicDeclaringClass(HInvoke* invoke)
+    NO_THREAD_SAFETY_ANALYSIS {
+  DCHECK_NE(invoke->GetIntrinsic(), Intrinsics::kNone);
+  ArtMethod* method = invoke->GetResolvedMethod();
+  DCHECK(method != nullptr);
+  ObjPtr<mirror::Class> declaring_class = method->GetDeclaringClass<kWithoutReadBarrier>();
+  return GetBootImageOffsetImpl(declaring_class.Ptr(), ImageHeader::kSectionObjects);
 }
 
 void CodeGenerator::BlockIfInRegister(Location location, bool is_out) const {
@@ -948,18 +1012,6 @@ std::unique_ptr<CodeGenerator> CodeGenerator::Create(HGraph* graph,
     case InstructionSet::kArm64: {
       return std::unique_ptr<CodeGenerator>(
           new (allocator) arm64::CodeGeneratorARM64(graph, compiler_options, stats));
-    }
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips
-    case InstructionSet::kMips: {
-      return std::unique_ptr<CodeGenerator>(
-          new (allocator) mips::CodeGeneratorMIPS(graph, compiler_options, stats));
-    }
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips64
-    case InstructionSet::kMips64: {
-      return std::unique_ptr<CodeGenerator>(
-          new (allocator) mips64::CodeGeneratorMIPS64(graph, compiler_options, stats));
     }
 #endif
 #ifdef ART_ENABLE_CODEGEN_x86
@@ -1614,6 +1666,7 @@ void CodeGenerator::ValidateInvokeRuntime(QuickEntrypointEnum entrypoint,
              (kEmitCompilerReadBarrier &&
               !kUseBakerReadBarrier &&
               (instruction->IsInstanceFieldGet() ||
+               instruction->IsPredicatedInstanceFieldGet() ||
                instruction->IsStaticFieldGet() ||
                instruction->IsArrayGet() ||
                instruction->IsLoadClass() ||
@@ -1624,7 +1677,8 @@ void CodeGenerator::ValidateInvokeRuntime(QuickEntrypointEnum entrypoint,
           << "instruction->DebugName()=" << instruction->DebugName()
           << " instruction->GetSideEffects().ToString()="
           << instruction->GetSideEffects().ToString()
-          << " slow_path->GetDescription()=" << slow_path->GetDescription();
+          << " slow_path->GetDescription()=" << slow_path->GetDescription() << std::endl
+          << "Instruction and args: " << instruction->DumpWithArgs();
     }
   } else {
     // The GC side effect is not required for the instruction. But the instruction might still have
@@ -1649,6 +1703,7 @@ void CodeGenerator::ValidateInvokeRuntimeWithoutRecordingPcInfo(HInstruction* in
   // PC-related information.
   DCHECK(kUseBakerReadBarrier);
   DCHECK(instruction->IsInstanceFieldGet() ||
+         instruction->IsPredicatedInstanceFieldGet() ||
          instruction->IsStaticFieldGet() ||
          instruction->IsArrayGet() ||
          instruction->IsArraySet() ||
@@ -1656,8 +1711,7 @@ void CodeGenerator::ValidateInvokeRuntimeWithoutRecordingPcInfo(HInstruction* in
          instruction->IsLoadString() ||
          instruction->IsInstanceOf() ||
          instruction->IsCheckCast() ||
-         (instruction->IsInvokeVirtual() && instruction->GetLocations()->Intrinsified()) ||
-         (instruction->IsInvokeStaticOrDirect() && instruction->GetLocations()->Intrinsified()))
+         (instruction->IsInvoke() && instruction->GetLocations()->Intrinsified()))
       << "instruction->DebugName()=" << instruction->DebugName()
       << " slow_path->GetDescription()=" << slow_path->GetDescription();
 }
@@ -1773,6 +1827,30 @@ QuickEntrypointEnum CodeGenerator::GetArrayAllocationEntrypoint(HNewArray* new_a
   }
   LOG(FATAL) << "Unreachable";
   UNREACHABLE();
+}
+
+ScaleFactor CodeGenerator::ScaleFactorForType(DataType::Type type) {
+  switch (type) {
+    case DataType::Type::kBool:
+    case DataType::Type::kUint8:
+    case DataType::Type::kInt8:
+      return TIMES_1;
+    case DataType::Type::kUint16:
+    case DataType::Type::kInt16:
+      return TIMES_2;
+    case DataType::Type::kInt32:
+    case DataType::Type::kUint32:
+    case DataType::Type::kFloat32:
+    case DataType::Type::kReference:
+      return TIMES_4;
+    case DataType::Type::kInt64:
+    case DataType::Type::kUint64:
+    case DataType::Type::kFloat64:
+      return TIMES_8;
+    case DataType::Type::kVoid:
+      LOG(FATAL) << "Unreachable type " << type;
+      UNREACHABLE();
+  }
 }
 
 }  // namespace art

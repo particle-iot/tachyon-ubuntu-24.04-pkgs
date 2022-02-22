@@ -17,7 +17,7 @@
 /*
  * Mterp entry point and support functions.
  */
-#include "mterp.h"
+#include "nterp.h"
 
 #include "base/quasi_atomic.h"
 #include "dex/dex_instruction_utils.h"
@@ -37,16 +37,27 @@ bool IsNterpSupported() {
 }
 
 bool CanRuntimeUseNterp() REQUIRES_SHARED(Locks::mutator_lock_) {
-  // Nterp has the same restrictions as Mterp.
-  return IsNterpSupported() && CanUseMterp();
+  Runtime* runtime = Runtime::Current();
+  instrumentation::Instrumentation* instr = runtime->GetInstrumentation();
+  // If the runtime is interpreter only, we currently don't use nterp as some
+  // parts of the runtime (like instrumentation) make assumption on an
+  // interpreter-only runtime to always be in a switch-like interpreter.
+  return IsNterpSupported() &&
+      !instr->InterpretOnly() &&
+      !runtime->IsAotCompiler() &&
+      !runtime->GetInstrumentation()->IsActive() &&
+      // nterp only knows how to deal with the normal exits. It cannot handle any of the
+      // non-standard force-returns.
+      !runtime->AreNonStandardExitsEnabled() &&
+      // An async exception has been thrown. We need to go to the switch interpreter. nterp doesn't
+      // know how to deal with these so we could end up never dealing with it if we are in an
+      // infinite loop.
+      !runtime->AreAsyncExceptionsThrown() &&
+      (runtime->GetJit() == nullptr || !runtime->GetJit()->JitAtFirstUse());
 }
 
-bool CanMethodUseNterp(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
-  return method->SkipAccessChecks() &&
-      !method->IsNative() &&
-      method->GetDexFile()->IsStandardDexFile() &&
-      NterpGetFrameSize(method) < kMaxNterpFrame;
-}
+// The entrypoint for nterp, which ArtMethods can directly point to.
+extern "C" void ExecuteNterpImpl() REQUIRES_SHARED(Locks::mutator_lock_);
 
 const void* GetNterpEntryPoint() {
   return reinterpret_cast<const void*>(interpreter::ExecuteNterpImpl);
@@ -62,12 +73,33 @@ void CheckNterpAsmConstants() {
    * which one did, but if any one is too big the total size will
    * overflow.
    */
-  const int width = kMterpHandlerSize;
+  const int width = kNterpHandlerSize;
   ptrdiff_t interp_size = reinterpret_cast<uintptr_t>(artNterpAsmInstructionEnd) -
                           reinterpret_cast<uintptr_t>(artNterpAsmInstructionStart);
   if ((interp_size == 0) || (interp_size != (art::kNumPackedOpcodes * width))) {
       LOG(FATAL) << "ERROR: unexpected asm interp size " << interp_size
                  << "(did an instruction handler exceed " << width << " bytes?)";
+  }
+  static_assert(IsPowerOfTwo(kNterpHotnessMask + 1), "Hotness mask must be a (power of 2) - 1");
+  static_assert(IsPowerOfTwo(kTieredHotnessMask + 1),
+                "Tiered hotness mask must be a (power of 2) - 1");
+}
+
+inline void UpdateHotness(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
+  // The hotness we will add to a method when we perform a
+  // field/method/class/string lookup.
+  constexpr uint16_t kNterpHotnessLookup = 0xf;
+
+  // Convert to uint32_t to handle uint16_t overflow.
+  uint32_t counter = method->GetCounter();
+  uint32_t new_counter = counter + kNterpHotnessLookup;
+  if (new_counter > kNterpHotnessMask) {
+    // Let the nterp code actually call the compilation: we want to make sure
+    // there's at least a second execution of the method or a back-edge to avoid
+    // compiling straightline initialization methods.
+    method->SetCounter(kNterpHotnessMask);
+  } else {
+    method->SetCounter(new_counter);
   }
 }
 
@@ -86,6 +118,111 @@ template<typename T>
 inline void UpdateCache(Thread* self, uint16_t* dex_pc_ptr, T* value) {
   UpdateCache(self, dex_pc_ptr, reinterpret_cast<size_t>(value));
 }
+
+#ifdef __arm__
+
+extern "C" void NterpStoreArm32Fprs(const char* shorty,
+                                    uint32_t* registers,
+                                    uint32_t* stack_args,
+                                    const uint32_t* fprs) {
+  // Note `shorty` has already the returned type removed.
+  ScopedAssertNoThreadSuspension sants("In nterp");
+  uint32_t arg_index = 0;
+  uint32_t fpr_double_index = 0;
+  uint32_t fpr_index = 0;
+  for (uint32_t shorty_index = 0; shorty[shorty_index] != '\0'; ++shorty_index) {
+    char arg_type = shorty[shorty_index];
+    switch (arg_type) {
+      case 'D': {
+        // Double should not overlap with float.
+        fpr_double_index = std::max(fpr_double_index, RoundUp(fpr_index, 2));
+        if (fpr_double_index < 16) {
+          registers[arg_index] = fprs[fpr_double_index++];
+          registers[arg_index + 1] = fprs[fpr_double_index++];
+        } else {
+          registers[arg_index] = stack_args[arg_index];
+          registers[arg_index + 1] = stack_args[arg_index + 1];
+        }
+        arg_index += 2;
+        break;
+      }
+      case 'F': {
+        if (fpr_index % 2 == 0) {
+          fpr_index = std::max(fpr_double_index, fpr_index);
+        }
+        if (fpr_index < 16) {
+          registers[arg_index] = fprs[fpr_index++];
+        } else {
+          registers[arg_index] = stack_args[arg_index];
+        }
+        arg_index++;
+        break;
+      }
+      case 'J': {
+        arg_index += 2;
+        break;
+      }
+      default: {
+        arg_index++;
+        break;
+      }
+    }
+  }
+}
+
+extern "C" void NterpSetupArm32Fprs(const char* shorty,
+                                    uint32_t dex_register,
+                                    uint32_t stack_index,
+                                    uint32_t* fprs,
+                                    uint32_t* registers,
+                                    uint32_t* stack_args) {
+  // Note `shorty` has already the returned type removed.
+  ScopedAssertNoThreadSuspension sants("In nterp");
+  uint32_t fpr_double_index = 0;
+  uint32_t fpr_index = 0;
+  for (uint32_t shorty_index = 0; shorty[shorty_index] != '\0'; ++shorty_index) {
+    char arg_type = shorty[shorty_index];
+    switch (arg_type) {
+      case 'D': {
+        // Double should not overlap with float.
+        fpr_double_index = std::max(fpr_double_index, RoundUp(fpr_index, 2));
+        if (fpr_double_index < 16) {
+          fprs[fpr_double_index++] = registers[dex_register++];
+          fprs[fpr_double_index++] = registers[dex_register++];
+          stack_index += 2;
+        } else {
+          stack_args[stack_index++] = registers[dex_register++];
+          stack_args[stack_index++] = registers[dex_register++];
+        }
+        break;
+      }
+      case 'F': {
+        if (fpr_index % 2 == 0) {
+          fpr_index = std::max(fpr_double_index, fpr_index);
+        }
+        if (fpr_index < 16) {
+          fprs[fpr_index++] = registers[dex_register++];
+          stack_index++;
+        } else {
+          stack_args[stack_index++] = registers[dex_register++];
+        }
+        break;
+      }
+      case 'J': {
+        stack_index += 2;
+        dex_register += 2;
+        break;
+      }
+      default: {
+        stack_index++;
+        dex_register++;
+        break;
+      }
+    }
+  }
+}
+
+#endif
 
 extern "C" const dex::CodeItem* NterpGetCodeItem(ArtMethod* method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -129,6 +266,7 @@ extern "C" const char* NterpGetShortyFromInvokeCustom(ArtMethod* caller, uint16_
 
 extern "C" size_t NterpGetMethod(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
+  UpdateHotness(caller);
   const Instruction* inst = Instruction::At(dex_pc_ptr);
   InvokeType invoke_type = kStatic;
   uint16_t method_index = 0;
@@ -247,11 +385,28 @@ extern "C" size_t NterpGetMethod(Thread* self, ArtMethod* caller, uint16_t* dex_
   }
 
   if (invoke_type == kInterface) {
-    UpdateCache(self, dex_pc_ptr, resolved_method->GetImtIndex());
-    return resolved_method->GetImtIndex();
+    size_t result = 0u;
+    if (resolved_method->GetDeclaringClass()->IsObjectClass()) {
+      // Set the low bit to notify the interpreter it should do a vtable call.
+      DCHECK_LT(resolved_method->GetMethodIndex(), 0x10000);
+      result = (resolved_method->GetMethodIndex() << 16) | 1U;
+    } else {
+      DCHECK(resolved_method->GetDeclaringClass()->IsInterface());
+      DCHECK(!resolved_method->IsCopied());
+      if (!resolved_method->IsAbstract()) {
+        // Set the second bit to notify the interpreter this is a default
+        // method.
+        result = reinterpret_cast<size_t>(resolved_method) | 2U;
+      } else {
+        result = reinterpret_cast<size_t>(resolved_method);
+      }
+    }
+    UpdateCache(self, dex_pc_ptr, result);
+    return result;
   } else if (resolved_method->GetDeclaringClass()->IsStringClass()
              && !resolved_method->IsStatic()
              && resolved_method->IsConstructor()) {
+    CHECK_NE(invoke_type, kSuper);
     resolved_method = WellKnownClasses::StringInitToStringFactory(resolved_method);
     // Or the result with 1 to notify to nterp this is a string init method. We
     // also don't cache the result as we don't want nterp to have its fast path always
@@ -272,7 +427,8 @@ static ArtField* ResolveFieldWithAccessChecks(Thread* self,
                                               uint16_t field_index,
                                               ArtMethod* caller,
                                               bool is_static,
-                                              bool is_put)
+                                              bool is_put,
+                                              size_t resolve_field_type)  // Resolve if not zero
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (caller->SkipAccessChecks()) {
     return class_linker->ResolveField(field_index, caller, is_static);
@@ -307,11 +463,19 @@ static ArtField* ResolveFieldWithAccessChecks(Thread* self,
     ThrowIllegalAccessErrorFinalField(caller, resolved_field);
     return nullptr;
   }
+  if (resolve_field_type != 0u && resolved_field->ResolveType() == nullptr) {
+    DCHECK(self->IsExceptionPending());
+    return nullptr;
+  }
   return resolved_field;
 }
 
-extern "C" size_t NterpGetStaticField(Thread* self, ArtMethod* caller, uint16_t* dex_pc_ptr)
+extern "C" size_t NterpGetStaticField(Thread* self,
+                                      ArtMethod* caller,
+                                      uint16_t* dex_pc_ptr,
+                                      size_t resolve_field_type)  // Resolve if not zero
     REQUIRES_SHARED(Locks::mutator_lock_) {
+  UpdateHotness(caller);
   const Instruction* inst = Instruction::At(dex_pc_ptr);
   uint16_t field_index = inst->VRegB_21c();
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
@@ -321,7 +485,8 @@ extern "C" size_t NterpGetStaticField(Thread* self, ArtMethod* caller, uint16_t*
       field_index,
       caller,
       /* is_static */ true,
-      /* is_put */ IsInstructionSPut(inst->Opcode()));
+      /* is_put */ IsInstructionSPut(inst->Opcode()),
+      resolve_field_type);
 
   if (resolved_field == nullptr) {
     DCHECK(self->IsExceptionPending());
@@ -350,8 +515,10 @@ extern "C" size_t NterpGetStaticField(Thread* self, ArtMethod* caller, uint16_t*
 
 extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
                                                 ArtMethod* caller,
-                                                uint16_t* dex_pc_ptr)
+                                                uint16_t* dex_pc_ptr,
+                                                size_t resolve_field_type)  // Resolve if not zero
     REQUIRES_SHARED(Locks::mutator_lock_) {
+  UpdateHotness(caller);
   const Instruction* inst = Instruction::At(dex_pc_ptr);
   uint16_t field_index = inst->VRegC_22c();
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
@@ -361,7 +528,8 @@ extern "C" uint32_t NterpGetInstanceFieldOffset(Thread* self,
       field_index,
       caller,
       /* is_static */ false,
-      /* is_put */ IsInstructionIPut(inst->Opcode()));
+      /* is_put */ IsInstructionIPut(inst->Opcode()),
+      resolve_field_type);
   if (resolved_field == nullptr) {
     DCHECK(self->IsExceptionPending());
     return 0;
@@ -379,6 +547,7 @@ extern "C" mirror::Object* NterpGetClassOrAllocateObject(Thread* self,
                                                          ArtMethod* caller,
                                                          uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
+  UpdateHotness(caller);
   const Instruction* inst = Instruction::At(dex_pc_ptr);
   dex::TypeIndex index;
   switch (inst->Opcode()) {
@@ -438,6 +607,7 @@ extern "C" mirror::Object* NterpLoadObject(Thread* self, ArtMethod* caller, uint
   switch (inst->Opcode()) {
     case Instruction::CONST_STRING:
     case Instruction::CONST_STRING_JUMBO: {
+      UpdateHotness(caller);
       dex::StringIndex string_index(
           (inst->Opcode() == Instruction::CONST_STRING)
               ? inst->VRegB_21c()
@@ -474,7 +644,7 @@ extern "C" void NterpUnimplemented() {
 static mirror::Object* DoFilledNewArray(Thread* self,
                                         ArtMethod* caller,
                                         uint16_t* dex_pc_ptr,
-                                        int32_t* regs,
+                                        uint32_t* regs,
                                         bool is_range)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   const Instruction* inst = Instruction::At(dex_pc_ptr);
@@ -492,11 +662,12 @@ static mirror::Object* DoFilledNewArray(Thread* self,
     DCHECK_LE(length, 5);
   }
   uint16_t type_idx = is_range ? inst->VRegB_3rc() : inst->VRegB_35c();
-  ObjPtr<mirror::Class> array_class = ResolveVerifyAndClinit(dex::TypeIndex(type_idx),
-                                                             caller,
-                                                             self,
-                                                             /* can_run_clinit= */ true,
-                                                             /* verify_access= */ false);
+  ObjPtr<mirror::Class> array_class =
+      ResolveVerifyAndClinit(dex::TypeIndex(type_idx),
+                             caller,
+                             self,
+                             /* can_run_clinit= */ true,
+                             /* verify_access= */ !caller->SkipAccessChecks());
   if (UNLIKELY(array_class == nullptr)) {
     DCHECK(self->IsExceptionPending());
     return nullptr;
@@ -547,7 +718,7 @@ static mirror::Object* DoFilledNewArray(Thread* self,
 
 extern "C" mirror::Object* NterpFilledNewArray(Thread* self,
                                                ArtMethod* caller,
-                                               int32_t* registers,
+                                               uint32_t* registers,
                                                uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return DoFilledNewArray(self, caller, dex_pc_ptr, registers, /* is_range= */ false);
@@ -555,7 +726,7 @@ extern "C" mirror::Object* NterpFilledNewArray(Thread* self,
 
 extern "C" mirror::Object* NterpFilledNewArrayRange(Thread* self,
                                                     ArtMethod* caller,
-                                                    int32_t* registers,
+                                                    uint32_t* registers,
                                                     uint16_t* dex_pc_ptr)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   return DoFilledNewArray(self, caller, dex_pc_ptr, registers, /* is_range= */ true);
@@ -565,7 +736,7 @@ extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr,
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedAssertNoThreadSuspension sants("In nterp");
   jit::Jit* jit = Runtime::Current()->GetJit();
-  if (jit != nullptr) {
+  if (jit != nullptr && jit->UseJitCompilation()) {
     // Nterp passes null on entry where we don't want to OSR.
     if (dex_pc_ptr != nullptr) {
       // This could be a loop back edge, check if we can OSR.
@@ -582,16 +753,103 @@ extern "C" jit::OsrData* NterpHotMethod(ArtMethod* method, uint16_t* dex_pc_ptr,
   return nullptr;
 }
 
-extern "C" ssize_t MterpDoPackedSwitch(const uint16_t* switchData, int32_t testVal);
 extern "C" ssize_t NterpDoPackedSwitch(const uint16_t* switchData, int32_t testVal)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  return MterpDoPackedSwitch(switchData, testVal);
+  ScopedAssertNoThreadSuspension sants("In nterp");
+  const int kInstrLen = 3;
+
+  /*
+   * Packed switch data format:
+   *  ushort ident = 0x0100   magic value
+   *  ushort size             number of entries in the table
+   *  int first_key           first (and lowest) switch case value
+   *  int targets[size]       branch targets, relative to switch opcode
+   *
+   * Total size is (4+size*2) 16-bit code units.
+   */
+  uint16_t signature = *switchData++;
+  DCHECK_EQ(signature, static_cast<uint16_t>(art::Instruction::kPackedSwitchSignature));
+
+  uint16_t size = *switchData++;
+
+  int32_t firstKey = *switchData++;
+  firstKey |= (*switchData++) << 16;
+
+  int index = testVal - firstKey;
+  if (index < 0 || index >= size) {
+    return kInstrLen;
+  }
+
+  /*
+   * The entries are guaranteed to be aligned on a 32-bit boundary;
+   * we can treat them as a native int array.
+   */
+  const int32_t* entries = reinterpret_cast<const int32_t*>(switchData);
+  return entries[index];
 }
 
-extern "C" ssize_t MterpDoSparseSwitch(const uint16_t* switchData, int32_t testVal);
+/*
+ * Find the matching case.  Returns the offset to the handler instructions.
+ *
+ * Returns 3 if we don't find a match (it's the size of the sparse-switch
+ * instruction).
+ */
 extern "C" ssize_t NterpDoSparseSwitch(const uint16_t* switchData, int32_t testVal)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  return MterpDoSparseSwitch(switchData, testVal);
+  ScopedAssertNoThreadSuspension sants("In nterp");
+  const int kInstrLen = 3;
+  uint16_t size;
+  const int32_t* keys;
+  const int32_t* entries;
+
+  /*
+   * Sparse switch data format:
+   *  ushort ident = 0x0200   magic value
+   *  ushort size             number of entries in the table; > 0
+   *  int keys[size]          keys, sorted low-to-high; 32-bit aligned
+   *  int targets[size]       branch targets, relative to switch opcode
+   *
+   * Total size is (2+size*4) 16-bit code units.
+   */
+
+  uint16_t signature = *switchData++;
+  DCHECK_EQ(signature, static_cast<uint16_t>(art::Instruction::kSparseSwitchSignature));
+
+  size = *switchData++;
+
+  /* The keys are guaranteed to be aligned on a 32-bit boundary;
+   * we can treat them as a native int array.
+   */
+  keys = reinterpret_cast<const int32_t*>(switchData);
+
+  /* The entries are guaranteed to be aligned on a 32-bit boundary;
+   * we can treat them as a native int array.
+   */
+  entries = keys + size;
+
+  /*
+   * Binary-search through the array of keys, which are guaranteed to
+   * be sorted low-to-high.
+   */
+  int lo = 0;
+  int hi = size - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) >> 1;
+
+    int32_t foundVal = keys[mid];
+    if (testVal < foundVal) {
+      hi = mid - 1;
+    } else if (testVal > foundVal) {
+      lo = mid + 1;
+    } else {
+      return entries[mid];
+    }
+  }
+  return kInstrLen;
+}
+
+extern "C" void NterpFree(void* val) {
+  free(val);
 }
 
 }  // namespace interpreter

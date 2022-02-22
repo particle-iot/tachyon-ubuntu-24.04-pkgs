@@ -95,7 +95,9 @@ void DmTargetVerity::UseFec(const std::string& device, uint32_t num_roots, uint3
 }
 
 void DmTargetVerity::SetVerityMode(const std::string& mode) {
-    if (mode != "restart_on_corruption" && mode != "ignore_corruption") {
+    if (mode != "panic_on_corruption" &&
+        mode != "restart_on_corruption" &&
+        mode != "ignore_corruption") {
         LOG(ERROR) << "Unknown verity mode: " << mode;
         valid_ = false;
         return;
@@ -105,6 +107,10 @@ void DmTargetVerity::SetVerityMode(const std::string& mode) {
 
 void DmTargetVerity::IgnoreZeroBlocks() {
     optional_args_.emplace_back("ignore_zero_blocks");
+}
+
+void DmTargetVerity::CheckAtMostOnce() {
+    optional_args_.emplace_back("check_at_most_once");
 }
 
 std::string DmTargetVerity::GetParameterString() const {
@@ -118,6 +124,11 @@ std::string DmTargetVerity::GetParameterString() const {
 
 std::string DmTargetAndroidVerity::GetParameterString() const {
     return keyid_ + " " + block_device_;
+}
+
+std::string DmTargetBow::GetParameterString() const {
+    if (!block_size_) return target_string_;
+    return target_string_ + " 1 block_size:" + std::to_string(block_size_);
 }
 
 std::string DmTargetSnapshot::name() const {
@@ -243,22 +254,8 @@ std::string DmTargetCrypt::GetParameterString() const {
     return android::base::Join(argv, " ");
 }
 
-const std::string DmTargetDefaultKey::name_ = "default-key";
-
-bool DmTargetDefaultKey::IsLegacy(bool* result) {
-    DeviceMapper& dm = DeviceMapper::Instance();
-    DmTargetTypeInfo info;
-    if (!dm.GetTargetByName(name_, &info)) return false;
-    // dm-default-key was modified to be like dm-crypt with version 2
-    *result = !info.IsAtLeast(2, 0, 0);
-    return true;
-}
-
 bool DmTargetDefaultKey::Valid() const {
-    bool real_is_legacy;
-    if (!DmTargetDefaultKey::IsLegacy(&real_is_legacy)) return false;
-    if (real_is_legacy != is_legacy_) return false;
-    if (!is_legacy_ && !set_dun_) return false;
+    if (!use_legacy_options_format_ && !set_dun_) return false;
     return true;
 }
 
@@ -266,13 +263,13 @@ std::string DmTargetDefaultKey::GetParameterString() const {
     std::vector<std::string> argv;
     argv.emplace_back(cipher_);
     argv.emplace_back(key_);
-    if (!is_legacy_) {
+    if (!use_legacy_options_format_) {
         argv.emplace_back("0");  // iv_offset
     }
     argv.emplace_back(blockdev_);
     argv.push_back(std::to_string(start_sector_));
     std::vector<std::string> extra_argv;
-    if (is_legacy_) {
+    if (use_legacy_options_format_) {
         if (set_dun_) {  // v2 always sets the DUN.
             extra_argv.emplace_back("set_dun");
         }
@@ -280,11 +277,20 @@ std::string DmTargetDefaultKey::GetParameterString() const {
         extra_argv.emplace_back("allow_discards");
         extra_argv.emplace_back("sector_size:4096");
         extra_argv.emplace_back("iv_large_sectors");
+        if (is_hw_wrapped_) extra_argv.emplace_back("wrappedkey_v0");
     }
     if (!extra_argv.empty()) {
         argv.emplace_back(std::to_string(extra_argv.size()));
         argv.insert(argv.end(), extra_argv.begin(), extra_argv.end());
     }
+    return android::base::Join(argv, " ");
+}
+
+std::string DmTargetUser::GetParameterString() const {
+    std::vector<std::string> argv;
+    argv.push_back(std::to_string(start()));
+    argv.push_back(std::to_string(size()));
+    argv.push_back(control_device());
     return android::base::Join(argv, " ");
 }
 

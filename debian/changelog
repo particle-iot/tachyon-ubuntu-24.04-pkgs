@@ -1,3 +1,33 @@
+android-platform-tools (31.0.3-1~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream version 31.0.3
+  * debian/manifest: Adapt new upstream.
+  * debian/orig.excludes:
+    - Remove unnecessary large files.
+  * debian/rules:
+    - Update upstream version 31.0.3
+    - Update library dependencies.
+    - Remove external/libunwind.
+    - Add script to generate protobuf code.
+  * debian/patches:
+    - Remove unnecessary patches.
+    - Refresh patches.
+  * Remove embedded files in debian/include
+  * debian/control:
+    - Add B-D:
+       libbrotli-dev
+       libprotobuf-dev
+       libzstd-dev
+       protobuf-compiler
+    - Remove unnecessary B-D:
+       zlib1g-dev
+       liblzma-dev
+       libsafe-iop-dev
+  * debian/*.mk: Update
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 23 Feb 2022 03:10:44 +0900
+
 android-platform-tools (29.0.6-5) unstable; urgency=medium
 
   * Team upload.

@@ -21,6 +21,7 @@
 
 #include "art_method-inl.h"
 #include "base/bit_utils.h"
+#include "base/casts.h"
 #include "base/mem_map.h"
 #include "class_linker.h"
 #include "common_compiler_test.h"
@@ -28,6 +29,7 @@
 #include "dex/dex_file.h"
 #include "gtest/gtest.h"
 #include "indirect_reference_table.h"
+#include "java_frame_root_info.h"
 #include "jni/java_vm_ext.h"
 #include "jni/jni_internal.h"
 #include "mirror/class-inl.h"
@@ -45,7 +47,22 @@ extern "C" JNIEXPORT jint JNICALL Java_MyClassNatives_bar(JNIEnv*, jobject, jint
   return count + 1;
 }
 
+// Note: JNI name mangling "_" -> "_1".
+extern "C" JNIEXPORT jint JNICALL Java_MyClassNatives_bar_1Fast(JNIEnv*, jobject, jint count) {
+  return count + 1;
+}
+
 extern "C" JNIEXPORT jint JNICALL Java_MyClassNatives_sbar(JNIEnv*, jclass, jint count) {
+  return count + 1;
+}
+
+// Note: JNI name mangling "_" -> "_1".
+extern "C" JNIEXPORT jint JNICALL Java_MyClassNatives_sbar_1Fast(JNIEnv*, jclass, jint count) {
+  return count + 1;
+}
+
+// Note: JNI name mangling "_" -> "_1".
+extern "C" JNIEXPORT jint JNICALL Java_MyClassNatives_sbar_1Critical(jint count) {
   return count + 1;
 }
 
@@ -69,6 +86,11 @@ uint32_t gCurrentJni = static_cast<uint32_t>(JniKind::kNormal);
 // Is the current native method under test @CriticalNative?
 static bool IsCurrentJniCritical() {
   return gCurrentJni == static_cast<uint32_t>(JniKind::kCritical);
+}
+
+// Is the current native method under test @FastNative?
+static bool IsCurrentJniFast() {
+  return gCurrentJni == static_cast<uint32_t>(JniKind::kFast);
 }
 
 // Is the current native method a plain-old non-annotated native?
@@ -99,12 +121,12 @@ static std::string CurrentJniStringSuffix() {
   }
 }
 
-// Dummy values passed to our JNI handlers when we enter @CriticalNative.
+// Fake values passed to our JNI handlers when we enter @CriticalNative.
 // Normally @CriticalNative calling convention strips out the "JNIEnv*, jclass" parameters.
 // However to avoid duplicating every single test method we have a templated handler
-// that inserts dummy parameters (0,1) to make it compatible with a regular JNI handler.
-static JNIEnv* const kCriticalDummyJniEnv = reinterpret_cast<JNIEnv*>(0xDEADFEAD);
-static jclass const kCriticalDummyJniClass = reinterpret_cast<jclass>(0xBEAFBEEF);
+// that inserts fake parameters (0,1) to make it compatible with a regular JNI handler.
+static JNIEnv* const kCriticalFakeJniEnv = reinterpret_cast<JNIEnv*>(0xDEADFEAD);
+static jclass const kCriticalFakeJniClass = reinterpret_cast<jclass>(0xBEAFBEEF);
 
 // Type trait. Returns true if "T" is the same type as one of the types in Args...
 //
@@ -132,19 +154,6 @@ struct jni_type_traits {
   static constexpr const bool is_ref =
       is_any_of<T, jclass, jobject, jstring, jobjectArray, jintArray,
                 jcharArray, jfloatArray, jshortArray, jdoubleArray, jlongArray>::value;
-};
-
-template <typename ... Args>
-struct count_refs_helper {
-  using value_type = size_t;
-  static constexpr const size_t value = 0;
-};
-
-template <typename Arg, typename ... Args>
-struct count_refs_helper<Arg, Args ...> {
-  using value_type = size_t;
-  static constexpr size_t value =
-      (jni_type_traits<Arg>::is_ref ? 1 : 0) + count_refs_helper<Args ...>::value;
 };
 
 // Base case: No parameters = 0 refs.
@@ -192,8 +201,8 @@ template <typename R, typename Arg1, typename Arg2, typename ... Args, R (*fn)(A
 struct remove_extra_parameters_helper<R(Arg1, Arg2, Args...), fn> {
   // Note: Do not use Args&& here to maintain C-style parameter types.
   static R apply(Args... args) {
-    JNIEnv* env = kCriticalDummyJniEnv;
-    jclass kls = kCriticalDummyJniClass;
+    JNIEnv* env = kCriticalFakeJniEnv;
+    jclass kls = kCriticalFakeJniClass;
     return fn(env, kls, args...);
   }
 };
@@ -226,15 +235,23 @@ class JniCompilerTest : public CommonCompilerTest {
                       const char* method_name,
                       const char* method_sig) {
     ScopedObjectAccess soa(Thread::Current());
-    StackHandleScope<1> hs(soa.Self());
+    StackHandleScope<2> hs(soa.Self());
     Handle<mirror::ClassLoader> loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(class_loader)));
     // Compile the native method before starting the runtime
-    ObjPtr<mirror::Class> c = class_linker_->FindClass(soa.Self(), "LMyClassNatives;", loader);
+    Handle<mirror::Class> c =
+        hs.NewHandle(class_linker_->FindClass(soa.Self(), "LMyClassNatives;", loader));
     const auto pointer_size = class_linker_->GetImagePointerSize();
     ArtMethod* method = c->FindClassMethod(method_name, method_sig, pointer_size);
     ASSERT_TRUE(method != nullptr) << method_name << " " << method_sig;
     ASSERT_EQ(direct, method->IsDirect()) << method_name << " " << method_sig;
+    if (direct) {
+      // Class initialization could replace the entrypoint, so force
+      // the initialization before we set up the entrypoint below.
+      class_linker_->EnsureInitialized(
+          soa.Self(), c, /*can_init_fields=*/ true, /*can_init_parents=*/ true);
+      class_linker_->MakeInitializedClassesVisiblyInitialized(soa.Self(), /*wait=*/ true);
+    }
     if (check_generic_jni_) {
       method->SetEntryPointFromQuickCompiledCode(class_linker_->GetRuntimeQuickGenericJniStub());
     } else {
@@ -294,6 +311,12 @@ class JniCompilerTest : public CommonCompilerTest {
     }
     ASSERT_TRUE(jmethod_ != nullptr) << method_name << " " << method_sig;
 
+    // Make sure the test class is visibly initialized so that the RegisterNatives() below
+    // sets the JNI entrypoint rather than leaving it as null (this test pretends to be an
+    // AOT compiler and therefore the ClassLinker skips entrypoint initialization). Even
+    // if the ClassLinker initialized it with a stub, we would not want to test that here.
+    class_linker_->MakeInitializedClassesVisiblyInitialized(Thread::Current(), /*wait=*/ true);
+
     if (native_fnptr != nullptr) {
       JNINativeMethod methods[] = { { method_name, method_sig, native_fnptr } };
       ASSERT_EQ(JNI_OK, env_->RegisterNatives(jklass_, methods, 1))
@@ -352,12 +375,10 @@ class JniCompilerTest : public CommonCompilerTest {
   void MaxParamNumberImpl();
   void WithoutImplementationImpl();
   void WithoutImplementationRefReturnImpl();
+  void StaticWithoutImplementationImpl();
   void StackArgsIntsFirstImpl();
   void StackArgsFloatsFirstImpl();
   void StackArgsMixedImpl();
-#if defined(__mips__) && defined(__LP64__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-  void StackArgsSignExtendedMips64Impl();
-#endif
 
   void NormalNativeImpl();
   void FastNativeImpl();
@@ -367,18 +388,93 @@ class JniCompilerTest : public CommonCompilerTest {
   jmethodID jmethod_;
 
  private:
+  class ScopedSynchronizedEntryPointOverrides {
+   public:
+    ScopedSynchronizedEntryPointOverrides() {
+      QuickEntryPoints* qpoints = &Thread::Current()->tlsPtr_.quick_entrypoints;
+      jni_method_start_synchronized_original_ = qpoints->pJniMethodStartSynchronized;
+      qpoints->pJniMethodStartSynchronized = JniMethodStartSynchronizedOverride;
+      jni_method_end_synchronized_original_ = qpoints->pJniMethodEndSynchronized;
+      qpoints->pJniMethodEndSynchronized = JniMethodEndSynchronizedOverride;
+      jni_method_end_with_reference_synchronized_original_ =
+          qpoints->pJniMethodEndWithReferenceSynchronized;
+      qpoints->pJniMethodEndWithReferenceSynchronized =
+          JniMethodEndWithReferenceSynchronizedOverride;
+    }
+
+    ~ScopedSynchronizedEntryPointOverrides() {
+      QuickEntryPoints* qpoints = &Thread::Current()->tlsPtr_.quick_entrypoints;
+      qpoints->pJniMethodStartSynchronized = jni_method_start_synchronized_original_;
+      qpoints->pJniMethodEndSynchronized = jni_method_end_synchronized_original_;
+      qpoints->pJniMethodEndWithReferenceSynchronized =
+          jni_method_end_with_reference_synchronized_original_;
+    }
+  };
+
+  static uint32_t JniMethodStartSynchronizedOverride(jobject to_lock, Thread* self);
+  static void JniMethodEndSynchronizedOverride(uint32_t saved_local_ref_cookie,
+                                               jobject locked,
+                                               Thread* self);
+  static mirror::Object* JniMethodEndWithReferenceSynchronizedOverride(
+      jobject result,
+      uint32_t saved_local_ref_cookie,
+      jobject locked,
+      Thread* self);
+
+  using StartSynchronizedType = uint32_t (*)(jobject, Thread*);
+  using EndSynchronizedType = void (*)(uint32_t, jobject, Thread*);
+  using EndWithReferenceSynchronizedType = mirror::Object* (*)(jobject, uint32_t, jobject, Thread*);
+
+  static StartSynchronizedType jni_method_start_synchronized_original_;
+  static EndSynchronizedType jni_method_end_synchronized_original_;
+  static EndWithReferenceSynchronizedType jni_method_end_with_reference_synchronized_original_;
+  static uint32_t saved_local_ref_cookie_;
+  static jobject locked_object_;
+
   bool check_generic_jni_;
 };
 
 jclass JniCompilerTest::jklass_;
 jobject JniCompilerTest::jobj_;
 jobject JniCompilerTest::class_loader_;
+JniCompilerTest::StartSynchronizedType JniCompilerTest::jni_method_start_synchronized_original_;
+JniCompilerTest::EndSynchronizedType JniCompilerTest::jni_method_end_synchronized_original_;
+JniCompilerTest::EndWithReferenceSynchronizedType
+    JniCompilerTest::jni_method_end_with_reference_synchronized_original_;
+uint32_t JniCompilerTest::saved_local_ref_cookie_;
+jobject JniCompilerTest::locked_object_;
+
+uint32_t JniCompilerTest::JniMethodStartSynchronizedOverride(jobject to_lock, Thread* self) {
+  locked_object_ = to_lock;
+  uint32_t cookie = jni_method_start_synchronized_original_(to_lock, self);
+  saved_local_ref_cookie_ = cookie;
+  return cookie;
+}
+
+void JniCompilerTest::JniMethodEndSynchronizedOverride(uint32_t saved_local_ref_cookie,
+                                                       jobject locked,
+                                                       Thread* self) {
+  EXPECT_EQ(saved_local_ref_cookie_, saved_local_ref_cookie);
+  EXPECT_EQ(locked_object_, locked);
+  jni_method_end_synchronized_original_(saved_local_ref_cookie, locked, self);
+}
+
+mirror::Object* JniCompilerTest::JniMethodEndWithReferenceSynchronizedOverride(
+    jobject result,
+    uint32_t saved_local_ref_cookie,
+    jobject locked,
+    Thread* self) {
+  EXPECT_EQ(saved_local_ref_cookie_, saved_local_ref_cookie);
+  EXPECT_EQ(locked_object_, locked);
+  return jni_method_end_with_reference_synchronized_original_(result,
+                                                              saved_local_ref_cookie,
+                                                              locked,
+                                                              self);
+}
 
 // Test the normal compiler and normal generic JNI only.
 // The following features are unsupported in @FastNative:
-// 1) JNI stubs (lookup via dlsym) when methods aren't explicitly registered
-// 2) synchronized keyword
-// -- TODO: We can support (1) if we remove the mutator lock assert during stub lookup.
+// 1) synchronized keyword
 # define JNI_TEST_NORMAL_ONLY(TestName)          \
   TEST_F(JniCompilerTest, TestName ## NormalCompiler) { \
     ScopedCheckHandleScope top_handle_scope_check;  \
@@ -480,8 +576,8 @@ static void expectValidJniEnvAndClass(JNIEnv* env, jclass kls) {
                                   static_cast<jobject>(kls)));
   } else {
     // This is pretty much vacuously true but catch any testing setup mistakes.
-    EXPECT_EQ(env, kCriticalDummyJniEnv);
-    EXPECT_EQ(kls, kCriticalDummyJniClass);
+    EXPECT_EQ(env, kCriticalFakeJniEnv);
+    EXPECT_EQ(kls, kCriticalFakeJniClass);
   }
 }
 
@@ -489,7 +585,7 @@ static void expectValidJniEnvAndClass(JNIEnv* env, jclass kls) {
 // that the jclass we got in the JNI handler is the same one as the class the method was looked
 // up for.
 //
-// (Checks are skipped for @CriticalNative since the two values are dummy).
+// (Checks are skipped for @CriticalNative since the two values are fake).
 #define EXPECT_JNI_ENV_AND_CLASS_FOR_CURRENT_JNI(env, kls) expectValidJniEnvAndClass(env, kls)
 
 // Temporarily disable the EXPECT_NUM_STACK_REFERENCES check (for a single test).
@@ -523,42 +619,56 @@ struct ScopedCheckHandleScope {
   BaseHandleScope* const handle_scope_;
 };
 
-// Number of references allocated in JNI ShadowFrames on the given thread.
-static size_t NumJniShadowFrameReferences(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
-  return self->GetManagedStack()->NumJniShadowFrameReferences();
-}
-
-// Number of references in handle scope on the given thread.
-static size_t NumHandleReferences(Thread* self) {
-  size_t count = 0;
-  for (BaseHandleScope* cur = self->GetTopHandleScope(); cur != nullptr; cur = cur->GetLink()) {
-    count += cur->NumberOfReferences();
+class CountReferencesVisitor : public RootVisitor {
+ public:
+  void VisitRoots(mirror::Object*** roots ATTRIBUTE_UNUSED,
+                  size_t count,
+                  const RootInfo& info) override
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (info.GetType() == art::RootType::kRootJavaFrame) {
+      const JavaFrameRootInfo& jrfi = static_cast<const JavaFrameRootInfo&>(info);
+      if (jrfi.GetVReg() == JavaFrameRootInfo::kNativeReferenceArgument) {
+        DCHECK_EQ(count, 1u);
+        num_references_ += count;
+      }
+    }
   }
-  return count;
-}
+
+  void VisitRoots(mirror::CompressedReference<mirror::Object>** roots ATTRIBUTE_UNUSED,
+                  size_t count ATTRIBUTE_UNUSED,
+                  const RootInfo& info) override
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    CHECK_NE(info.GetType(), art::RootType::kRootJavaFrame);
+  }
+
+  size_t NumReferences() const {
+    return num_references_;
+  }
+
+ private:
+  size_t num_references_ = 0u;
+};
 
 // Number of references allocated in handle scopes & JNI shadow frames on this thread.
 static size_t NumStackReferences(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) {
-  return NumHandleReferences(self) + NumJniShadowFrameReferences(self);
+  CountReferencesVisitor visitor;
+  self->VisitRoots(&visitor, kVisitRootFlagAllRoots);
+  return visitor.NumReferences();
 }
 
-static void expectNumStackReferences(size_t val1, size_t val2) {
+static void expectNumStackReferences(size_t expected) {
   // In rare cases when JNI functions call themselves recursively,
   // disable this test because it will have a false negative.
   if (!IsCurrentJniCritical() && ScopedDisableCheckNumStackReferences::sCheckNumStackReferences) {
     /* @CriticalNative doesn't build a HandleScope, so this test is meaningless then. */
     ScopedObjectAccess soa(Thread::Current());
 
-    size_t actual_num = NumStackReferences(Thread::Current());
-    // XX: Not too sure what's going on.
-    // Sometimes null references get placed and sometimes they don't?
-    EXPECT_TRUE(val1 == actual_num || val2 == actual_num)
-      << "expected either " << val1 << " or " << val2
-      << " number of stack references, but got: " << actual_num;
+    size_t num_references = NumStackReferences(Thread::Current());
+    EXPECT_EQ(expected, num_references);
   }
 }
 
-#define EXPECT_NUM_STACK_REFERENCES(val1, val2) expectNumStackReferences(val1, val2)
+#define EXPECT_NUM_STACK_REFERENCES(expected) expectNumStackReferences(expected)
 
 template <typename T, T* fn>
 struct make_jni_test_decorator;
@@ -570,9 +680,9 @@ struct make_jni_test_decorator<R(JNIEnv*, jclass kls, Args...), fn> {
     EXPECT_THREAD_STATE_FOR_CURRENT_JNI();
     EXPECT_MUTATOR_LOCK_FOR_CURRENT_JNI();
     EXPECT_JNI_ENV_AND_CLASS_FOR_CURRENT_JNI(env, kls);
-    // All incoming parameters + the jclass get put into the transition's StackHandleScope.
-    EXPECT_NUM_STACK_REFERENCES(count_nonnull_refs(kls, args...),
-                                (count_refs_helper<jclass, Args...>::value));
+    // All incoming parameters get spilled into the JNI transition frame.
+    // The `jclass` is just a reference to the method's declaring class field.
+    EXPECT_NUM_STACK_REFERENCES(count_nonnull_refs(args...));
 
     return fn(env, kls, args...);
   }
@@ -585,9 +695,8 @@ struct make_jni_test_decorator<R(JNIEnv*, jobject, Args...), fn> {
     EXPECT_THREAD_STATE_FOR_CURRENT_JNI();
     EXPECT_MUTATOR_LOCK_FOR_CURRENT_JNI();
     EXPECT_JNI_ENV_AND_OBJECT_FOR_CURRENT_JNI(env, thisObj);
-    // All incoming parameters + the implicit 'this' get put into the transition's StackHandleScope.
-    EXPECT_NUM_STACK_REFERENCES(count_nonnull_refs(thisObj, args...),
-                                (count_refs_helper<jobject, Args...>::value));
+    // All incoming parameters + the implicit 'this' get spilled into the JNI transition frame.
+    EXPECT_NUM_STACK_REFERENCES(count_nonnull_refs(thisObj, args...));
 
     return fn(env, thisObj, args...);
   }
@@ -615,8 +724,8 @@ struct make_jni_test_decorator<R(JNIEnv*, jobject, Args...), fn> {
 #define NORMAL_JNI_ONLY_NOWRAP(func) \
     ({ ASSERT_TRUE(IsCurrentJniNormal()); reinterpret_cast<void*>(&(func)); })
 // Same as above, but with nullptr. When we want to test the stub functionality.
-#define NORMAL_JNI_ONLY_NULLPTR \
-    ({ ASSERT_TRUE(IsCurrentJniNormal()); nullptr; })
+#define NORMAL_OR_FAST_JNI_ONLY_NULLPTR \
+    ({ ASSERT_TRUE(IsCurrentJniNormal() || IsCurrentJniFast()); nullptr; })
 
 
 int gJava_MyClassNatives_foo_calls[kJniKindCount] = {};
@@ -639,8 +748,8 @@ void JniCompilerTest::CompileAndRunNoArgMethodImpl() {
 JNI_TEST(CompileAndRunNoArgMethod)
 
 void JniCompilerTest::CompileAndRunIntMethodThroughStubImpl() {
-  SetUpForTest(false, "bar", "(I)I", NORMAL_JNI_ONLY_NULLPTR);
-  // calling through stub will link with &Java_MyClassNatives_bar
+  SetUpForTest(false, "bar", "(I)I", NORMAL_OR_FAST_JNI_ONLY_NULLPTR);
+  // calling through stub will link with &Java_MyClassNatives_bar{,_1Fast}
 
   std::string reason;
   ASSERT_TRUE(Runtime::Current()->GetJavaVM()->
@@ -651,12 +760,12 @@ void JniCompilerTest::CompileAndRunIntMethodThroughStubImpl() {
   EXPECT_EQ(25, result);
 }
 
-// TODO: Support @FastNative and @CriticalNative through stubs.
-JNI_TEST_NORMAL_ONLY(CompileAndRunIntMethodThroughStub)
+// Note: @CriticalNative is only for static methods.
+JNI_TEST(CompileAndRunIntMethodThroughStub)
 
 void JniCompilerTest::CompileAndRunStaticIntMethodThroughStubImpl() {
-  SetUpForTest(true, "sbar", "(I)I", NORMAL_JNI_ONLY_NULLPTR);
-  // calling through stub will link with &Java_MyClassNatives_sbar
+  SetUpForTest(true, "sbar", "(I)I", nullptr);
+  // calling through stub will link with &Java_MyClassNatives_sbar{,_1Fast,_1Critical}
 
   std::string reason;
   ASSERT_TRUE(Runtime::Current()->GetJavaVM()->
@@ -667,8 +776,7 @@ void JniCompilerTest::CompileAndRunStaticIntMethodThroughStubImpl() {
   EXPECT_EQ(43, result);
 }
 
-// TODO: Support @FastNative and @CriticalNative through stubs.
-JNI_TEST_NORMAL_ONLY(CompileAndRunStaticIntMethodThroughStub)
+JNI_TEST_CRITICAL(CompileAndRunStaticIntMethodThroughStub)
 
 int gJava_MyClassNatives_fooI_calls[kJniKindCount] = {};
 jint Java_MyClassNatives_fooI(JNIEnv*, jobject, jint x) {
@@ -775,6 +883,7 @@ jlong Java_MyClassNatives_fooJJ_synchronized(JNIEnv*, jobject, jlong x, jlong y)
 void JniCompilerTest::CompileAndRun_fooJJ_synchronizedImpl() {
   SetUpForTest(false, "fooJJ_synchronized", "(JJ)J",
                CURRENT_JNI_WRAPPER(Java_MyClassNatives_fooJJ_synchronized));
+  ScopedSynchronizedEntryPointOverrides ssepo;
 
   EXPECT_EQ(0, gJava_MyClassNatives_fooJJ_synchronized_calls[gCurrentJni]);
   jlong a = 0x1000000020000000ULL;
@@ -1074,6 +1183,7 @@ void JniCompilerTest::CompileAndRunStaticSynchronizedIntObjectObjectMethodImpl()
   SetUpForTest(true, "fooSSIOO",
                "(ILjava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
                CURRENT_JNI_WRAPPER(Java_MyClassNatives_fooSSIOO));
+  ScopedSynchronizedEntryPointOverrides ssepo;
 
   EXPECT_EQ(0, gJava_MyClassNatives_fooSSIOO_calls[gCurrentJni]);
   jobject result = env_->CallStaticObjectMethod(jklass_, jmethod_, 0, nullptr, nullptr);
@@ -1163,7 +1273,7 @@ jint Java_MyClassNatives_nativeUpCall(JNIEnv* env, jobject thisObj, jint i) {
     ScopedObjectAccess soa(env);
 
     // Build stack trace
-    jobject internal = Thread::Current()->CreateInternalStackTrace<false>(soa);
+    jobject internal = Thread::Current()->CreateInternalStackTrace(soa);
     jobjectArray ste_array = Thread::InternalStackTraceToStackTraceElementArray(soa, internal);
     ObjPtr<mirror::ObjectArray<mirror::StackTraceElement>> trace_array =
         soa.Decode<mirror::ObjectArray<mirror::StackTraceElement>>(ste_array);
@@ -1314,6 +1424,7 @@ jarray Java_MyClassNatives_GetSinkProperties(JNIEnv*, jobject thisObj, jstring s
 void JniCompilerTest::GetSinkPropertiesNativeImpl() {
   SetUpForTest(false, "getSinkPropertiesNative", "(Ljava/lang/String;)[Ljava/lang/Object;",
                CURRENT_JNI_WRAPPER(Java_MyClassNatives_GetSinkProperties));
+  ScopedSynchronizedEntryPointOverrides ssepo;
 
   EXPECT_EQ(0, gJava_MyClassNatives_GetSinkProperties_calls[gCurrentJni]);
   jarray result = down_cast<jarray>(
@@ -1897,7 +2008,7 @@ void JniCompilerTest::WithoutImplementationImpl() {
   // This will lead to error messages in the log.
   ScopedLogSeverity sls(LogSeverity::FATAL);
 
-  SetUpForTest(false, "withoutImplementation", "()V", NORMAL_JNI_ONLY_NULLPTR);
+  SetUpForTest(false, "withoutImplementation", "()V", NORMAL_OR_FAST_JNI_ONLY_NULLPTR);
 
   env_->CallVoidMethod(jobj_, jmethod_);
 
@@ -1905,9 +2016,7 @@ void JniCompilerTest::WithoutImplementationImpl() {
   EXPECT_TRUE(env_->ExceptionCheck() == JNI_TRUE);
 }
 
-// TODO: Don't test @FastNative here since it goes through a stub lookup (unsupported) which would
-// normally fail with an exception, but fails with an assert.
-JNI_TEST_NORMAL_ONLY(WithoutImplementation)
+JNI_TEST(WithoutImplementation)
 
 void JniCompilerTest::WithoutImplementationRefReturnImpl() {
   // This will lead to error messages in the log.
@@ -1916,7 +2025,7 @@ void JniCompilerTest::WithoutImplementationRefReturnImpl() {
   SetUpForTest(false,
                "withoutImplementationRefReturn",
                "()Ljava/lang/Object;",
-               NORMAL_JNI_ONLY_NULLPTR);
+               NORMAL_OR_FAST_JNI_ONLY_NULLPTR);
 
   env_->CallObjectMethod(jobj_, jmethod_);
 
@@ -1924,8 +2033,21 @@ void JniCompilerTest::WithoutImplementationRefReturnImpl() {
   EXPECT_TRUE(env_->ExceptionCheck() == JNI_TRUE);
 }
 
-// TODO: Should work for @FastNative too.
-JNI_TEST_NORMAL_ONLY(WithoutImplementationRefReturn)
+JNI_TEST(WithoutImplementationRefReturn)
+
+void JniCompilerTest::StaticWithoutImplementationImpl() {
+  // This will lead to error messages in the log.
+  ScopedLogSeverity sls(LogSeverity::FATAL);
+
+  SetUpForTest(true, "staticWithoutImplementation", "()V", nullptr);
+
+  env_->CallStaticVoidMethod(jklass_, jmethod_);
+
+  EXPECT_TRUE(Thread::Current()->IsExceptionPending());
+  EXPECT_TRUE(env_->ExceptionCheck() == JNI_TRUE);
+}
+
+JNI_TEST_CRITICAL(StaticWithoutImplementation)
 
 void Java_MyClassNatives_stackArgsIntsFirst(JNIEnv*, jclass, jint i1, jint i2, jint i3,
                                             jint i4, jint i5, jint i6, jint i7, jint i8, jint i9,
@@ -2135,44 +2257,6 @@ void JniCompilerTest::StackArgsMixedImpl() {
 }
 
 JNI_TEST_CRITICAL(StackArgsMixed)
-
-#if defined(__mips__) && defined(__LP64__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-// Function will fetch the last argument passed from caller that is now on top of the stack and
-// return it as a 8B long. That way we can test if the caller has properly sign-extended the
-// value when placing it on the stack.
-__attribute__((naked))
-jlong Java_MyClassNatives_getStackArgSignExtendedMips64(
-    JNIEnv*, jclass,                      // Arguments passed from caller
-    jint, jint, jint, jint, jint, jint,   // through regs a0 to a7.
-    jint) {                               // The last argument will be passed on the stack.
-  __asm__(
-      ".set noreorder\n\t"                // Just return and store 8 bytes from the top of the stack
-      "jr  $ra\n\t"                       // in v0 (in branch delay slot). This should be the last
-      "ld  $v0, 0($sp)\n\t");             // argument. It is a 32-bit int, but it should be sign
-                                          // extended and it occupies 64-bit location.
-}
-
-void JniCompilerTest::StackArgsSignExtendedMips64Impl() {
-  uint64_t ret;
-  SetUpForTest(true,
-               "getStackArgSignExtendedMips64",
-               "(IIIIIII)J",
-               // Don't use wrapper because this is raw assembly function.
-               reinterpret_cast<void*>(&Java_MyClassNatives_getStackArgSignExtendedMips64));
-
-  // Mips64 ABI requires that arguments passed through stack be sign-extended 8B slots.
-  // First 8 arguments are passed through registers.
-  // Final argument's value is 7. When sign-extended, higher stack bits should be 0.
-  ret = env_->CallStaticLongMethod(jklass_, jmethod_, 1, 2, 3, 4, 5, 6, 7);
-  EXPECT_EQ(High32Bits(ret), static_cast<uint32_t>(0));
-
-  // Final argument's value is -8.  When sign-extended, higher stack bits should be 0xffffffff.
-  ret = env_->CallStaticLongMethod(jklass_, jmethod_, 1, 2, 3, 4, 5, 6, -8);
-  EXPECT_EQ(High32Bits(ret), static_cast<uint32_t>(0xffffffff));
-}
-
-JNI_TEST(StackArgsSignExtendedMips64)
-#endif
 
 void Java_MyClassNatives_normalNative(JNIEnv*, jclass) {
   // Intentionally left empty.

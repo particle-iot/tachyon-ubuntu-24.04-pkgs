@@ -23,13 +23,11 @@
 #include "common_throws.h"
 #include "dex/dex_file_types.h"
 #include "interpreter_common.h"
-#include "interpreter_mterp_impl.h"
 #include "interpreter_switch_impl.h"
 #include "jit/jit.h"
 #include "jit/jit_code_cache.h"
 #include "jvalue-inl.h"
 #include "mirror/string-inl.h"
-#include "mterp/mterp.h"
 #include "nativehelper/scoped_local_ref.h"
 #include "scoped_thread_state_change-inl.h"
 #include "shadow_frame-inl.h"
@@ -233,16 +231,29 @@ static void InterpreterJni(Thread* self,
   }
 }
 
-enum InterpreterImplKind {
-  kSwitchImplKind,        // Switch-based interpreter implementation.
-  kMterpImplKind          // Assembly interpreter
-};
-
-#if ART_USE_CXX_INTERPRETER
-static constexpr InterpreterImplKind kInterpreterImplKind = kSwitchImplKind;
-#else
-static constexpr InterpreterImplKind kInterpreterImplKind = kMterpImplKind;
-#endif
+static JValue ExecuteSwitch(Thread* self,
+                            const CodeItemDataAccessor& accessor,
+                            ShadowFrame& shadow_frame,
+                            JValue result_register,
+                            bool interpret_one_instruction) REQUIRES_SHARED(Locks::mutator_lock_) {
+  if (Runtime::Current()->IsActiveTransaction()) {
+    if (shadow_frame.GetMethod()->SkipAccessChecks()) {
+      return ExecuteSwitchImpl<false, true>(
+          self, accessor, shadow_frame, result_register, interpret_one_instruction);
+    } else {
+      return ExecuteSwitchImpl<true, true>(
+          self, accessor, shadow_frame, result_register, interpret_one_instruction);
+    }
+  } else {
+    if (shadow_frame.GetMethod()->SkipAccessChecks()) {
+      return ExecuteSwitchImpl<false, false>(
+          self, accessor, shadow_frame, result_register, interpret_one_instruction);
+    } else {
+      return ExecuteSwitchImpl<true, false>(
+          self, accessor, shadow_frame, result_register, interpret_one_instruction);
+    }
+  }
+}
 
 static inline JValue Execute(
     Thread* self,
@@ -253,13 +264,6 @@ static inline JValue Execute(
     bool from_deoptimize = false) REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(!shadow_frame.GetMethod()->IsAbstract());
   DCHECK(!shadow_frame.GetMethod()->IsNative());
-
-  // Check that we are using the right interpreter.
-  if (kIsDebugBuild && self->UseMterp() != CanUseMterp()) {
-    // The flag might be currently being updated on all threads. Retry with lock.
-    MutexLock tll_mu(self, *Locks::thread_list_lock_);
-    DCHECK_EQ(self->UseMterp(), CanUseMterp());
-  }
 
   if (LIKELY(!from_deoptimize)) {  // Entering the method, but not via deoptimization.
     if (kIsDebugBuild) {
@@ -279,14 +283,13 @@ static inline JValue Execute(
         // any value.
         DCHECK(Runtime::Current()->AreNonStandardExitsEnabled());
         JValue ret = JValue();
-        bool res = PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
+        PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
             self,
             shadow_frame,
             ret,
             instrumentation,
             accessor.InsSize(),
             0);
-        DCHECK(res) << "Expected to perform non-standard return!";
         return ret;
       }
       if (UNLIKELY(self->IsExceptionPending())) {
@@ -297,14 +300,13 @@ static inline JValue Execute(
         JValue ret = JValue();
         if (UNLIKELY(shadow_frame.GetForcePopFrame())) {
           DCHECK(Runtime::Current()->AreNonStandardExitsEnabled());
-          bool res = PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
+          PerformNonStandardReturn<MonitorState::kNoMonitorsLocked>(
               self,
               shadow_frame,
               ret,
               instrumentation,
               accessor.InsSize(),
               0);
-          DCHECK(res) << "Expected to perform non-standard return!";
         }
         return ret;
       }
@@ -341,75 +343,10 @@ static inline JValue Execute(
   // reduction of template parameters, we gate it behind access-checks mode.
   DCHECK(!method->SkipAccessChecks() || !method->MustCountLocks());
 
-  bool transaction_active = Runtime::Current()->IsActiveTransaction();
   VLOG(interpreter) << "Interpreting " << method->PrettyMethod();
-  if (LIKELY(method->SkipAccessChecks())) {
-    // Enter the "without access check" interpreter.
-    if (kInterpreterImplKind == kMterpImplKind) {
-      if (transaction_active) {
-        // No Mterp variant - just use the switch interpreter.
-        return ExecuteSwitchImpl<false, true>(self, accessor, shadow_frame, result_register,
-                                              false);
-      } else if (UNLIKELY(!Runtime::Current()->IsStarted())) {
-        return ExecuteSwitchImpl<false, false>(self, accessor, shadow_frame, result_register,
-                                               false);
-      } else {
-        while (true) {
-          // Mterp does not support all instrumentation/debugging.
-          if (!self->UseMterp()) {
-            return ExecuteSwitchImpl<false, false>(self, accessor, shadow_frame, result_register,
-                                                   false);
-          }
-          bool returned = ExecuteMterpImpl(self,
-                                           accessor.Insns(),
-                                           &shadow_frame,
-                                           &result_register);
-          if (returned) {
-            return result_register;
-          } else {
-            // Mterp didn't like that instruction.  Single-step it with the reference interpreter.
-            result_register = ExecuteSwitchImpl<false, false>(self, accessor, shadow_frame,
-                                                              result_register, true);
-            if (shadow_frame.GetDexPC() == dex::kDexNoIndex) {
-              // Single-stepped a return or an exception not handled locally.  Return to caller.
-              return result_register;
-            }
-          }
-        }
-      }
-    } else {
-      DCHECK_EQ(kInterpreterImplKind, kSwitchImplKind);
-      if (transaction_active) {
-        return ExecuteSwitchImpl<false, true>(self, accessor, shadow_frame, result_register,
-                                              false);
-      } else {
-        return ExecuteSwitchImpl<false, false>(self, accessor, shadow_frame, result_register,
-                                               false);
-      }
-    }
-  } else {
-    // Enter the "with access check" interpreter.
 
-    if (kInterpreterImplKind == kMterpImplKind) {
-      // No access check variants for Mterp.  Just use the switch version.
-      if (transaction_active) {
-        return ExecuteSwitchImpl<true, true>(self, accessor, shadow_frame, result_register,
-                                             false);
-      } else {
-        return ExecuteSwitchImpl<true, false>(self, accessor, shadow_frame, result_register,
-                                              false);
-      }
-    } else {
-      DCHECK_EQ(kInterpreterImplKind, kSwitchImplKind);
-      if (transaction_active) {
-        return ExecuteSwitchImpl<true, true>(self, accessor, shadow_frame, result_register,
-                                             false);
-      } else {
-        return ExecuteSwitchImpl<true, false>(self, accessor, shadow_frame, result_register,
-                                              false);
-      }
-    }
-  }
+  return ExecuteSwitch(
+      self, accessor, shadow_frame, result_register, /*interpret_one_instruction=*/ false);
 }
 
 void EnterInterpreterFromInvoke(Thread* self,
@@ -445,7 +382,7 @@ void EnterInterpreterFromInvoke(Thread* self,
     method->ThrowInvocationTimeError();
     return;
   } else {
-    DCHECK(method->IsNative());
+    DCHECK(method->IsNative()) << method->PrettyMethod();
     num_regs = num_ins = ArtMethod::NumArgRegisters(method->GetShorty());
     if (!method->IsStatic()) {
       num_regs++;
@@ -702,12 +639,7 @@ void ArtInterpreterToInterpreterBridge(Thread* self,
 }
 
 void CheckInterpreterAsmConstants() {
-  CheckMterpAsmConstants();
   CheckNterpAsmConstants();
-}
-
-void InitInterpreterTls(Thread* self) {
-  InitMterpTls(self);
 }
 
 bool PrevFrameWillRetry(Thread* self, const ShadowFrame& frame) {

@@ -16,9 +16,6 @@
 
 public class Main {
 
-  // A dummy value to defeat inlining of these routines.
-  static boolean doThrow = false;
-
   public static void assertIntEquals(int expected, int result) {
     if (expected != result) {
       throw new Error("Expected: " + expected + ", found: " + result);
@@ -80,7 +77,6 @@ public class Main {
   /// CHECK:                            mla r{{\d+}}, r{{\d+}}, r{{\d+}}, r{{\d+}}
 
   public static int $opt$noinline$mulAdd(int acc, int left, int right) {
-    if (doThrow) throw new Error();
     return acc + left * right;
   }
 
@@ -122,7 +118,6 @@ public class Main {
   /// CHECK-NOT:                        MultiplyAccumulate
 
   public static long $opt$noinline$mulSub(long acc, long left, long right) {
-    if (doThrow) throw new Error();
     return acc - left * right;
   }
 
@@ -174,7 +169,6 @@ public class Main {
   /// CHECK-NOT:                        MultiplyAccumulate
 
   public static int $opt$noinline$multipleUses1(int acc, int left, int right) {
-    if (doThrow) throw new Error();
     int temp = left * right;
     return temp | (acc + temp);
   }
@@ -232,7 +226,6 @@ public class Main {
 
 
   public static long $opt$noinline$multipleUses2(long acc, long left, long right) {
-    if (doThrow) throw new Error();
     long temp = left * right;
     return (acc + temp) + (acc - temp);
   }
@@ -285,7 +278,6 @@ public class Main {
   /// CHECK:                            mla r{{\d+}}, r{{\d+}}, r{{\d+}}, r{{\d+}}
 
   public static int $opt$noinline$mulPlusOne(int acc, int var) {
-    if (doThrow) throw new Error();
     return acc * (var + 1);
   }
 
@@ -326,7 +318,6 @@ public class Main {
   /// CHECK-START-ARM: long Main.$opt$noinline$mulMinusOne(long, long) instruction_simplifier_arm (after)
   /// CHECK-NOT:                        MultiplyAccumulate
   public static long $opt$noinline$mulMinusOne(long acc, long var) {
-    if (doThrow) throw new Error();
     return acc * (1 - var);
   }
 
@@ -373,7 +364,6 @@ public class Main {
   /// CHECK-NOT:                        MultiplyAccumulate
 
   public static int $opt$noinline$mulNeg(int left, int right) {
-    if (doThrow) throw new Error();
     return - (left * right);
   }
 
@@ -420,20 +410,19 @@ public class Main {
   /// CHECK-NOT:                        MultiplyAccumulate
 
   public static long $opt$noinline$mulNeg(long left, long right) {
-    if (doThrow) throw new Error();
     return - (left * right);
   }
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (before)
+  /// CHECK-START-ARM64: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (before)
   /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG:     VecAdd                         loop:<<Loop>>      outer_loop:none
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (after)
+  /// CHECK-START-ARM64: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (after)
   /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:     VecMultiplyAccumulate kind:Add loop:<<Loop>>      outer_loop:none
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (after)
+  /// CHECK-START-ARM64: void Main.SimdMulAdd(int[], int[]) instruction_simplifier$after_bce (after)
   /// CHECK-NOT:     VecMul
   /// CHECK-NOT:     VecAdd
 
@@ -443,34 +432,22 @@ public class Main {
     }
   }
 
-  /// CHECK-START-MIPS64: void Main.SimdMulAddLong(long[], long[]) instruction_simplifier$after_bce (before)
-  /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG:     VecAdd                         loop:<<Loop>>      outer_loop:none
-
-  /// CHECK-START-MIPS64: void Main.SimdMulAddLong(long[], long[]) instruction_simplifier$after_bce (after)
-  /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:     VecMultiplyAccumulate kind:Add loop:<<Loop>>      outer_loop:none
-
-  /// CHECK-START-MIPS64: void Main.SimdMulAddLong(long[], long[]) instruction_simplifier$after_bce (after)
-  /// CHECK-NOT:     VecMul
-  /// CHECK-NOT:     VecAdd
   public static void SimdMulAddLong(long[] array1, long[] array2) {
     for (int j = 0; j < 100; j++) {
       array2[j] += 12345 * array1[j];
     }
   }
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (before)
+  /// CHECK-START-ARM64: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (before)
   /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG:     VecSub                         loop:<<Loop>>      outer_loop:none
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (after)
+  /// CHECK-START-ARM64: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (after)
   /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:     VecMultiplyAccumulate kind:Sub loop:<<Loop>>      outer_loop:none
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (after)
+  /// CHECK-START-ARM64: void Main.SimdMulSub(int[], int[]) instruction_simplifier$after_bce (after)
   /// CHECK-NOT:     VecMul
   /// CHECK-NOT:     VecSub
 
@@ -480,30 +457,18 @@ public class Main {
     }
   }
 
-  /// CHECK-START-MIPS64: void Main.SimdMulSubLong(long[], long[]) instruction_simplifier$after_bce (before)
-  /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG:     VecSub                         loop:<<Loop>>      outer_loop:none
-
-  /// CHECK-START-MIPS64: void Main.SimdMulSubLong(long[], long[]) instruction_simplifier$after_bce (after)
-  /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:     VecMultiplyAccumulate kind:Sub loop:<<Loop>>      outer_loop:none
-
-  /// CHECK-START-MIPS64: void Main.SimdMulSubLong(long[], long[]) instruction_simplifier$after_bce (after)
-  /// CHECK-NOT:     VecMul
-  /// CHECK-NOT:     VecSub
   public static void SimdMulSubLong(long[] array1, long[] array2) {
     for (int j = 0; j < 100; j++) {
       array2[j] -= 12345 * array1[j];
     }
   }
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulMultipleUses(int[], int[]) instruction_simplifier$after_bce (before)
+  /// CHECK-START-ARM64: void Main.SimdMulMultipleUses(int[], int[]) instruction_simplifier$after_bce (before)
   /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG:     VecSub                         loop:<<Loop>>      outer_loop:none
 
-  /// CHECK-START-{ARM64,MIPS64}: void Main.SimdMulMultipleUses(int[], int[]) instruction_simplifier$after_bce (after)
+  /// CHECK-START-ARM64: void Main.SimdMulMultipleUses(int[], int[]) instruction_simplifier$after_bce (after)
   /// CHECK-NOT: VecMultiplyAccumulate
 
   public static void SimdMulMultipleUses(int[] array1, int[] array2) {
@@ -514,13 +479,6 @@ public class Main {
     }
   }
 
-  /// CHECK-START-MIPS64: void Main.SimdMulMultipleUsesLong(long[], long[]) instruction_simplifier$after_bce (before)
-  /// CHECK-DAG:     Phi                            loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:     VecMul                         loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG:     VecSub                         loop:<<Loop>>      outer_loop:none
-
-  /// CHECK-START-MIPS64: void Main.SimdMulMultipleUsesLong(long[], long[]) instruction_simplifier$after_bce (after)
-  /// CHECK-NOT: VecMultiplyAccumulate
   public static void SimdMulMultipleUsesLong(long[] array1, long[] array2) {
     for (int j = 0; j < 100; j++) {
        long temp = 12345 * array1[j];

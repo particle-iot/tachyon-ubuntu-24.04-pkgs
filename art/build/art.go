@@ -17,6 +17,8 @@ package art
 import (
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/google/blueprint/proptools"
@@ -24,9 +26,10 @@ import (
 	"android/soong/android"
 	"android/soong/apex"
 	"android/soong/cc"
+	"android/soong/cc/config"
 )
 
-var supportedArches = []string{"arm", "arm64", "mips", "mips64", "x86", "x86_64"}
+var supportedArches = []string{"arm", "arm64", "x86", "x86_64"}
 
 func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 	var cflags []string
@@ -48,9 +51,6 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 	if tlab {
 		cflags = append(cflags, "-DART_USE_TLAB=1")
 	}
-
-	imtSize := ctx.Config().GetenvWithDefault("ART_IMT_SIZE", "43")
-	cflags = append(cflags, "-DIMT_SIZE="+imtSize)
 
 	if ctx.Config().IsEnvTrue("ART_HEAP_POISONING") {
 		cflags = append(cflags, "-DART_HEAP_POISONING=1")
@@ -88,16 +88,12 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		cflags = append(cflags,
 			"-DART_STACK_OVERFLOW_GAP_arm=8192",
 			"-DART_STACK_OVERFLOW_GAP_arm64=16384",
-			"-DART_STACK_OVERFLOW_GAP_mips=16384",
-			"-DART_STACK_OVERFLOW_GAP_mips64=16384",
 			"-DART_STACK_OVERFLOW_GAP_x86=16384",
 			"-DART_STACK_OVERFLOW_GAP_x86_64=20480")
 	} else {
 		cflags = append(cflags,
 			"-DART_STACK_OVERFLOW_GAP_arm=8192",
 			"-DART_STACK_OVERFLOW_GAP_arm64=8192",
-			"-DART_STACK_OVERFLOW_GAP_mips=16384",
-			"-DART_STACK_OVERFLOW_GAP_mips64=16384",
 			"-DART_STACK_OVERFLOW_GAP_x86=8192",
 			"-DART_STACK_OVERFLOW_GAP_x86_64=8192")
 	}
@@ -106,11 +102,6 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		// Used to enable full sanitization, i.e., user poisoning, under ASAN.
 		cflags = append(cflags, "-DART_ENABLE_ADDRESS_SANITIZER=1")
 		asflags = append(asflags, "-DART_ENABLE_ADDRESS_SANITIZER=1")
-	}
-
-	if ctx.Config().IsEnvTrue("ART_MIPS32_CHECK_ALIGNMENT") {
-		// Enable the use of MIPS32 CHECK_ALIGNMENT macro for debugging purposes
-		asflags = append(asflags, "-DART_MIPS32_CHECK_ALIGNMENT")
 	}
 
 	if !ctx.Config().IsEnvFalse("USE_D8_DESUGAR") {
@@ -141,11 +132,6 @@ func deviceFlags(ctx android.LoadHookContext) []string {
 	)
 
 	cflags = append(cflags, "-DART_BASE_ADDRESS="+ctx.Config().LibartImgDeviceBaseAddress())
-	if ctx.Config().IsEnvTrue("ART_TARGET_LINUX") {
-		cflags = append(cflags, "-DART_TARGET_LINUX")
-	} else {
-		cflags = append(cflags, "-DART_TARGET_ANDROID")
-	}
 	minDelta := ctx.Config().GetenvWithDefault("LIBART_IMG_TARGET_MIN_BASE_ADDRESS_DELTA", "-0x1000000")
 	maxDelta := ctx.Config().GetenvWithDefault("LIBART_IMG_TARGET_MAX_BASE_ADDRESS_DELTA", "0x1000000")
 	cflags = append(cflags, "-DART_BASE_ADDRESS_MIN_DELTA="+minDelta)
@@ -178,6 +164,9 @@ func hostFlags(ctx android.LoadHookContext) []string {
 		cflags = append(cflags, "-DART_ENABLE_ADDRESS_SANITIZER=1")
 	}
 
+	clang_path := filepath.Join(config.ClangDefaultBase, ctx.Config().PrebuiltOS(), config.ClangDefaultVersion)
+	cflags = append(cflags, "-DART_CLANG_PATH=\""+clang_path+"\"")
+
 	return cflags
 }
 
@@ -208,6 +197,26 @@ func globalDefaults(ctx android.LoadHookContext) {
 		p.Sanitize.Recover = []string{
 			"address",
 		}
+	}
+
+	ctx.AppendProperties(p)
+}
+
+// Hook that adds flags that are implicit for all cc_art_* modules.
+func addImplicitFlags(ctx android.LoadHookContext) {
+	type props struct {
+		Target struct {
+			Android struct {
+				Cflags []string
+			}
+		}
+	}
+
+	p := &props{}
+	if ctx.Config().IsEnvTrue("ART_TARGET_LINUX") {
+		p.Target.Android.Cflags = []string{"-DART_TARGET", "-DART_TARGET_LINUX"}
+	} else {
+		p.Target.Android.Cflags = []string{"-DART_TARGET", "-DART_TARGET_ANDROID"}
 	}
 
 	ctx.AppendProperties(p)
@@ -251,7 +260,9 @@ func prefer32Bit(ctx android.LoadHookContext) {
 		p.Target.Host.Compile_multilib = proptools.StringPtr("prefer32")
 	}
 
-	ctx.AppendProperties(p)
+	// Prepend to make it overridable in the blueprints. Note that it doesn't work
+	// to override the property in a cc_defaults module.
+	ctx.PrependProperties(p)
 }
 
 var testMapKey = android.NewOnceKey("artTests")
@@ -279,6 +290,38 @@ func testInstall(ctx android.InstallHookContext) {
 	tests := testMap[name]
 	tests = append(tests, ctx.Path().ToMakePath().String())
 	testMap[name] = tests
+}
+
+var testcasesContentKey = android.NewOnceKey("artTestcasesContent")
+
+func testcasesContent(config android.Config) map[string]string {
+	return config.Once(testcasesContentKey, func() interface{} {
+		return make(map[string]string)
+	}).(map[string]string)
+}
+
+// Binaries and libraries also need to be copied in the testcases directory for
+// running tests on host.  This method adds module to the list of needed files.
+// The 'key' is the file in testcases and 'value' is the path to copy it from.
+// The actual copy will be done in make since soong does not do installations.
+func addTestcasesFile(ctx android.InstallHookContext) {
+	if ctx.Os() != android.BuildOs || ctx.Module().IsSkipInstall() {
+		return
+	}
+
+	testcasesContent := testcasesContent(ctx.Config())
+
+	artTestMutex.Lock()
+	defer artTestMutex.Unlock()
+
+	src := ctx.SrcPath().String()
+	path := strings.Split(ctx.Path().ToMakePath().String(), "/")
+	// Keep last two parts of the install path (e.g. bin/dex2oat).
+	dst := strings.Join(path[len(path)-2:], "/")
+	if oldSrc, ok := testcasesContent[dst]; ok {
+		ctx.ModuleErrorf("Conflicting sources for %s: %s and %s", dst, oldSrc, src)
+	}
+	testcasesContent[dst] = src
 }
 
 var artTestMutex sync.Mutex
@@ -358,6 +401,7 @@ func artHostTestApexBundleFactory() android.Module {
 
 func artGlobalDefaultsFactory() android.Module {
 	module := artDefaultsFactory()
+	android.AddLoadHook(module, addImplicitFlags)
 	android.AddLoadHook(module, globalDefaults)
 
 	return module
@@ -395,39 +439,40 @@ func libartStaticDefaultsFactory() android.Module {
 }
 
 func artLibrary() android.Module {
-	m, _ := cc.NewLibrary(android.HostAndDeviceSupported)
-	module := m.Init()
+	module := cc.LibraryFactory()
 
 	installCodegenCustomizer(module, staticAndSharedLibrary)
 
+	android.AddLoadHook(module, addImplicitFlags)
+	android.AddInstallHook(module, addTestcasesFile)
 	return module
 }
 
 func artStaticLibrary() android.Module {
-	m, library := cc.NewLibrary(android.HostAndDeviceSupported)
-	library.BuildOnlyStatic()
-	module := m.Init()
+	module := cc.LibraryStaticFactory()
 
 	installCodegenCustomizer(module, staticLibrary)
 
+	android.AddLoadHook(module, addImplicitFlags)
 	return module
 }
 
 func artBinary() android.Module {
-	binary, _ := cc.NewBinary(android.HostAndDeviceSupported)
-	module := binary.Init()
+	module := cc.BinaryFactory()
 
+	android.AddLoadHook(module, addImplicitFlags)
 	android.AddLoadHook(module, customLinker)
 	android.AddLoadHook(module, prefer32Bit)
+	android.AddInstallHook(module, addTestcasesFile)
 	return module
 }
 
 func artTest() android.Module {
-	test := cc.NewTest(android.HostAndDeviceSupported)
-	module := test.Init()
+	module := cc.TestFactory()
 
 	installCodegenCustomizer(module, binary)
 
+	android.AddLoadHook(module, addImplicitFlags)
 	android.AddLoadHook(module, customLinker)
 	android.AddLoadHook(module, prefer32Bit)
 	android.AddInstallHook(module, testInstall)
@@ -435,11 +480,11 @@ func artTest() android.Module {
 }
 
 func artTestLibrary() android.Module {
-	test := cc.NewTestLibrary(android.HostAndDeviceSupported)
-	module := test.Init()
+	module := cc.TestLibraryFactory()
 
 	installCodegenCustomizer(module, staticAndSharedLibrary)
 
+	android.AddLoadHook(module, addImplicitFlags)
 	android.AddLoadHook(module, prefer32Bit)
 	android.AddInstallHook(module, testInstall)
 	return module

@@ -29,7 +29,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.add(long) loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.add(long) loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecAdd   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -42,7 +42,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.sub(long) loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.sub(long) loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecSub   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -58,12 +58,17 @@ public class SimdLong {
   //  Not directly supported for longs.
   //
   /// CHECK-START-ARM64: void SimdLong.mul(long) loop_optimization (after)
-  /// CHECK-NOT: VecMul
+  /// CHECK-IF:     hasIsaFeature("sve")
   //
-  /// CHECK-START-MIPS64: void SimdLong.mul(long) loop_optimization (after)
-  /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG: VecMul   loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG: VecMul   loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-ELSE:
+  //
+  ///     CHECK-NOT: VecMul
+  //
+  /// CHECK-FI:
   static void mul(long x) {
     for (int i = 0; i < 128; i++)
       a[i] *= x;
@@ -87,7 +92,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.neg() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.neg() loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecNeg   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -100,7 +105,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.not() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.not() loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecNot   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -113,7 +118,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.shl4() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.shl4() loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecShl   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -126,7 +131,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.sar2() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.sar2() loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecShr   loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -139,7 +144,7 @@ public class SimdLong {
   /// CHECK-DAG: ArrayGet loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: ArraySet loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.shr2() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.shr2() loop_optimization (after)
   /// CHECK-DAG: VecLoad  loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG: VecUShr  loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG: VecStore loop:<<Loop>>      outer_loop:none
@@ -149,7 +154,7 @@ public class SimdLong {
   }
 
   //
-  // Shift sanity.
+  // Shift checks.
   //
 
   // Expose constants to optimizing compiler, but not to front-end.
@@ -167,9 +172,18 @@ public class SimdLong {
   /// CHECK-DAG: <<Get:j\d+>> ArrayGet                             loop:<<Loop:B\d+>> outer_loop:none
   /// CHECK-DAG:              ArraySet [{{l\d+}},{{i\d+}},<<Get>>] loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.shr64() loop_optimization (after)
-  /// CHECK-DAG: <<Get:d\d+>> VecLoad                              loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG:              VecStore [{{l\d+}},{{i\d+}},<<Get>>] loop:<<Loop>>      outer_loop:none
+  /// CHECK-START-ARM64: void SimdLong.shr64() loop_optimization (after)
+  /// CHECK-IF:     hasIsaFeature("sve")
+  //
+  ///     CHECK-DAG: <<Get:d\d+>> VecLoad                                       loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG:              VecStore [{{l\d+}},{{i\d+}},<<Get>>,{{j\d+}}] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-ELSE:
+  //
+  ///     CHECK-DAG: <<Get:d\d+>> VecLoad                              loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG:              VecStore [{{l\d+}},{{i\d+}},<<Get>>] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-FI:
   static void shr64() {
     // TODO: remove a[i] = a[i] altogether?
     for (int i = 0; i < 128; i++)
@@ -188,11 +202,21 @@ public class SimdLong {
   /// CHECK-DAG: <<UShr:j\d+>> UShr [<<Get>>,<<Dist>>]               loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG:               ArraySet [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.shr65() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.shr65() loop_optimization (after)
   /// CHECK-DAG: <<Dist:i\d+>> IntConstant 1                         loop:none
-  /// CHECK-DAG: <<Get:d\d+>>  VecLoad                               loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>]            loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
+  /// CHECK-IF:     hasIsaFeature("sve")
+  //
+  ///     CHECK-DAG: <<Get:d\d+>>  VecLoad                                        loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>,{{j\d+}}]            loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>,{{j\d+}}] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-ELSE:
+  //
+  ///     CHECK-DAG: <<Get:d\d+>>  VecLoad                               loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>]            loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-FI:
   static void shr65() {
     for (int i = 0; i < 128; i++)
       a[i] >>>= $opt$inline$IntConstant65();  // 1, since & 63
@@ -210,11 +234,21 @@ public class SimdLong {
   /// CHECK-DAG: <<UShr:j\d+>> UShr [<<Get>>,<<Dist>>]               loop:<<Loop>>      outer_loop:none
   /// CHECK-DAG:               ArraySet [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
   //
-  /// CHECK-START-{ARM64,MIPS64}: void SimdLong.shrMinus254() loop_optimization (after)
+  /// CHECK-START-ARM64: void SimdLong.shrMinus254() loop_optimization (after)
   /// CHECK-DAG: <<Dist:i\d+>> IntConstant 2                         loop:none
-  /// CHECK-DAG: <<Get:d\d+>>  VecLoad                               loop:<<Loop:B\d+>> outer_loop:none
-  /// CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>]            loop:<<Loop>>      outer_loop:none
-  /// CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
+  /// CHECK-IF:     hasIsaFeature("sve")
+  //
+  ///     CHECK-DAG: <<Get:d\d+>>  VecLoad                                        loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>,{{j\d+}}]            loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>,{{j\d+}}] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-ELSE:
+  //
+  ///     CHECK-DAG: <<Get:d\d+>>  VecLoad                               loop:<<Loop:B\d+>> outer_loop:none
+  ///     CHECK-DAG: <<UShr:d\d+>> VecUShr [<<Get>>,<<Dist>>]            loop:<<Loop>>      outer_loop:none
+  ///     CHECK-DAG:               VecStore [{{l\d+}},{{i\d+}},<<UShr>>] loop:<<Loop>>      outer_loop:none
+  //
+  /// CHECK-FI:
   static void shrMinus254() {
     for (int i = 0; i < 128; i++)
       a[i] >>>= $opt$inline$IntConstantMinus254();  // 2, since & 63

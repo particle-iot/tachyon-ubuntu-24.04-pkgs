@@ -9,8 +9,8 @@ CPPFLAGS += \
   -Iart/libnativebridge/include \
   -Ilibnativehelper/include_jni \
   -Isystem/core/include \
-  -Isystem/core/base/include \
-  -Isystem/core/liblog/include \
+  -Isystem/libbase/include \
+  -Isystem/logging/liblog/include \
 
 debian/out/art/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/art

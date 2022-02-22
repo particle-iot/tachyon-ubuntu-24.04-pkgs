@@ -83,6 +83,8 @@ static AgentLib agents[] = {
   { "941-recursive-obsolete-jit", common_redefine::OnLoad, nullptr },
   { "943-private-recursive-jit", common_redefine::OnLoad, nullptr },
   { "1919-vminit-thread-start-timing", Test1919VMInitThreadStart::OnLoad, nullptr },
+  { "2031-zygote-compiled-frame-deopt", nullptr, MinimalOnLoad },
+  { "2039-load-transform-larger", common_retransform::OnLoad, nullptr },
 };
 
 static AgentLib* FindAgent(char* name) {

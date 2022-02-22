@@ -31,14 +31,13 @@ The init language is used in plain text files that take the .rc file
 extension.  There are typically multiple of these in multiple
 locations on the system, described below.
 
-/init.rc is the primary .rc file and is loaded by the init executable
-at the beginning of its execution.  It is responsible for the initial
-set up of the system.
+`/system/etc/init/hw/init.rc` is the primary .rc file and is loaded by the init executable at the
+beginning of its execution.  It is responsible for the initial set up of the system.
 
 Init loads all of the files contained within the
-/{system,vendor,odm}/etc/init/ directories immediately after loading
-the primary /init.rc.  This is explained in more details in the
-Imports section of this file.
+`/{system,system_ext,vendor,odm,product}/etc/init/` directories immediately after loading
+the primary `/system/etc/init/hw/init.rc`.  This is explained in more details in the
+[Imports](#imports) section of this file.
 
 Legacy devices without the first stage mount mechanism previously were
 able to import init scripts during mount_all, however that is deprecated
@@ -173,9 +172,14 @@ runs the service.
   This option connects stdin, stdout, and stderr to the console. It is mutually exclusive with the
   stdio_to_kmsg option, which only connects stdout and stderr to kmsg.
 
-`critical`
+`critical [window=<fatal crash window mins>] [target=<fatal reboot target>]`
 > This is a device-critical service. If it exits more than four times in
-  four minutes or before boot completes, the device will reboot into bootloader.
+  _fatal crash window mins_ minutes or before boot completes, the device
+  will reboot into _fatal reboot target_.
+  The default value of _fatal crash window mins_ is 4, and default value
+  of _fatal reboot target_ is 'bootloader'.
+  For tests, the fatal reboot can be skipped by setting property
+  `init.svc_debug.no_fatal.<service-name>` to `true` for specified critical service.
 
 `disabled`
 > This service will not automatically start with its class.
@@ -197,11 +201,14 @@ runs the service.
   Currently defaults to root.  (??? probably should default to nobody)
 
 `interface <interface name> <instance name>`
-> Associates this service with a list of the HIDL services that it provides. The interface name
-  must be a fully-qualified name and not a value name. For instance, this is used to allow
-  hwservicemanager to lazily start services. When multiple interfaces are served, this tag should
-  be used multiple times.
-  For example: interface vendor.foo.bar@1.0::IBaz default
+> Associates this service with a list of the AIDL or HIDL services that it provides. The interface
+  name must be a fully-qualified name and not a value name. For instance, this is used to allow
+  servicemanager or hwservicemanager to lazily start services. When multiple interfaces are served,
+  this tag should be used multiple times. An example of an entry for a HIDL
+  interface is `interface vendor.foo.bar@1.0::IBaz default`. For an AIDL interface, use
+  `interface aidl <instance name>`. The instance name for an AIDL interface is
+  whatever is registered with servicemanager, and these can be listed with `adb
+  shell dumpsys -l`.
 
 `ioprio <class> <priority>`
 > Sets the IO priority and IO priority class for this service via the SYS_ioprio_set syscall.
@@ -270,6 +277,8 @@ runs the service.
   CLD_EXITED or an status other than '0', reboot the system with the target specified in
   _target_. _target_ takes the same format as the parameter to sys.powerctl. This is particularly
   intended to be used with the `exec_start` builtin for any must-have checks during boot.
+  A service being stopped by init (e.g. using the `stop` or `class_reset` commands) is not
+  considered a failure for the purpose of this setting.
 
 `restart_period <seconds>`
 > If a non-oneshot service exits, it will be restarted at its start time plus
@@ -322,6 +331,10 @@ runs the service.
   This is mutually exclusive with the console option, which additionally connects stdin to the
   given console.
 
+`task_profiles <profile> [ <profile>\* ]`
+> Set task profiles for the process when it forks. This is designed to replace the use of
+  writepid option for moving a process into a cgroup.
+
 `timeout_period <seconds>`
 > Provide a timeout after which point the service will be killed. The oneshot keyword is respected
   here, so oneshot services do not automatically restart, however all other services will.
@@ -356,6 +369,8 @@ runs the service.
   cgroup/cpuset usage. If no files under /dev/cpuset/ are specified, but the
   system property 'ro.cpuset.default' is set to a non-empty cpuset name (e.g.
   '/foreground'), then the pid is written to file /dev/cpuset/_cpuset\_name_/tasks.
+  The use of this option for moving a process into a cgroup is obsolete. Please
+  use task_profiles option instead.
 
 
 Triggers
@@ -390,6 +405,33 @@ at three times:
    2. Any time that property a transitions to value b, while property c already equals d.
    3. Any time that property c transitions to value d, while property a already equals b.
 
+
+Trigger Sequence
+----------------
+
+Init uses the following sequence of triggers during early boot. These are the
+built-in triggers defined in init.cpp.
+
+   1. `early-init` - The first in the sequence, triggered after cgroups has been configured
+      but before ueventd's coldboot is complete.
+   2. `init` - Triggered after coldboot is complete.
+   3. `charger` - Triggered if `ro.bootmode == "charger"`.
+   4. `late-init` - Triggered if `ro.bootmode != "charger"`, or via healthd triggering a boot
+      from charging mode.
+
+Remaining triggers are configured in `init.rc` and are not built-in. The default sequence for
+these is specified under the "on late-init" event in `init.rc`. Actions internal to `init.rc`
+have been omitted.
+
+   1. `early-fs` - Start vold.
+   2. `fs` - Vold is up. Mount partitions not marked as first-stage or latemounted.
+   3. `post-fs` - Configure anything dependent on early mounts.
+   4. `late-fs` - Mount partitions marked as latemounted.
+   5. `post-fs-data` - Mount and configure `/data`; set up encryption. `/metadata` is
+      reformatted here if it couldn't mount in first-stage init.
+   6. `zygote-start` - Start the zygote.
+   7. `early-boot` - After zygote has started.
+   8. `boot` - After `early-boot` actions have completed.
 
 Commands
 --------
@@ -439,6 +481,10 @@ Commands
   Regarding to the dst file, the default mode created is 0600 if it does not
   exist. And it will be truncated if dst file is a normal regular file and
   already exists.
+
+`copy_per_line <src> <dst>`
+> Copies a file line by line. Similar to copy, but useful for dst is a sysfs node
+  that doesn't handle multiple lines of data.
 
 `domainname <name>`
 > Set the domain name.
@@ -506,6 +552,11 @@ instance. \
 `interface_start aidl/aidl_lazy_test_1` will start the AIDL service that
 provides the `aidl_lazy_test_1` interface.
 
+`load_exports <path>`
+> Open the file at _path_ and export global environment variables declared
+  there. Each line must be in the format `export <name> <value>`, as described
+  above.
+
 `load_system_props`
 > (This action is deprecated and no-op.)
 
@@ -541,13 +592,16 @@ provides the `aidl_lazy_test_1` interface.
   * `ref`: use the systemwide DE key
   * `per_boot_ref`: use the key freshly generated on each boot.
 
-`mount_all <fstab> [ <path> ]\* [--<option>]`
+`mount_all [ <fstab> ] [--<option>]`
 > Calls fs\_mgr\_mount\_all on the given fs\_mgr-format fstab with optional
   options "early" and "late".
   With "--early" set, the init executable will skip mounting entries with
   "latemount" flag and triggering fs encryption state event. With "--late" set,
   init executable will only mount entries with "latemount" flag. By default,
   no option is set, and mount\_all will process all entries in the given fstab.
+  If the fstab parameter is not specified, fstab.${ro.boot.fstab_suffix},
+  fstab.${ro.hardware} or fstab.${ro.hardware.platform} will be scanned for
+  under /odm/etc, /vendor/etc, or / at runtime, in that order.
 
 `mount <type> <device> <dir> [ <flag>\* ] [<options>]`
 > Attempt to mount the named device at the directory _dir_
@@ -555,9 +609,11 @@ provides the `aidl_lazy_test_1` interface.
   _options_ include "barrier=1", "noauto\_da\_alloc", "discard", ... as
   a comma separated string, e.g. barrier=1,noauto\_da\_alloc
 
-`parse_apex_configs`
-> Parses config file(s) from the mounted APEXes. Intended to be used only once
-  when apexd notifies the mount event by setting apexd.status to ready.
+`perform_apex_config`
+> Performs tasks after APEXes are mounted. For example, creates data directories
+  for the mounted APEXes, parses config file(s) from them, and updates linker
+  configurations. Intended to be used only once when apexd notifies the mount
+  event by setting `apexd.status` to ready.
 
 `restart <service>`
 > Stops and restarts a running service, does nothing if the service is currently
@@ -614,8 +670,11 @@ provides the `aidl_lazy_test_1` interface.
 `stop <service>`
 > Stop a service from running if it is currently running.
 
-`swapon_all <fstab>`
+`swapon_all [ <fstab> ]`
 > Calls fs\_mgr\_swapon\_all on the given fstab file.
+  If the fstab parameter is not specified, fstab.${ro.boot.fstab_suffix},
+  fstab.${ro.hardware} or fstab.${ro.hardware.platform} will be scanned for
+  under /odm/etc, /vendor/etc, or / at runtime, in that order.
 
 `symlink <target> <path>`
 > Create a symbolic link at _path_ with the value _target_
@@ -630,6 +689,12 @@ provides the `aidl_lazy_test_1` interface.
 `umount <path>`
 > Unmount the filesystem mounted at that path.
 
+`umount_all [ <fstab> ]`
+> Calls fs\_mgr\_umount\_all on the given fstab file.
+  If the fstab parameter is not specified, fstab.${ro.boot.fstab_suffix},
+  fstab.${ro.hardware} or fstab.${ro.hardware.platform} will be scanned for
+  under /odm/etc, /vendor/etc, or / at runtime, in that order.
+
 `verity_update_state <mount-point>`
 > Internal implementation detail used to update dm-verity state and
   set the partition._mount-point_.verified properties used by adb remount
@@ -638,7 +703,8 @@ provides the `aidl_lazy_test_1` interface.
 `wait <path> [ <timeout> ]`
 > Poll for the existence of the given file and return when found,
   or the timeout has been reached. If timeout is not specified it
-  currently defaults to five seconds.
+  currently defaults to five seconds. The timeout value can be
+  fractional seconds, specified in floating point notation.
 
 `wait_for_prop <name> <value>`
 > Wait for system property _name_ to be _value_. Properties are expanded
@@ -665,29 +731,22 @@ imports are handled as a file is being parsed and follow the below logic.
 
 There are only three times where the init executable imports .rc files:
 
-   1. When it imports /init.rc or the script indicated by the property
+   1. When it imports `/system/etc/init/hw/init.rc` or the script indicated by the property
       `ro.boot.init_rc` during initial boot.
-   2. When it imports /{system,vendor,odm}/etc/init/ for first stage mount
-      devices immediately after importing /init.rc.
+   2. When it imports `/{system,system_ext,vendor,odm,product}/etc/init/` immediately after
+      importing `/system/etc/init/hw/init.rc`.
    3. (Deprecated) When it imports /{system,vendor,odm}/etc/init/ or .rc files
       at specified paths during mount_all, not allowed for devices launching
       after Q.
 
-The order that files are imported is a bit complex for legacy reasons
-and to keep backwards compatibility.  It is not strictly guaranteed.
+The order that files are imported is a bit complex for legacy reasons.  The below is guaranteed:
 
-The only correct way to guarantee that a command has been run before a
-different command is to either 1) place it in an Action with an
-earlier executed trigger, or 2) place it in an Action with the same
-trigger within the same file at an earlier line.
-
-Nonetheless, the de facto order for first stage mount devices is:
-1. /init.rc is parsed then recursively each of its imports are
+1. `/system/etc/init/hw/init.rc` is parsed then recursively each of its imports are
    parsed.
-2. The contents of /system/etc/init/ are alphabetized and parsed
-   sequentially, with imports happening recursively after each file is
-   parsed.
-3. Step 2 is repeated for /vendor/etc/init then /odm/etc/init
+2. The contents of `/system/etc/init/` are alphabetized and parsed sequentially, with imports
+   happening recursively after each file is parsed.
+3. Step 2 is repeated for `/system_ext/etc/init`, `/vendor/etc/init`, `/odm/etc/init`,
+   `/product/etc/init`
 
 The below pseudocode may explain this more clearly:
 
@@ -696,13 +755,17 @@ The below pseudocode may explain this more clearly:
       for (import : file.imports)
         Import(import)
 
-    Import(/init.rc)
-    Directories = [/system/etc/init, /vendor/etc/init, /odm/etc/init]
+    Import(/system/etc/init/hw/init.rc)
+    Directories = [/system/etc/init, /system_ext/etc/init, /vendor/etc/init, /odm/etc/init, /product/etc/init]
     for (directory : Directories)
       files = <Alphabetical order of directory's contents>
       for (file : files)
         Import(file)
 
+Actions are executed in the order that they are parsed.  For example the `post-fs-data` action(s)
+in `/system/etc/init/hw/init.rc` are always the first `post-fs-data` action(s) to be executed in
+order of how they appear in that file.  Then the `post-fs-data` actions of the imports of
+`/system/etc/init/hw/init.rc` in the order that they're imported, etc.
 
 Properties
 ----------
@@ -720,23 +783,35 @@ Init provides state information with the following properties.
   characteristics in a device agnostic manner.
 
 Init responds to properties that begin with `ctl.`.  These properties take the format of
-`ctl.<command>` and the _value_ of the system property is used as a parameter, for example:
-`SetProperty("ctl.start", "logd")` will run the `start` command on `logd`.  Note that these
+`ctl.[<target>_]<command>` and the _value_ of the system property is used as a parameter.  The
+_target_ is optional and specifies the service option that _value_ is meant to match with.  There is
+only one option for _target_, `interface` which indicates that _value_ will refer to an interface
+that a service provides and not the service name itself.
+
+For example:
+
+`SetProperty("ctl.start", "logd")` will run the `start` command on `logd`.
+
+`SetProperty("ctl.interface_start", "aidl/aidl_lazy_test_1")` will run the `start` command on the
+service that exposes the `aidl aidl_lazy_test_1` interface.
+
+Note that these
 properties are only settable; they will have no value when read.
 
-`ctl.start` \
-`ctl.restart` \
-`ctl.stop`
-> These are equivalent to using the `start`, `restart`, and `stop` commands on the service specified
+The _commands_ are listed below.
+
+`start` \
+`restart` \
+`stop` \
+These are equivalent to using the `start`, `restart`, and `stop` commands on the service specified
 by the _value_ of the property.
 
-`ctl.interface_start` \
-`ctl.interface_restart` \
-`ctl.interface_stop`
-> These are equivalent to using the `interface_start`, `interface_restart`, and `interface_stop`
-commands on the interface specified by the _value_ of the property.
+`oneshot_on` and `oneshot_off` will turn on or off the _oneshot_
+flag for the service specified by the _value_ of the property.  This is
+particularly intended for services that are conditionally lazy HALs.  When
+they are lazy HALs, oneshot must be on, otherwise oneshot should be off.
 
-`ctl.sigstop_on` and `ctl.sigstop_off` will turn on or off the _sigstop_ feature for the service
+`sigstop_on` and `sigstop_off` will turn on or off the _sigstop_ feature for the service
 specified by the _value_ of the property.  See the _Debugging init_ section below for more details
 about this feature.
 
@@ -753,6 +828,9 @@ Init records some boot timing information in system properties.
 
 `ro.boottime.init.selinux`
 > How long in ns it took to run SELinux stage.
+
+`ro.boottime.init.modules`
+> How long in ms it took to load kernel modules.
 
 `ro.boottime.init.cold_boot_wait`
 > How long init waited for ueventd's coldboot phase to end.

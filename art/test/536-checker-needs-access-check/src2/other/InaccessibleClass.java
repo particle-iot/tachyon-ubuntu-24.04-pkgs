@@ -16,5 +16,23 @@
 
 package other;
 
+import other2.GetInaccessibleClass;
+
 /*package*/ class InaccessibleClass {
+  /// CHECK-START: java.lang.Class other.InaccessibleClass.$noinline$getReferrersClass() builder (after)
+  /// CHECK: LoadClass class_name:other.InaccessibleClass needs_access_check:false
+  public static Class<?> $noinline$getReferrersClass() {
+    return InaccessibleClass.class;
+  }
+
+  /// CHECK-START: java.lang.Class other.InaccessibleClass.$noinline$getReferrersClassViaAnotherClass() inliner (after)
+  /// CHECK: LoadClass class_name:other.InaccessibleClass needs_access_check:true
+  public static Class<?> $noinline$getReferrersClassViaAnotherClass() {
+    Class<?> klass = null;
+    try {
+      klass = GetInaccessibleClass.$inline$get();
+      throw new Error("Unreachable");
+    } catch (IllegalAccessError expected) {}
+    return klass;
+  }
 }

@@ -23,9 +23,11 @@
 #include "base/hiddenapi_flags.h"
 #include "base/locks.h"
 #include "intrinsics_enum.h"
+#include "jni/jni_internal.h"
 #include "mirror/class-inl.h"
 #include "reflection.h"
 #include "runtime.h"
+#include "well_known_classes.h"
 
 namespace art {
 namespace hiddenapi {
@@ -36,7 +38,7 @@ namespace hiddenapi {
 enum class EnforcementPolicy {
   kDisabled             = 0,
   kJustWarn             = 1,  // keep checks enabled, but allow everything (enables logging)
-  kEnabled              = 2,  // ban dark grey & blacklist
+  kEnabled              = 2,  // ban conditionally blocked & blocklist
   kMax = kEnabled,
 };
 
@@ -156,6 +158,8 @@ class ScopedHiddenApiEnforcementPolicySetting {
   DISALLOW_COPY_AND_ASSIGN(ScopedHiddenApiEnforcementPolicySetting);
 };
 
+void InitializeCorePlatformApiPrivateFields() REQUIRES(!Locks::mutator_lock_);
+
 // Implementation details. DO NOT ACCESS DIRECTLY.
 namespace detail {
 
@@ -192,15 +196,15 @@ class MemberSignature {
   // building the entire thing in memory and performing a simple prefix match)
   bool DoesPrefixMatch(const std::string& prefix) const;
 
-  bool IsExempted(const std::vector<std::string>& exemptions);
+  bool DoesPrefixMatchAny(const std::vector<std::string>& exemptions);
 
   void WarnAboutAccess(AccessMethod access_method, ApiList list, bool access_denied);
 
   void LogAccessToEventLog(uint32_t sampled_value, AccessMethod access_method, bool access_denied);
 
   // Calls back into managed code to notify VMRuntime.nonSdkApiUsageConsumer that
-  // |member| was accessed. This is usually called when an API is on the black,
-  // dark grey or light grey lists. Given that the callback can execute arbitrary
+  // |member| was accessed. This is usually called when an API is unsupported,
+  // conditionally or unconditionally blocked. Given that the callback can execute arbitrary
   // code, a call to this method can result in thread suspension.
   void NotifyHiddenApiListener(AccessMethod access_method);
 };
@@ -237,7 +241,7 @@ ALWAYS_INLINE inline uint32_t CreateRuntimeFlags_Impl(uint32_t dex_flags) {
   ApiList api_list(dex_flags);
   DCHECK(api_list.IsValid());
 
-  if (api_list.Contains(ApiList::Whitelist())) {
+  if (api_list.Contains(ApiList::Sdk())) {
     runtime_flags |= kAccPublicApi;
   } else {
     // Only add domain-specific flags for non-public API members.
@@ -280,33 +284,9 @@ ALWAYS_INLINE inline uint32_t GetRuntimeFlags(ArtMethod* method)
       case Intrinsics::kSystemArrayCopyChar:
       case Intrinsics::kStringGetCharsNoCheck:
       case Intrinsics::kReferenceGetReferent:
+      case Intrinsics::kReferenceRefersTo:
       case Intrinsics::kMemoryPeekByte:
       case Intrinsics::kMemoryPokeByte:
-      case Intrinsics::kUnsafeCASInt:
-      case Intrinsics::kUnsafeCASLong:
-      case Intrinsics::kUnsafeCASObject:
-      case Intrinsics::kUnsafeGet:
-      case Intrinsics::kUnsafeGetAndAddInt:
-      case Intrinsics::kUnsafeGetAndAddLong:
-      case Intrinsics::kUnsafeGetAndSetInt:
-      case Intrinsics::kUnsafeGetAndSetLong:
-      case Intrinsics::kUnsafeGetAndSetObject:
-      case Intrinsics::kUnsafeGetLongVolatile:
-      case Intrinsics::kUnsafeGetObject:
-      case Intrinsics::kUnsafeGetObjectVolatile:
-      case Intrinsics::kUnsafeGetVolatile:
-      case Intrinsics::kUnsafePut:
-      case Intrinsics::kUnsafePutLong:
-      case Intrinsics::kUnsafePutLongOrdered:
-      case Intrinsics::kUnsafePutLongVolatile:
-      case Intrinsics::kUnsafePutObject:
-      case Intrinsics::kUnsafePutObjectOrdered:
-      case Intrinsics::kUnsafePutObjectVolatile:
-      case Intrinsics::kUnsafePutOrdered:
-      case Intrinsics::kUnsafePutVolatile:
-      case Intrinsics::kUnsafeLoadFence:
-      case Intrinsics::kUnsafeStoreFence:
-      case Intrinsics::kUnsafeFullFence:
       case Intrinsics::kCRC32Update:
       case Intrinsics::kCRC32UpdateBytes:
       case Intrinsics::kCRC32UpdateByteBuffer:
@@ -319,6 +299,26 @@ ALWAYS_INLINE inline uint32_t GetRuntimeFlags(ArtMethod* method)
       case Intrinsics::kMemoryPokeIntNative:
       case Intrinsics::kMemoryPokeLongNative:
       case Intrinsics::kMemoryPokeShortNative:
+      case Intrinsics::kUnsafeCASInt:
+      case Intrinsics::kUnsafeCASLong:
+      case Intrinsics::kUnsafeCASObject:
+      case Intrinsics::kUnsafeGetAndAddInt:
+      case Intrinsics::kUnsafeGetAndAddLong:
+      case Intrinsics::kUnsafeGetAndSetInt:
+      case Intrinsics::kUnsafeGetAndSetLong:
+      case Intrinsics::kUnsafeGetAndSetObject:
+      case Intrinsics::kUnsafeGetLongVolatile:
+      case Intrinsics::kUnsafeGetObjectVolatile:
+      case Intrinsics::kUnsafeGetVolatile:
+      case Intrinsics::kUnsafePutLongOrdered:
+      case Intrinsics::kUnsafePutLongVolatile:
+      case Intrinsics::kUnsafePutObjectOrdered:
+      case Intrinsics::kUnsafePutObjectVolatile:
+      case Intrinsics::kUnsafePutOrdered:
+      case Intrinsics::kUnsafePutVolatile:
+      case Intrinsics::kUnsafeLoadFence:
+      case Intrinsics::kUnsafeStoreFence:
+      case Intrinsics::kUnsafeFullFence:
       case Intrinsics::kVarHandleFullFence:
       case Intrinsics::kVarHandleAcquireFence:
       case Intrinsics::kVarHandleReleaseFence:
@@ -356,7 +356,6 @@ ALWAYS_INLINE inline uint32_t GetRuntimeFlags(ArtMethod* method)
       case Intrinsics::kVarHandleWeakCompareAndSetPlain:
       case Intrinsics::kVarHandleWeakCompareAndSetRelease:
         return 0u;
-      case Intrinsics::kUnsafeGetLong:
       case Intrinsics::kFP16Ceil:
       case Intrinsics::kFP16Floor:
       case Intrinsics::kFP16Greater:
@@ -366,6 +365,12 @@ ALWAYS_INLINE inline uint32_t GetRuntimeFlags(ArtMethod* method)
       case Intrinsics::kFP16ToFloat:
       case Intrinsics::kFP16ToHalf:
       case Intrinsics::kFP16Rint:
+      case Intrinsics::kUnsafeGet:
+      case Intrinsics::kUnsafeGetLong:
+      case Intrinsics::kUnsafeGetObject:
+      case Intrinsics::kUnsafePutLong:
+      case Intrinsics::kUnsafePut:
+      case Intrinsics::kUnsafePutObject:
         return kAccCorePlatformApi;
       default:
         // Remaining intrinsics are public API. We DCHECK that in SetIntrinsic().
@@ -393,6 +398,23 @@ inline bool ShouldDenyAccessToMember(T* member,
                                      AccessMethod access_method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(member != nullptr);
+
+  // First check if we have an explicit sdk checker installed that should be used to
+  // verify access. If so, make the decision based on it.
+  //
+  // This is used during off-device AOT compilation which may want to generate verification
+  // metadata only for a specific list of public SDKs. Note that the check here is made
+  // based on descriptor equality and it's aim to further restrict a symbol that would
+  // otherwise be resolved.
+  //
+  // The check only applies to boot classpaths dex files.
+  Runtime* runtime = Runtime::Current();
+  if (UNLIKELY(runtime->IsAotCompiler())) {
+    if (member->GetDeclaringClass()->GetClassLoader() == nullptr &&
+        runtime->GetClassLinker()->DenyAccessBasedOnPublicSdk(member)) {
+      return true;
+    }
+  }
 
   // Get the runtime flags encoded in member's access flags.
   // Note: this works for proxy methods because they inherit access flags from their
@@ -426,7 +448,7 @@ inline bool ShouldDenyAccessToMember(T* member,
       DCHECK(!callee_context.IsApplicationDomain());
 
       // Exit early if access checks are completely disabled.
-      EnforcementPolicy policy = Runtime::Current()->GetHiddenApiEnforcementPolicy();
+      EnforcementPolicy policy = runtime->GetHiddenApiEnforcementPolicy();
       if (policy == EnforcementPolicy::kDisabled) {
         return false;
       }

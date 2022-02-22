@@ -17,6 +17,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fnmatch.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,7 @@
 
 #include <android-base/file.h>
 #include <android-base/parseint.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 #include <libgsi/libgsi.h>
@@ -125,15 +127,16 @@ void ParseMountFlags(const std::string& flags, FstabEntry* entry) {
             }
             fs_options.append(flag);
 
-            if (entry->fs_type == "f2fs" && StartsWith(flag, "reserve_root=")) {
-                std::string arg;
-                if (auto equal_sign = flag.find('='); equal_sign != std::string::npos) {
-                    arg = flag.substr(equal_sign + 1);
-                }
-                if (!ParseInt(arg, &entry->reserved_size)) {
-                    LWARNING << "Warning: reserve_root= flag malformed: " << arg;
-                } else {
-                    entry->reserved_size <<= 12;
+            if (auto equal_sign = flag.find('='); equal_sign != std::string::npos) {
+                const auto arg = flag.substr(equal_sign + 1);
+                if (entry->fs_type == "f2fs" && StartsWith(flag, "reserve_root=")) {
+                    if (!ParseInt(arg, &entry->reserved_size)) {
+                        LWARNING << "Warning: reserve_root= flag malformed: " << arg;
+                    } else {
+                        entry->reserved_size <<= 12;
+                    }
+                } else if (StartsWith(flag, "lowerdir=")) {
+                    entry->lowerdir = std::move(arg);
                 }
             }
         }
@@ -176,6 +179,8 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
         CheckFlag("first_stage_mount", first_stage_mount);
         CheckFlag("slotselect_other", slot_select_other);
         CheckFlag("fsverity", fs_verity);
+        CheckFlag("metadata_csum", ext_meta_csum);
+        CheckFlag("fscompress", fs_compress);
 
 #undef CheckFlag
 
@@ -211,7 +216,7 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
             }
         } else if (StartsWith(flag, "swapprio=")) {
             if (!ParseInt(arg, &entry->swap_prio)) {
-                LWARNING << "Warning: length= flag malformed: " << arg;
+                LWARNING << "Warning: swapprio= flag malformed: " << arg;
             }
         } else if (StartsWith(flag, "zramsize=")) {
             if (!arg.empty() && arg.back() == '%') {
@@ -251,6 +256,13 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
             } else {
                 entry->reserved_size = static_cast<off64_t>(size);
             }
+        } else if (StartsWith(flag, "readahead_size_kb=")) {
+            int val;
+            if (ParseInt(arg, &val, 0, 16 * 1024)) {
+                entry->readahead_size_kb = val;
+            } else {
+                LWARNING << "Warning: readahead_size_kb= flag malformed (0 ~ 16MB): " << arg;
+            }
         } else if (StartsWith(flag, "eraseblk=")) {
             // The erase block size flag is followed by an = and the flash erase block size. Get it,
             // check that it is a power of 2 and at least 4096, and return it.
@@ -277,21 +289,16 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
         } else if (StartsWith(flag, "keydirectory=")) {
             // The metadata flag is followed by an = and the directory for the keys.
             entry->metadata_key_dir = arg;
-        } else if (StartsWith(flag, "metadata_cipher=")) {
-            // Specify the cipher to use for metadata encryption
-            entry->metadata_cipher = arg;
+        } else if (StartsWith(flag, "metadata_encryption=")) {
+            // Specify the cipher and flags to use for metadata encryption
+            entry->metadata_encryption = arg;
         } else if (StartsWith(flag, "sysfs_path=")) {
             // The path to trigger device gc by idle-maint of vold.
             entry->sysfs_path = arg;
-        } else if (StartsWith(flag, "zram_loopback_path=")) {
-            // The path to use loopback for zram.
-            entry->zram_loopback_path = arg;
-        } else if (StartsWith(flag, "zram_loopback_size=")) {
-            if (!ParseByteCount(arg, &entry->zram_loopback_size)) {
-                LWARNING << "Warning: zram_loopback_size= flag malformed: " << arg;
+        } else if (StartsWith(flag, "zram_backingdev_size=")) {
+            if (!ParseByteCount(arg, &entry->zram_backingdev_size)) {
+                LWARNING << "Warning: zram_backingdev_size= flag malformed: " << arg;
             }
-        } else if (StartsWith(flag, "zram_backing_dev_path=")) {
-            entry->zram_backing_dev_path = arg;
         } else {
             LWARNING << "Warning: unknown flag: " << flag;
         }
@@ -301,7 +308,8 @@ void ParseFsMgrFlags(const std::string& flags, FstabEntry* entry) {
 std::string InitAndroidDtDir() {
     std::string android_dt_dir;
     // The platform may specify a custom Android DT path in kernel cmdline
-    if (!fs_mgr_get_boot_config_from_kernel_cmdline("android_dt_dir", &android_dt_dir)) {
+    if (!fs_mgr_get_boot_config_from_bootconfig_source("android_dt_dir", &android_dt_dir) &&
+        !fs_mgr_get_boot_config_from_kernel_cmdline("android_dt_dir", &android_dt_dir)) {
         // Fall back to the standard procfs-based path
         android_dt_dir = kDefaultAndroidDtDir;
     }
@@ -405,16 +413,18 @@ std::string ReadFstabFromDt() {
     return fstab_result;
 }
 
-// Identify path to fstab file. Lookup is based on pattern fstab.<hardware>,
-// fstab.<hardware.platform> in folders /odm/etc, vendor/etc, or /.
+// Identify path to fstab file. Lookup is based on pattern
+// fstab.<fstab_suffix>, fstab.<hardware>, fstab.<hardware.platform> in
+// folders /odm/etc, vendor/etc, or /.
 std::string GetFstabPath() {
-    for (const char* prop : {"hardware", "hardware.platform"}) {
-        std::string hw;
+    for (const char* prop : {"fstab_suffix", "hardware", "hardware.platform"}) {
+        std::string suffix;
 
-        if (!fs_mgr_get_boot_config(prop, &hw)) continue;
+        if (!fs_mgr_get_boot_config(prop, &suffix)) continue;
 
-        for (const char* prefix : {"/odm/etc/fstab.", "/vendor/etc/fstab.", "/fstab."}) {
-            std::string fstab_path = prefix + hw;
+        for (const char* prefix :
+             {"/odm/etc/fstab.", "/vendor/etc/fstab.", "/fstab.", "/first_stage_ramdisk/fstab."}) {
+            std::string fstab_path = prefix + suffix;
             if (access(fstab_path.c_str(), F_OK) == 0) {
                 return fstab_path;
             }
@@ -584,18 +594,19 @@ bool EraseFstabEntry(Fstab* fstab, const std::string& mount_point) {
 
 }  // namespace
 
-void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_partitions) {
+void TransformFstabForDsu(Fstab* fstab, const std::string& dsu_slot,
+                          const std::vector<std::string>& dsu_partitions) {
     static constexpr char kDsuKeysDir[] = "/avb";
     // Convert userdata
     // Inherit fstab properties for userdata.
     FstabEntry userdata;
     if (FstabEntry* entry = GetEntryForMountPoint(fstab, "/data")) {
         userdata = *entry;
-        userdata.blk_device = "userdata_gsi";
+        userdata.blk_device = android::gsi::kDsuUserdata;
         userdata.fs_mgr_flags.logical = true;
         userdata.fs_mgr_flags.formattable = true;
         if (!userdata.metadata_key_dir.empty()) {
-            userdata.metadata_key_dir += "/gsi";
+            userdata.metadata_key_dir = android::gsi::GetDsuMetadataKeyDir(dsu_slot);
         }
     } else {
         userdata = BuildDsuUserdataFstabEntry();
@@ -611,7 +622,11 @@ void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_part
             continue;
         }
         // userdata has been handled
-        if (StartsWith(partition, "user")) {
+        if (partition == android::gsi::kDsuUserdata) {
+            continue;
+        }
+        // scratch is handled by fs_mgr_overlayfs
+        if (partition == android::gsi::kDsuScratch) {
             continue;
         }
         // dsu_partition_name = corresponding_partition_name + kDsuPostfix
@@ -636,13 +651,14 @@ void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_part
             entry.fs_mgr_flags.wait = true;
             entry.fs_mgr_flags.logical = true;
             entry.fs_mgr_flags.first_stage_mount = true;
+            fstab->emplace_back(entry);
         } else {
             // If the corresponding partition exists, transform all its Fstab
             // by pointing .blk_device to the DSU partition.
             for (auto&& entry : entries) {
                 entry->blk_device = partition;
                 // AVB keys for DSU should always be under kDsuKeysDir.
-                entry->avb_keys += kDsuKeysDir;
+                entry->avb_keys = kDsuKeysDir;
             }
             // Make sure the ext4 is included to support GSI.
             auto partition_ext4 =
@@ -658,7 +674,22 @@ void TransformFstabForDsu(Fstab* fstab, const std::vector<std::string>& dsu_part
     }
 }
 
-bool ReadFstabFromFile(const std::string& path, Fstab* fstab) {
+void EnableMandatoryFlags(Fstab* fstab) {
+    // Devices launched in R and after should enable fs_verity on userdata. The flag causes tune2fs
+    // to enable the feature. A better alternative would be to enable on mkfs at the beginning.
+    if (android::base::GetIntProperty("ro.product.first_api_level", 0) >= 30) {
+        std::vector<FstabEntry*> data_entries = GetEntriesForMountPoint(fstab, "/data");
+        for (auto&& entry : data_entries) {
+            // Besides ext4, f2fs is also supported. But the image is already created with verity
+            // turned on when it was first introduced.
+            if (entry->fs_type == "ext4") {
+                entry->fs_mgr_flags.fs_verity = true;
+            }
+        }
+    }
+}
+
+bool ReadFstabFromFile(const std::string& path, Fstab* fstab_out) {
     auto fstab_file = std::unique_ptr<FILE, decltype(&fclose)>{fopen(path.c_str(), "re"), fclose};
     if (!fstab_file) {
         PERROR << __FUNCTION__ << "(): cannot open file: '" << path << "'";
@@ -667,26 +698,51 @@ bool ReadFstabFromFile(const std::string& path, Fstab* fstab) {
 
     bool is_proc_mounts = path == "/proc/mounts";
 
-    if (!ReadFstabFile(fstab_file.get(), is_proc_mounts, fstab)) {
+    Fstab fstab;
+    if (!ReadFstabFile(fstab_file.get(), is_proc_mounts, &fstab)) {
         LERROR << __FUNCTION__ << "(): failed to load fstab from : '" << path << "'";
         return false;
     }
-    if (!is_proc_mounts && !access(android::gsi::kGsiBootedIndicatorFile, F_OK)) {
-        std::string lp_names;
-        ReadFileToString(gsi::kGsiLpNamesFile, &lp_names);
-        TransformFstabForDsu(fstab, Split(lp_names, ","));
+    if (!is_proc_mounts) {
+        if (!access(android::gsi::kGsiBootedIndicatorFile, F_OK)) {
+            // This is expected to fail if host is android Q, since Q doesn't
+            // support DSU slotting. The DSU "active" indicator file would be
+            // non-existent or empty if DSU is enabled within the guest system.
+            // In that case, just use the default slot name "dsu".
+            std::string dsu_slot;
+            if (!android::gsi::GetActiveDsu(&dsu_slot) && errno != ENOENT) {
+                PERROR << __FUNCTION__ << "(): failed to get active DSU slot";
+                return false;
+            }
+            if (dsu_slot.empty()) {
+                dsu_slot = "dsu";
+                LWARNING << __FUNCTION__ << "(): assuming default DSU slot: " << dsu_slot;
+            }
+            // This file is non-existent on Q vendor.
+            std::string lp_names;
+            if (!ReadFileToString(gsi::kGsiLpNamesFile, &lp_names) && errno != ENOENT) {
+                PERROR << __FUNCTION__ << "(): failed to read DSU LP names";
+                return false;
+            }
+            TransformFstabForDsu(&fstab, dsu_slot, Split(lp_names, ","));
+        } else if (errno != ENOENT) {
+            PERROR << __FUNCTION__ << "(): failed to access() DSU booted indicator";
+            return false;
+        }
     }
 
-    SkipMountingPartitions(fstab);
+    SkipMountingPartitions(&fstab, false /* verbose */);
+    EnableMandatoryFlags(&fstab);
 
+    *fstab_out = std::move(fstab);
     return true;
 }
 
 // Returns fstab entries parsed from the device tree if they exist
-bool ReadFstabFromDt(Fstab* fstab, bool log) {
+bool ReadFstabFromDt(Fstab* fstab, bool verbose) {
     std::string fstab_buf = ReadFstabFromDt();
     if (fstab_buf.empty()) {
-        if (log) LINFO << __FUNCTION__ << "(): failed to read fstab from dt";
+        if (verbose) LINFO << __FUNCTION__ << "(): failed to read fstab from dt";
         return false;
     }
 
@@ -694,31 +750,36 @@ bool ReadFstabFromDt(Fstab* fstab, bool log) {
         fmemopen(static_cast<void*>(const_cast<char*>(fstab_buf.c_str())),
                  fstab_buf.length(), "r"), fclose);
     if (!fstab_file) {
-        if (log) PERROR << __FUNCTION__ << "(): failed to create a file stream for fstab dt";
+        if (verbose) PERROR << __FUNCTION__ << "(): failed to create a file stream for fstab dt";
         return false;
     }
 
     if (!ReadFstabFile(fstab_file.get(), false, fstab)) {
-        if (log) {
+        if (verbose) {
             LERROR << __FUNCTION__ << "(): failed to load fstab from kernel:" << std::endl
                    << fstab_buf;
         }
         return false;
     }
 
-    SkipMountingPartitions(fstab);
+    SkipMountingPartitions(fstab, verbose);
 
     return true;
 }
 
+#ifdef NO_SKIP_MOUNT
+bool SkipMountingPartitions(Fstab*, bool) {
+    return true;
+}
+#else
 // For GSI to skip mounting /product and /system_ext, until there are well-defined interfaces
 // between them and /system. Otherwise, the GSI flashed on /system might not be able to work with
 // device-specific /product and /system_ext. skip_mount.cfg belongs to system_ext partition because
 // only common files for all targets can be put into system partition. It is under
 // /system/system_ext because GSI is a single system.img that includes the contents of system_ext
 // partition and product partition under /system/system_ext and /system/product, respectively.
-bool SkipMountingPartitions(Fstab* fstab) {
-    constexpr const char kSkipMountConfig[] = "/system/system_ext/etc/init/config/skip_mount.cfg";
+bool SkipMountingPartitions(Fstab* fstab, bool verbose) {
+    static constexpr char kSkipMountConfig[] = "/system/system_ext/etc/init/config/skip_mount.cfg";
 
     std::string skip_config;
     auto save_errno = errno;
@@ -727,28 +788,39 @@ bool SkipMountingPartitions(Fstab* fstab) {
         return true;
     }
 
-    for (const auto& skip_mount_point : Split(skip_config, "\n")) {
-        if (skip_mount_point.empty()) {
+    std::vector<std::string> skip_mount_patterns;
+    for (const auto& line : Split(skip_config, "\n")) {
+        if (line.empty() || StartsWith(line, "#")) {
             continue;
         }
-        auto it = std::remove_if(fstab->begin(), fstab->end(),
-                                 [&skip_mount_point](const auto& entry) {
-                                     return entry.mount_point == skip_mount_point;
-                                 });
-        if (it == fstab->end()) continue;
-        fstab->erase(it, fstab->end());
-        LOG(INFO) << "Skip mounting partition: " << skip_mount_point;
+        skip_mount_patterns.push_back(line);
     }
 
+    // Returns false if mount_point matches any of the skip mount patterns, so that the FstabEntry
+    // would be partitioned to the second group.
+    auto glob_pattern_mismatch = [&skip_mount_patterns](const FstabEntry& entry) -> bool {
+        for (const auto& pattern : skip_mount_patterns) {
+            if (!fnmatch(pattern.c_str(), entry.mount_point.c_str(), 0 /* flags */)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    auto remove_from = std::stable_partition(fstab->begin(), fstab->end(), glob_pattern_mismatch);
+    if (verbose) {
+        for (auto it = remove_from; it != fstab->end(); ++it) {
+            LINFO << "Skip mounting mountpoint: " << it->mount_point;
+        }
+    }
+    fstab->erase(remove_from, fstab->end());
     return true;
 }
+#endif
 
 // Loads the fstab file and combines with fstab entries passed in from device tree.
 bool ReadDefaultFstab(Fstab* fstab) {
-    Fstab dt_fstab;
-    ReadFstabFromDt(&dt_fstab, false);
-
-    *fstab = std::move(dt_fstab);
+    fstab->clear();
+    ReadFstabFromDt(fstab, false /* verbose */);
 
     std::string default_fstab_path;
     // Use different fstab paths for normal boot and recovery boot, respectively
@@ -759,14 +831,12 @@ bool ReadDefaultFstab(Fstab* fstab) {
     }
 
     Fstab default_fstab;
-    if (!default_fstab_path.empty()) {
-        ReadFstabFromFile(default_fstab_path, &default_fstab);
+    if (!default_fstab_path.empty() && ReadFstabFromFile(default_fstab_path, &default_fstab)) {
+        for (auto&& entry : default_fstab) {
+            fstab->emplace_back(std::move(entry));
+        }
     } else {
         LINFO << __FUNCTION__ << "(): failed to find device default fstab";
-    }
-
-    for (auto&& entry : default_fstab) {
-        fstab->emplace_back(std::move(entry));
     }
 
     return !fstab->empty();
@@ -801,97 +871,41 @@ std::vector<FstabEntry*> GetEntriesForMountPoint(Fstab* fstab, const std::string
     return entries;
 }
 
-static std::string ResolveBlockDevice(const std::string& block_device) {
-    if (!StartsWith(block_device, "/dev/block/")) {
-        LWARNING << block_device << " is not a block device";
-        return block_device;
-    }
-    std::string name = block_device.substr(5);
-    if (!StartsWith(name, "block/dm-")) {
-        // Not a dm-device, but might be a symlink. Optimistically try to readlink.
-        std::string result;
-        if (Readlink(block_device, &result)) {
-            return result;
-        } else if (errno == EINVAL) {
-            // After all, it wasn't a symlink.
-            return block_device;
-        } else {
-            LERROR << "Failed to readlink " << block_device;
-            return "";
-        }
-    }
-    // It's a dm-device, let's find what's inside!
-    std::string sys_dir = "/sys/" + name;
-    while (true) {
-        std::string slaves_dir = sys_dir + "/slaves";
-        std::unique_ptr<DIR, decltype(&closedir)> dir(opendir(slaves_dir.c_str()), closedir);
-        if (!dir) {
-            LERROR << "Failed to open " << slaves_dir;
-            return "";
-        }
-        std::string sub_device_name = "";
-        for (auto entry = readdir(dir.get()); entry; entry = readdir(dir.get())) {
-            if (entry->d_type != DT_LNK) continue;
-            if (!sub_device_name.empty()) {
-                LERROR << "Too many slaves in " << slaves_dir;
-                return "";
-            }
-            sub_device_name = entry->d_name;
-        }
-        if (sub_device_name.empty()) {
-            LERROR << "No slaves in " << slaves_dir;
-            return "";
-        }
-        if (!StartsWith(sub_device_name, "dm-")) {
-            // Not a dm-device! We can stop now.
-            return "/dev/block/" + sub_device_name;
-        }
-        // Still a dm-device, keep digging.
-        sys_dir = "/sys/block/" + sub_device_name;
-    }
-}
-
-FstabEntry* GetMountedEntryForUserdata(Fstab* fstab) {
-    Fstab mounts;
-    if (!ReadFstabFromFile("/proc/mounts", &mounts)) {
-        LERROR << "Failed to read /proc/mounts";
-        return nullptr;
-    }
-    auto mounted_entry = GetEntryForMountPoint(&mounts, "/data");
-    if (mounted_entry == nullptr) {
-        LWARNING << "/data is not mounted";
-        return nullptr;
-    }
-    std::string resolved_block_device = ResolveBlockDevice(mounted_entry->blk_device);
-    if (resolved_block_device.empty()) {
-        return nullptr;
-    }
-    LINFO << "/data is mounted on " << resolved_block_device;
-    for (auto& entry : *fstab) {
-        if (entry.mount_point != "/data") {
-            continue;
-        }
-        std::string block_device;
-        if (!Readlink(entry.blk_device, &block_device)) {
-            LWARNING << "Failed to readlink " << entry.blk_device;
-            block_device = entry.blk_device;
-        }
-        if (block_device == resolved_block_device) {
-            return &entry;
-        }
-    }
-    LERROR << "Didn't find entry that was used to mount /data";
-    return nullptr;
-}
-
 std::set<std::string> GetBootDevices() {
-    // First check the kernel commandline, then try the device tree otherwise
+    // First check bootconfig, then kernel commandline, then the device tree
     std::string dt_file_name = get_android_dt_dir() + "/boot_devices";
     std::string value;
+    if (fs_mgr_get_boot_config_from_bootconfig_source("boot_devices", &value) ||
+        fs_mgr_get_boot_config_from_bootconfig_source("boot_device", &value)) {
+        std::set<std::string> boot_devices;
+        // remove quotes and split by spaces
+        auto boot_device_strings = base::Split(base::StringReplace(value, "\"", "", true), " ");
+        for (std::string_view device : boot_device_strings) {
+            // trim the trailing comma, keep the rest.
+            base::ConsumeSuffix(&device, ",");
+            boot_devices.emplace(device);
+        }
+        return boot_devices;
+    }
+
     if (fs_mgr_get_boot_config_from_kernel_cmdline("boot_devices", &value) ||
         ReadDtFile(dt_file_name, &value)) {
         auto boot_devices = Split(value, ",");
         return std::set<std::string>(boot_devices.begin(), boot_devices.end());
+    }
+
+    std::string cmdline;
+    if (android::base::ReadFileToString("/proc/cmdline", &cmdline)) {
+        std::set<std::string> boot_devices;
+        const std::string cmdline_key = "androidboot.boot_device";
+        for (const auto& [key, value] : fs_mgr_parse_cmdline(cmdline)) {
+            if (key == cmdline_key) {
+                boot_devices.emplace(value);
+            }
+        }
+        if (!boot_devices.empty()) {
+            return boot_devices;
+        }
     }
 
     // Fallback to extract boot devices from fstab.

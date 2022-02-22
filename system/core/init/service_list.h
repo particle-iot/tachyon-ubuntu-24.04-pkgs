@@ -66,7 +66,6 @@ class ServiceList {
 
     auto begin() const { return services_.begin(); }
     auto end() const { return services_.end(); }
-    const std::vector<std::unique_ptr<Service>>& services() const { return services_; }
     const std::vector<Service*> services_in_shutdown_order() const;
 
     void MarkPostData();
@@ -74,6 +73,11 @@ class ServiceList {
     void MarkServicesUpdate();
     bool IsServicesUpdated() const { return services_update_finished_; }
     void DelayService(const Service& service);
+
+    void ResetState() {
+        post_data_ = false;
+        services_update_finished_ = false;
+    }
 
   private:
     std::vector<std::unique_ptr<Service>> services_;

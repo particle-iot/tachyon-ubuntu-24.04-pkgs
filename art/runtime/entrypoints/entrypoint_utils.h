@@ -42,7 +42,9 @@ class String;
 
 class ArtField;
 class ArtMethod;
+class HandleScope;
 enum InvokeType : uint32_t;
+class MethodReference;
 class OatQuickMethodHeader;
 class ScopedObjectAccessAlreadyRunnable;
 class Thread;
@@ -211,6 +213,16 @@ ArtMethod* GetCalleeSaveOuterMethod(Thread* self, CalleeSaveType type)
 // Returns whether we need to do class initialization check before invoking the method.
 // The caller is responsible for performing that check.
 bool NeedsClinitCheckBeforeCall(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_);
+
+// Returns the synchronization object for a native method for a GenericJni frame
+// we have just created or are about to exit. The synchronization object is
+// the class object for static methods and the `this` object otherwise.
+jobject GetGenericJniSynchronizationObject(Thread* self, ArtMethod* called)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+// Update .bss method entrypoint if the `callee_reference` has an associated oat file
+// and that oat file has a .bss entry for the `callee_reference`.
+void MaybeUpdateBssMethodEntry(ArtMethod* callee, MethodReference callee_reference);
 
 }  // namespace art
 

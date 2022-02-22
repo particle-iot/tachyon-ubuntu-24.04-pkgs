@@ -66,6 +66,7 @@ bool Modprobe::ParseDepCallback(const std::string& base_path,
         deps.emplace_back(prefix + args[0].substr(0, pos));
     } else {
         LOG(ERROR) << "dependency lines must start with name followed by ':'";
+        return false;
     }
 
     // Remaining items are dependencies of our module
@@ -194,17 +195,17 @@ bool Modprobe::ParseOptionsCallback(const std::vector<std::string>& args) {
     return true;
 }
 
-bool Modprobe::ParseBlacklistCallback(const std::vector<std::string>& args) {
+bool Modprobe::ParseBlocklistCallback(const std::vector<std::string>& args) {
     auto it = args.begin();
     const std::string& type = *it++;
 
-    if (type != "blacklist") {
-        LOG(ERROR) << "non-blacklist line encountered in modules.blacklist";
+    if (type != "blocklist") {
+        LOG(ERROR) << "non-blocklist line encountered in modules.blocklist";
         return false;
     }
 
     if (args.size() != 2) {
-        LOG(ERROR) << "lines in modules.blacklist must have exactly 2 entries, not " << args.size();
+        LOG(ERROR) << "lines in modules.blocklist must have exactly 2 entries, not " << args.size();
         return false;
     }
 
@@ -214,7 +215,7 @@ bool Modprobe::ParseBlacklistCallback(const std::vector<std::string>& args) {
     if (canonical_name.empty()) {
         return false;
     }
-    this->module_blacklist_.emplace(canonical_name);
+    this->module_blocklist_.emplace(canonical_name);
 
     return true;
 }
@@ -312,7 +313,9 @@ void Modprobe::ParseKernelCmdlineOptions(void) {
     }
 }
 
-Modprobe::Modprobe(const std::vector<std::string>& base_paths) {
+Modprobe::Modprobe(const std::vector<std::string>& base_paths, const std::string load_file,
+                   bool use_blocklist)
+    : blocklist_enabled(use_blocklist) {
     using namespace std::placeholders;
 
     for (const auto& base_path : base_paths) {
@@ -326,29 +329,16 @@ Modprobe::Modprobe(const std::vector<std::string>& base_paths) {
         ParseCfg(base_path + "/modules.softdep", softdep_callback);
 
         auto load_callback = std::bind(&Modprobe::ParseLoadCallback, this, _1);
-        ParseCfg(base_path + "/modules.load", load_callback);
+        ParseCfg(base_path + "/" + load_file, load_callback);
 
         auto options_callback = std::bind(&Modprobe::ParseOptionsCallback, this, _1);
         ParseCfg(base_path + "/modules.options", options_callback);
 
-        auto blacklist_callback = std::bind(&Modprobe::ParseBlacklistCallback, this, _1);
-        ParseCfg(base_path + "/modules.blacklist", blacklist_callback);
+        auto blocklist_callback = std::bind(&Modprobe::ParseBlocklistCallback, this, _1);
+        ParseCfg(base_path + "/modules.blocklist", blocklist_callback);
     }
 
     ParseKernelCmdlineOptions();
-    android::base::SetMinimumLogSeverity(android::base::INFO);
-}
-
-void Modprobe::EnableBlacklist(bool enable) {
-    blacklist_enabled = enable;
-}
-
-void Modprobe::EnableVerbose(bool enable) {
-    if (enable) {
-        android::base::SetMinimumLogSeverity(android::base::VERBOSE);
-    } else {
-        android::base::SetMinimumLogSeverity(android::base::INFO);
-    }
 }
 
 std::vector<std::string> Modprobe::GetDependencies(const std::string& module) {
@@ -435,10 +425,23 @@ bool Modprobe::LoadWithAliases(const std::string& module_name, bool strict,
     return true;
 }
 
+bool Modprobe::IsBlocklisted(const std::string& module_name) {
+    if (!blocklist_enabled) return false;
+
+    auto canonical_name = MakeCanonical(module_name);
+    auto dependencies = GetDependencies(canonical_name);
+    for (auto dep = dependencies.begin(); dep != dependencies.end(); ++dep) {
+        if (module_blocklist_.count(MakeCanonical(*dep))) return true;
+    }
+
+    return module_blocklist_.count(canonical_name) > 0;
+}
+
 bool Modprobe::LoadListedModules(bool strict) {
     auto ret = true;
     for (const auto& module : module_load_) {
         if (!LoadWithAliases(module, true)) {
+            if (IsBlocklisted(module)) continue;
             ret = false;
             if (strict) break;
         }
@@ -448,16 +451,10 @@ bool Modprobe::LoadListedModules(bool strict) {
 
 bool Modprobe::Remove(const std::string& module_name) {
     auto dependencies = GetDependencies(MakeCanonical(module_name));
-    if (dependencies.empty()) {
-        LOG(ERROR) << "Empty dependencies for module " << module_name;
-        return false;
-    }
-    if (!Rmmod(dependencies[0])) {
-        return false;
-    }
-    for (auto dep = dependencies.begin() + 1; dep != dependencies.end(); ++dep) {
+    for (auto dep = dependencies.begin(); dep != dependencies.end(); ++dep) {
         Rmmod(*dep);
     }
+    Rmmod(module_name);
     return true;
 }
 

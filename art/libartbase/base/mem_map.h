@@ -29,8 +29,7 @@
 
 namespace art {
 
-#if defined(__LP64__) && !defined(__Fuchsia__) && \
-    (defined(__aarch64__) || defined(__mips__) || defined(__APPLE__))
+#if defined(__LP64__) && !defined(__Fuchsia__) && (defined(__aarch64__) || defined(__APPLE__))
 #define USE_ART_LOW_4G_ALLOCATOR 1
 #else
 #if defined(__LP64__) && !defined(__Fuchsia__) && !defined(__x86_64__)
@@ -172,7 +171,7 @@ class MemMap {
   // This is useful when we do not have control over the code calling mmap,
   // but when we still want to keep track of it in the list.
   // The region is not considered to be owned and will not be unmmaped.
-  static MemMap MapDummy(const char* name, uint8_t* addr, size_t byte_count);
+  static MemMap MapPlaceholder(const char* name, uint8_t* addr, size_t byte_count);
 
   // Map part of a file, taking care of non-page aligned offsets.  The
   // "start" offset is absolute, not relative.

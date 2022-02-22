@@ -436,6 +436,9 @@ const std::map<std::string, int32_t> kBootReasonMap = {
     {"reboot,userspace_failed,watchdog_fork", 188},
     {"reboot,userspace_failed,*", 189},
     {"reboot,mount_userdata_failed", 190},
+    {"reboot,forcedsilent", 191},
+    {"reboot,forcednonsilent", 192},
+    {"reboot,thermal,tj", 193},
 };
 
 // Converts a string value representing the reason the system booted to an
@@ -870,6 +873,7 @@ bool addKernelPanicSubReason(const std::string& content, std::string& ret) {
 
 const char system_reboot_reason_property[] = "sys.boot.reason";
 const char last_reboot_reason_property[] = LAST_REBOOT_REASON_PROPERTY;
+const char last_reboot_reason_file[] = LAST_REBOOT_REASON_FILE;
 const char last_last_reboot_reason_property[] = "sys.boot.reason.last";
 constexpr size_t history_reboot_reason_size = 4;
 const char history_reboot_reason_property[] = LAST_REBOOT_REASON_PROPERTY ".history";
@@ -1059,7 +1063,9 @@ std::string BootReasonStrToReason(const std::string& boot_reason) {
     if (isBluntRebootReason(ret)) {
       // Content buffer no longer will have console data. Beware if more
       // checks added below, that depend on parsing console content.
-      content = android::base::GetProperty(last_reboot_reason_property, "");
+      if (!android::base::ReadFileToString(last_reboot_reason_file, &content)) {
+        content = android::base::GetProperty(last_reboot_reason_property, "");
+      }
       transformReason(content);
 
       // Anything in last is better than 'super-blunt' reboot or shutdown.
@@ -1233,14 +1239,28 @@ void SetSystemBootReason() {
   // Record the scrubbed system_boot_reason to the property
   BootReasonAddToHistory(system_boot_reason);
   // Shift last_reboot_reason_property to last_last_reboot_reason_property
-  auto last_boot_reason = android::base::GetProperty(last_reboot_reason_property, "");
+  std::string last_boot_reason;
+  if (!android::base::ReadFileToString(last_reboot_reason_file, &last_boot_reason)) {
+    PLOG(ERROR) << "Failed to read " << last_reboot_reason_file;
+    last_boot_reason = android::base::GetProperty(last_reboot_reason_property, "");
+    LOG(INFO) << "Value of " << last_reboot_reason_property << " : " << last_boot_reason;
+  } else {
+    LOG(INFO) << "Last reboot reason read from " << last_reboot_reason_file << " : "
+              << last_boot_reason << ". Last reboot reason read from "
+              << last_reboot_reason_property << " : "
+              << android::base::GetProperty(last_reboot_reason_property, "");
+  }
   if (last_boot_reason.empty() || isKernelRebootReason(system_boot_reason)) {
     last_boot_reason = system_boot_reason;
   } else {
     transformReason(last_boot_reason);
   }
+  LOG(INFO) << "Normalized last reboot reason : " << last_boot_reason;
   android::base::SetProperty(last_last_reboot_reason_property, last_boot_reason);
   android::base::SetProperty(last_reboot_reason_property, "");
+  if (unlink(last_reboot_reason_file) != 0) {
+    PLOG(ERROR) << "Failed to unlink " << last_reboot_reason_file;
+  }
 }
 
 // Gets the boot time offset. This is useful when Android is running in a
@@ -1303,6 +1323,8 @@ void RecordBootComplete() {
 
   // Record the total time from device startup to boot complete, regardless of
   // encryption state.
+  // Note: we are recording seconds here even though the field in statsd atom specifies
+  // milliseconds.
   boot_event_store.AddBootEventWithValue(boot_complete_prefix, uptime_s.count());
 
   RecordInitBootTimeProp(&boot_event_store, "ro.boottime.init");

@@ -46,10 +46,8 @@ from common.common import RetCode
 # Passes that are never disabled during search process because disabling them
 # would compromise correctness.
 MANDATORY_PASSES = ['dex_cache_array_fixups_arm',
-                    'dex_cache_array_fixups_mips',
                     'instruction_simplifier$before_codegen',
                     'pc_relative_fixups_x86',
-                    'pc_relative_fixups_mips',
                     'x86_memory_operand_generation']
 
 # Passes that show up as optimizations in compiler verbose output but aren't
@@ -63,8 +61,8 @@ NON_PASSES = ['builder', 'prepare_for_register_allocation',
 # position in the command.
 RAW_CMD_RUNTIME_ARGS_TAG = '{ARGS}'
 
-# Default core image path relative to ANDROID_HOST_OUT.
-DEFAULT_IMAGE_RELATIVE_PATH = '/framework/core.art'
+# Default boot image path relative to ANDROID_HOST_OUT.
+DEFAULT_IMAGE_RELATIVE_PATH = 'apex/com.android.art/javalib/boot.art'
 
 class Dex2OatWrapperTestable(object):
   """Class representing a testable compilation.

@@ -24,11 +24,14 @@
 #include <android-base/unique_fd.h>
 #include <binder/Parcel.h>
 #include <binder/ProcessState.h>
+#include <binder/Stability.h>
 #include <binder/TextOutput.h>
+#include <binderdebug/BinderDebug.h>
 #include <serviceutils/PriorityDumper.h>
 #include <utils/Log.h>
 #include <utils/Vector.h>
 
+#include <iostream>
 #include <fcntl.h>
 #include <getopt.h>
 #include <stdio.h>
@@ -59,7 +62,8 @@ static void usage() {
             "usage: dumpsys\n"
             "         To dump all services.\n"
             "or:\n"
-            "       dumpsys [-t TIMEOUT] [--priority LEVEL] [--pid] [--help | -l | --skip SERVICES "
+            "       dumpsys [-t TIMEOUT] [--priority LEVEL] [--pid] [--thread] [--help | -l | "
+            "--skip SERVICES "
             "| SERVICE [ARGS]]\n"
             "         --help: shows this help\n"
             "         -l: only list services, do not dump them\n"
@@ -71,6 +75,8 @@ static void usage() {
             "         --priority LEVEL: filter services based on specified priority\n"
             "               LEVEL must be one of CRITICAL | HIGH | NORMAL\n"
             "         --skip SERVICES: dumps all services but SERVICES (comma-separated list)\n"
+            "         --stability: dump binder stability information instead of usual dump\n"
+            "         --thread: dump thread usage instead of usual dump\n"
             "         SERVICE [ARGS]: dumps only service SERVICE, optionally passing ARGS to it\n");
 }
 
@@ -124,11 +130,13 @@ int Dumpsys::main(int argc, char* const argv[]) {
     Type type = Type::DUMP;
     int timeoutArgMs = 10000;
     int priorityFlags = IServiceManager::DUMP_FLAG_PRIORITY_ALL;
-    static struct option longOptions[] = {{"pid", no_argument, 0, 0},
+    static struct option longOptions[] = {{"help", no_argument, 0, 0},
+                                          {"pid", no_argument, 0, 0},
                                           {"priority", required_argument, 0, 0},
                                           {"proto", no_argument, 0, 0},
                                           {"skip", no_argument, 0, 0},
-                                          {"help", no_argument, 0, 0},
+                                          {"stability", no_argument, 0, 0},
+                                          {"thread", no_argument, 0, 0},
                                           {0, 0, 0, 0}};
 
     // Must reset optind, otherwise subsequent calls will fail (wouldn't happen on main.cpp, but
@@ -162,6 +170,10 @@ int Dumpsys::main(int argc, char* const argv[]) {
                 }
             } else if (!strcmp(longOptions[optionIndex].name, "pid")) {
                 type = Type::PID;
+            } else if (!strcmp(longOptions[optionIndex].name, "stability")) {
+                type = Type::STABILITY;
+            } else if (!strcmp(longOptions[optionIndex].name, "thread")) {
+                type = Type::THREAD;
             }
             break;
 
@@ -229,16 +241,16 @@ int Dumpsys::main(int argc, char* const argv[]) {
     }
 
     const size_t N = services.size();
-    if (N > 1) {
+    if (N > 1 || showListOnly) {
         // first print a list of the current services
-        aout << "Currently running services:" << endl;
+        std::cout << "Currently running services:" << std::endl;
 
         for (size_t i=0; i<N; i++) {
             sp<IBinder> service = sm_->checkService(services[i]);
 
             if (service != nullptr) {
                 bool skipped = IsSkipped(skippedServices, services[i]);
-                aout << "  " << services[i] << (skipped ? " (skipped)" : "") << endl;
+                std::cout << "  " << services[i] << (skipped ? " (skipped)" : "") << std::endl;
             }
         }
     }
@@ -263,10 +275,10 @@ int Dumpsys::main(int argc, char* const argv[]) {
                           asProto, elapsedDuration, bytesWritten);
 
             if (status == TIMED_OUT) {
-                aout << endl
+                std::cout << std::endl
                      << "*** SERVICE '" << serviceName << "' DUMP TIMEOUT (" << timeoutArgMs
-                     << "ms) EXPIRED ***" << endl
-                     << endl;
+                     << "ms) EXPIRED ***" << std::endl
+                     << std::endl;
             }
 
             if (addSeparator) {
@@ -328,18 +340,40 @@ static status_t dumpPidToFd(const sp<IBinder>& service, const unique_fd& fd) {
      return OK;
 }
 
+static status_t dumpStabilityToFd(const sp<IBinder>& service, const unique_fd& fd) {
+     WriteStringToFd(internal::Stability::debugToString(service) + "\n", fd);
+     return OK;
+}
+
+static status_t dumpThreadsToFd(const sp<IBinder>& service, const unique_fd& fd) {
+    pid_t pid;
+    status_t status = service->getDebugPid(&pid);
+    if (status != OK) {
+        return status;
+    }
+    BinderPidInfo pidInfo;
+    status = getBinderPidInfo(BinderDebugContext::BINDER, pid, &pidInfo);
+    if (status != OK) {
+        return status;
+    }
+    WriteStringToFd("Threads in use: " + std::to_string(pidInfo.threadUsage) + "/" +
+                        std::to_string(pidInfo.threadCount) + "\n",
+                    fd.get());
+    return OK;
+}
+
 status_t Dumpsys::startDumpThread(Type type, const String16& serviceName,
                                   const Vector<String16>& args) {
     sp<IBinder> service = sm_->checkService(serviceName);
     if (service == nullptr) {
-        aerr << "Can't find service: " << serviceName << endl;
+        std::cerr << "Can't find service: " << serviceName << std::endl;
         return NAME_NOT_FOUND;
     }
 
     int sfd[2];
     if (pipe(sfd) != 0) {
-        aerr << "Failed to create pipe to dump service info for " << serviceName << ": "
-             << strerror(errno) << endl;
+        std::cerr << "Failed to create pipe to dump service info for " << serviceName << ": "
+             << strerror(errno) << std::endl;
         return -errno;
     }
 
@@ -358,14 +392,20 @@ status_t Dumpsys::startDumpThread(Type type, const String16& serviceName,
         case Type::PID:
             err = dumpPidToFd(service, remote_end);
             break;
+        case Type::STABILITY:
+            err = dumpStabilityToFd(service, remote_end);
+            break;
+        case Type::THREAD:
+            err = dumpThreadsToFd(service, remote_end);
+            break;
         default:
-            aerr << "Unknown dump type" << static_cast<int>(type) << endl;
+            std::cerr << "Unknown dump type" << static_cast<int>(type) << std::endl;
             return;
         }
 
         if (err != OK) {
-            aerr << "Error dumping service info status_t: " << statusToString(err) << " "
-                 << serviceName << endl;
+            std::cerr << "Error dumping service info status_t: " << statusToString(err) << " "
+                 << serviceName << std::endl;
         }
     });
     return OK;
@@ -422,11 +462,11 @@ status_t Dumpsys::writeDump(int fd, const String16& serviceName, std::chrono::mi
 
         int rc = TEMP_FAILURE_RETRY(poll(&pfd, 1, time_left_ms()));
         if (rc < 0) {
-            aerr << "Error in poll while dumping service " << serviceName << " : "
-                 << strerror(errno) << endl;
+            std::cerr << "Error in poll while dumping service " << serviceName << " : "
+                 << strerror(errno) << std::endl;
             status = -errno;
             break;
-        } else if (rc == 0) {
+        } else if (rc == 0 || time_left_ms() == 0) {
             status = TIMED_OUT;
             break;
         }
@@ -434,8 +474,8 @@ status_t Dumpsys::writeDump(int fd, const String16& serviceName, std::chrono::mi
         char buf[4096];
         rc = TEMP_FAILURE_RETRY(read(redirectFd_.get(), buf, sizeof(buf)));
         if (rc < 0) {
-            aerr << "Failed to read while dumping service " << serviceName << ": "
-                 << strerror(errno) << endl;
+            std::cerr << "Failed to read while dumping service " << serviceName << ": "
+                 << strerror(errno) << std::endl;
             status = -errno;
             break;
         } else if (rc == 0) {
@@ -444,8 +484,8 @@ status_t Dumpsys::writeDump(int fd, const String16& serviceName, std::chrono::mi
         }
 
         if (!WriteFully(fd, buf, rc)) {
-            aerr << "Failed to write while dumping service " << serviceName << ": "
-                 << strerror(errno) << endl;
+            std::cerr << "Failed to write while dumping service " << serviceName << ": "
+                 << strerror(errno) << std::endl;
             status = -errno;
             break;
         }

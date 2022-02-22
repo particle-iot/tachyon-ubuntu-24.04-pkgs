@@ -15,6 +15,7 @@
  */
 
 #include <array>
+#include <cstddef>
 #include <iterator>
 
 #include "adbconnection.h"
@@ -23,6 +24,7 @@
 #include "android-base/endian.h"
 #include "android-base/stringprintf.h"
 #include "base/file_utils.h"
+#include "base/globals.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/mutex.h"
@@ -60,6 +62,7 @@ using dt_fd_forward::kListenStartMessage;
 using dt_fd_forward::kListenEndMessage;
 using dt_fd_forward::kAcceptMessage;
 using dt_fd_forward::kCloseMessage;
+using dt_fd_forward::kHandshakeCompleteMessage;
 
 // Messages sent to the transport
 using dt_fd_forward::kPerformHandshakeMessage;
@@ -83,7 +86,8 @@ static constexpr off_t kPacketCommandOff = 10;
 static constexpr uint8_t kDdmCommandSet = 199;
 static constexpr uint8_t kDdmChunkCommand = 1;
 
-static AdbConnectionState* gState;
+static std::optional<AdbConnectionState> gState;
+static std::optional<pthread_t> gPthread;
 
 static bool IsDebuggingPossible() {
   return art::Dbg::IsJdwpAllowed();
@@ -91,16 +95,33 @@ static bool IsDebuggingPossible() {
 
 // Begin running the debugger.
 void AdbConnectionDebuggerController::StartDebugger() {
-  if (IsDebuggingPossible()) {
+  // The debugger thread is started for a debuggable or profileable-from-shell process.
+  // The pid will be send to adbd for adb's "track-jdwp" and "track-app" services.
+  // The thread will also set up the jdwp tunnel if the process is debuggable.
+  if (IsDebuggingPossible() || art::Runtime::Current()->IsProfileableFromShell()) {
     connection_->StartDebuggerThreads();
   } else {
     LOG(ERROR) << "Not starting debugger since process cannot load the jdwp agent.";
   }
 }
 
-// The debugger should begin shutting down since the runtime is ending. We don't actually do
-// anything here. The real shutdown has already happened as far as the agent is concerned.
-void AdbConnectionDebuggerController::StopDebugger() { }
+// The debugger should have already shut down since the runtime is ending. As far
+// as the agent is concerned shutdown already happened when we went to kDeath
+// state. We need to clean up our threads still though and this is a good time
+// to do it since the runtime is still able to handle all the normal state
+// transitions.
+void AdbConnectionDebuggerController::StopDebugger() {
+  // Stop our threads.
+  gState->StopDebuggerThreads();
+  // Wait for our threads to actually return and cleanup the pthread.
+  if (gPthread.has_value()) {
+    void* ret_unused;
+    if (TEMP_FAILURE_RETRY(pthread_join(gPthread.value(), &ret_unused)) != 0) {
+      PLOG(ERROR) << "Failed to join debugger threads!";
+    }
+    gPthread.reset();
+  }
+}
 
 bool AdbConnectionDebuggerController::IsDebuggerConfigured() {
   return IsDebuggingPossible() && !art::Runtime::Current()->GetJdwpOptions().empty();
@@ -145,14 +166,18 @@ AdbConnectionState::AdbConnectionState(const std::string& agent_name)
     notified_ddm_active_(false),
     next_ddm_id_(1),
     started_debugger_threads_(false) {
-  // Setup the addr.
-  control_addr_.controlAddrUn.sun_family = AF_UNIX;
-  control_addr_len_ = sizeof(control_addr_.controlAddrUn.sun_family) + sizeof(kJdwpControlName) - 1;
-  memcpy(control_addr_.controlAddrUn.sun_path, kJdwpControlName, sizeof(kJdwpControlName) - 1);
-
   // Add the startup callback.
   art::ScopedObjectAccess soa(art::Thread::Current());
   art::Runtime::Current()->GetRuntimeCallbacks()->AddDebuggerControlCallback(&controller_);
+}
+
+AdbConnectionState::~AdbConnectionState() {
+  // Remove the startup callback.
+  art::Thread* self = art::Thread::Current();
+  if (self != nullptr) {
+    art::ScopedObjectAccess soa(self);
+    art::Runtime::Current()->GetRuntimeCallbacks()->RemoveDebuggerControlCallback(&controller_);
+  }
 }
 
 static jobject CreateAdbConnectionThread(art::Thread* thr) {
@@ -179,7 +204,6 @@ struct CallbackData {
 
 static void* CallbackFunction(void* vdata) {
   std::unique_ptr<CallbackData> data(reinterpret_cast<CallbackData*>(vdata));
-  CHECK(data->this_ == gState);
   art::Thread* self = art::Thread::Attach(kAdbConnectionThreadName,
                                           true,
                                           data->thr_);
@@ -204,10 +228,6 @@ static void* CallbackFunction(void* vdata) {
   data->this_->RunPollLoop(self);
   int detach_result = art::Runtime::Current()->GetJavaVM()->DetachCurrentThread();
   CHECK_EQ(detach_result, 0);
-
-  // Get rid of the connection
-  gState = nullptr;
-  delete data->this_;
 
   return nullptr;
 }
@@ -257,14 +277,15 @@ void AdbConnectionState::StartDebuggerThreads() {
   ScopedLocalRef<jobject> thr(soa.Env(), CreateAdbConnectionThread(soa.Self()));
   // Note: Using pthreads instead of std::thread to not abort when the thread cannot be
   //       created (exception support required).
-  pthread_t pthread;
   std::unique_ptr<CallbackData> data(new CallbackData { this, soa.Env()->NewGlobalRef(thr.get()) });
   started_debugger_threads_ = true;
-  int pthread_create_result = pthread_create(&pthread,
+  gPthread.emplace();
+  int pthread_create_result = pthread_create(&gPthread.value(),
                                              nullptr,
                                              &CallbackFunction,
                                              data.get());
   if (pthread_create_result != 0) {
+    gPthread.reset();
     started_debugger_threads_ = false;
     // If the create succeeded the other thread will call EndThreadBirth.
     art::Runtime* runtime = art::Runtime::Current();
@@ -325,7 +346,7 @@ void AdbConnectionState::SendDdmPacket(uint32_t id,
                                        art::ArrayRef<const uint8_t> data) {
   // Get the write_event early to fail fast.
   ScopedEventFdLock lk(adb_write_event_fd_);
-  if (adb_connection_socket_ == -1) {
+  if (adb_connection_socket_ == -1 || !performed_handshake_) {
     VLOG(jdwp) << "Not sending ddms data of type "
                << StringPrintf("%c%c%c%c",
                                static_cast<char>(type >> 24),
@@ -460,11 +481,20 @@ bool AdbConnectionState::SetupAdbConnection() {
   int sleep_ms = 500;
   const int sleep_max_ms = 2 * 1000;
 
+  const char* isa = GetInstructionSetString(art::Runtime::Current()->GetInstructionSet());
   const AdbConnectionClientInfo infos[] = {
-    {.type = AdbConnectionClientInfoType::pid, .data.pid = static_cast<uint64_t>(getpid())},
-    {.type = AdbConnectionClientInfoType::debuggable, .data.debuggable = true},
+      {.type = AdbConnectionClientInfoType::pid,
+       .data.pid = static_cast<uint64_t>(getpid())},
+      {.type = AdbConnectionClientInfoType::debuggable,
+       .data.debuggable = IsDebuggingPossible()},
+      {.type = AdbConnectionClientInfoType::profileable,
+       .data.profileable = art::Runtime::Current()->IsProfileableFromShell()},
+      {.type = AdbConnectionClientInfoType::architecture,
+       // GetInstructionSetString() returns a null-terminating C-style string.
+       .data.architecture.name = isa,
+       .data.architecture.size = strlen(isa)},
   };
-  const AdbConnectionClientInfo* info_ptrs[] = {&infos[0], &infos[1]};
+  const AdbConnectionClientInfo *info_ptrs[] = {&infos[0], &infos[1], &infos[2], &infos[3]};
 
   while (!shutting_down_) {
     // If adbd isn't running, because USB debugging was disabled or
@@ -496,6 +526,7 @@ bool AdbConnectionState::SetupAdbConnection() {
 }
 
 void AdbConnectionState::RunPollLoop(art::Thread* self) {
+  DCHECK(IsDebuggingPossible() || art::Runtime::Current()->IsProfileableFromShell());
   CHECK_NE(agent_name_, "");
   CHECK_EQ(self->GetState(), art::kNative);
   art::Locks::mutator_lock_->AssertNotHeld(self);
@@ -533,6 +564,7 @@ void AdbConnectionState::RunPollLoop(art::Thread* self) {
       const struct pollfd& control_sock_poll       = pollfds[2];
       const struct pollfd& adb_socket_poll         = pollfds[3];
       if (FlagsSet(agent_control_sock_poll.revents, POLLIN)) {
+        CHECK(IsDebuggingPossible());  // This path is unexpected for a profileable process.
         DCHECK(agent_loaded_);
         char buf[257];
         res = TEMP_FAILURE_RETRY(recv(local_agent_control_sock_, buf, sizeof(buf) - 1, 0));
@@ -550,6 +582,10 @@ void AdbConnectionState::RunPollLoop(art::Thread* self) {
           }
         } else if (memcmp(kListenEndMessage, buf, sizeof(kListenEndMessage)) == 0) {
           agent_listening_ = false;
+        } else if (memcmp(kHandshakeCompleteMessage, buf, sizeof(kHandshakeCompleteMessage)) == 0) {
+          if (agent_has_socket_) {
+            performed_handshake_ = true;
+          }
         } else if (memcmp(kCloseMessage, buf, sizeof(kCloseMessage)) == 0) {
           CloseFds();
           agent_has_socket_ = false;
@@ -562,6 +598,11 @@ void AdbConnectionState::RunPollLoop(art::Thread* self) {
           LOG(ERROR) << "Unknown message received from debugger! '" << std::string(buf) << "'";
         }
       } else if (FlagsSet(control_sock_poll.revents, POLLIN)) {
+        if (!IsDebuggingPossible()) {
+            // For a profielable process, this path can execute when the adbd restarts.
+            control_ctx_.reset();
+            break;
+        }
         bool maybe_send_fds = false;
         {
           // Hold onto this lock so that concurrent ddm publishes don't try to use an illegal fd.
@@ -592,11 +633,13 @@ void AdbConnectionState::RunPollLoop(art::Thread* self) {
       } else if (FlagsSet(control_sock_poll.revents, POLLRDHUP)) {
         // The other end of the adb connection just dropped it.
         // Reset the connection since we don't have an active socket through the adb server.
+        // Note this path is expected for either debuggable or profileable processes.
         DCHECK(!agent_has_socket_) << "We shouldn't be doing anything if there is already a "
                                    << "connection active";
         control_ctx_.reset();
         break;
       } else if (FlagsSet(adb_socket_poll.revents, POLLIN)) {
+        CHECK(IsDebuggingPossible());  // This path is unexpected for a profileable process.
         DCHECK(!agent_has_socket_);
         if (!agent_loaded_) {
           HandleDataWithoutAgent(self);
@@ -606,6 +649,7 @@ void AdbConnectionState::RunPollLoop(art::Thread* self) {
           SendAgentFds(/*require_handshake=*/ true);
         }
       } else if (FlagsSet(adb_socket_poll.revents, POLLRDHUP)) {
+        CHECK(IsDebuggingPossible());  // This path is unexpected for a profileable process.
         DCHECK(!agent_has_socket_);
         CloseFds();
       } else {
@@ -830,17 +874,14 @@ void AdbConnectionState::StopDebuggerThreads() {
 extern "C" bool ArtPlugin_Initialize() {
   DCHECK(art::Runtime::Current()->GetJdwpProvider() == art::JdwpProvider::kAdbConnection);
   // TODO Provide some way for apps to set this maybe?
-  DCHECK(gState == nullptr);
-  gState = new AdbConnectionState(kDefaultJdwpAgentName);
+  gState.emplace(kDefaultJdwpAgentName);
   return ValidateJdwpOptions(art::Runtime::Current()->GetJdwpOptions());
 }
 
 extern "C" bool ArtPlugin_Deinitialize() {
-  gState->StopDebuggerThreads();
-  if (!gState->DebuggerThreadsStarted()) {
-    // If debugger threads were started then those threads will delete the state once they are done.
-    delete gState;
-  }
+  // We don't actually have to do anything here. The debugger (if one was
+  // attached) was shutdown by the move to the kDeath runtime phase and the
+  // adbconnection threads were shutdown by StopDebugger.
   return true;
 }
 

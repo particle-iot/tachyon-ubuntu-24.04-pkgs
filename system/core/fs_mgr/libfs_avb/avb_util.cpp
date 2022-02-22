@@ -61,7 +61,9 @@ bool ConstructVerityTable(const FsAvbHashtreeDescriptor& hashtree_desc,
 
     // Converts veritymode to the format used in kernel.
     std::string dm_verity_mode;
-    if (verity_mode == "enforcing") {
+    if (verity_mode == "panicking") {
+        dm_verity_mode = "panic_on_corruption";
+    } else if (verity_mode == "enforcing") {
         dm_verity_mode = "restart_on_corruption";
     } else if (verity_mode == "logging") {
         dm_verity_mode = "ignore_corruption";
@@ -89,6 +91,10 @@ bool ConstructVerityTable(const FsAvbHashtreeDescriptor& hashtree_desc,
     }
     // Always use ignore_zero_blocks.
     target.IgnoreZeroBlocks();
+
+    if (hashtree_desc.flags & AVB_HASHTREE_DESCRIPTOR_FLAGS_CHECK_AT_MOST_ONCE) {
+        target.CheckAtMostOnce();
+    }
 
     LINFO << "Built verity table: '" << target.GetParameterString() << "'";
 
@@ -122,6 +128,64 @@ bool HashtreeDmVeritySetup(FstabEntry* fstab_entry, const FsAvbHashtreeDescripto
     // Updates fstab_rec->blk_device to verity device name.
     fstab_entry->blk_device = dev_path;
     return true;
+}
+
+std::unique_ptr<FsAvbHashDescriptor> GetHashDescriptor(
+        const std::string& partition_name, const std::vector<VBMetaData>& vbmeta_images) {
+    bool found = false;
+    const uint8_t* desc_partition_name;
+    auto hash_desc = std::make_unique<FsAvbHashDescriptor>();
+
+    for (const auto& vbmeta : vbmeta_images) {
+        size_t num_descriptors;
+        std::unique_ptr<const AvbDescriptor*[], decltype(&avb_free)> descriptors(
+                avb_descriptor_get_all(vbmeta.data(), vbmeta.size(), &num_descriptors), avb_free);
+
+        if (!descriptors || num_descriptors < 1) {
+            continue;
+        }
+
+        for (size_t n = 0; n < num_descriptors && !found; n++) {
+            AvbDescriptor desc;
+            if (!avb_descriptor_validate_and_byteswap(descriptors[n], &desc)) {
+                LWARNING << "Descriptor[" << n << "] is invalid";
+                continue;
+            }
+            if (desc.tag == AVB_DESCRIPTOR_TAG_HASH) {
+                desc_partition_name = (const uint8_t*)descriptors[n] + sizeof(AvbHashDescriptor);
+                if (!avb_hash_descriptor_validate_and_byteswap((AvbHashDescriptor*)descriptors[n],
+                                                               hash_desc.get())) {
+                    continue;
+                }
+                if (hash_desc->partition_name_len != partition_name.length()) {
+                    continue;
+                }
+                // Notes that desc_partition_name is not NUL-terminated.
+                std::string hash_partition_name((const char*)desc_partition_name,
+                                                hash_desc->partition_name_len);
+                if (hash_partition_name == partition_name) {
+                    found = true;
+                }
+            }
+        }
+
+        if (found) break;
+    }
+
+    if (!found) {
+        LERROR << "Hash descriptor not found: " << partition_name;
+        return nullptr;
+    }
+
+    hash_desc->partition_name = partition_name;
+
+    const uint8_t* desc_salt = desc_partition_name + hash_desc->partition_name_len;
+    hash_desc->salt = BytesToHex(desc_salt, hash_desc->salt_len);
+
+    const uint8_t* desc_digest = desc_salt + hash_desc->salt_len;
+    hash_desc->digest = BytesToHex(desc_digest, hash_desc->digest_len);
+
+    return hash_desc;
 }
 
 std::unique_ptr<FsAvbHashtreeDescriptor> GetHashtreeDescriptor(

@@ -2,8 +2,48 @@ Description: Added missing headers causing compile errors
 Author: Umang Parmar <umangjparmar@gmail.com>
 Forwarded: not-needed
 
---- a/system/core/adb/sysdeps/posix/network.cpp
-+++ b/system/core/adb/sysdeps/posix/network.cpp
+--- a/packages/modules/adb/crypto/x509_generator.cpp
++++ b/packages/modules/adb/crypto/x509_generator.cpp
+@@ -23,6 +23,7 @@
+ #include <openssl/bn.h>
+ #include <openssl/pem.h>
+ #include <openssl/rsa.h>
++#include <string.h>
+ 
+ namespace adb {
+ namespace crypto {
+--- a/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
++++ b/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
+@@ -22,6 +22,7 @@
+ #include <openssl/evp.h>
+ #include <openssl/hkdf.h>
+ #include <openssl/rand.h>
++#include <string.h>
+ 
+ namespace adb {
+ namespace pairing {
+--- a/packages/modules/adb/pairing_auth/pairing_auth.cpp
++++ b/packages/modules/adb/pairing_auth/pairing_auth.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include <openssl/curve25519.h>
+ #include <openssl/mem.h>
++#include <string.h>
+ 
+ #include <iomanip>
+ #include <sstream>
+--- a/packages/modules/adb/pairing_connection/pairing_server.cpp
++++ b/packages/modules/adb/pairing_connection/pairing_server.cpp
+@@ -20,6 +20,7 @@
+ #include <sys/eventfd.h>
+ 
+ #include <atomic>
++#include <condition_variable>
+ #include <deque>
+ #include <iomanip>
+ #include <mutex>
+--- a/packages/modules/adb/sysdeps/posix/network.cpp
++++ b/packages/modules/adb/sysdeps/posix/network.cpp
 @@ -22,6 +22,7 @@
  #include <sys/socket.h>
  
@@ -12,8 +52,8 @@ Forwarded: not-needed
  
  #include <android-base/logging.h>
  #include <android-base/stringprintf.h>
---- a/system/core/base/file.cpp
-+++ b/system/core/base/file.cpp
+--- a/system/libbase/file.cpp
++++ b/system/libbase/file.cpp
 @@ -26,6 +26,7 @@
  #include <sys/stat.h>
  #include <sys/types.h>
@@ -22,8 +62,8 @@ Forwarded: not-needed
  
  #include <memory>
  #include <mutex>
---- a/system/core/libbacktrace/BacktraceMap.cpp
-+++ b/system/core/libbacktrace/BacktraceMap.cpp
+--- a/system/unwinding/libbacktrace/BacktraceMap.cpp
++++ b/system/unwinding/libbacktrace/BacktraceMap.cpp
 @@ -21,6 +21,7 @@
  #include <stdint.h>
  #include <sys/types.h>
@@ -32,8 +72,8 @@ Forwarded: not-needed
  
  #include <log/log.h>
  
---- a/system/core/libbacktrace/UnwindStackMap.cpp
-+++ b/system/core/libbacktrace/UnwindStackMap.cpp
+--- a/system/unwinding/libbacktrace/UnwindStackMap.cpp
++++ b/system/unwinding/libbacktrace/UnwindStackMap.cpp
 @@ -20,6 +20,7 @@
  
  #include <string>

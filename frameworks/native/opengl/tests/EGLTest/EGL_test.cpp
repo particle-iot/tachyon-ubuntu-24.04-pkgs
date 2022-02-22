@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 
+#include <SurfaceFlingerProperties.h>
 #include <android/hardware/configstore/1.0/ISurfaceFlingerConfigs.h>
 
 #include <configstore/Utils.h>
@@ -52,11 +53,9 @@ using namespace android::hardware::configstore::V1_0;
 
 #define METADATA_SCALE(x) (static_cast<EGLint>(x * EGL_METADATA_SCALING_EXT))
 
-static bool hasWideColorDisplay =
-        getBool<ISurfaceFlingerConfigs, &ISurfaceFlingerConfigs::hasWideColorDisplay>(false);
+static bool hasWideColorDisplay = android::sysprop::has_wide_color_display(false);
 
-static bool hasHdrDisplay =
-        getBool<ISurfaceFlingerConfigs, &ISurfaceFlingerConfigs::hasHDRDisplay>(false);
+static bool hasHdrDisplay = android::sysprop::has_HDR_display(false);
 
 class EGLTest : public ::testing::Test {
 public:
@@ -139,7 +138,7 @@ TEST_F(EGLTest, EGLTerminateSucceedsWithRemainingObjects) {
     };
     EXPECT_TRUE(eglChooseConfig(mEglDisplay, attrs, &config, 1, &numConfigs));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -149,7 +148,7 @@ TEST_F(EGLTest, EGLTerminateSucceedsWithRemainingObjects) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -259,7 +258,7 @@ TEST_F(EGLTest, EGLDisplayP3) {
     EXPECT_EQ(components[2], 8);
     EXPECT_EQ(components[3], 8);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -269,7 +268,7 @@ TEST_F(EGLTest, EGLDisplayP3) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
     EGLint winAttrs[] = {
@@ -307,7 +306,7 @@ TEST_F(EGLTest, EGLDisplayP3Passthrough) {
 
     get8BitConfig(config);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -317,7 +316,7 @@ TEST_F(EGLTest, EGLDisplayP3Passthrough) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
     EGLint winAttrs[] = {
@@ -399,7 +398,7 @@ TEST_F(EGLTest, EGLDisplayP31010102) {
     EXPECT_EQ(components[2], 10);
     EXPECT_EQ(components[3], 2);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -409,7 +408,7 @@ TEST_F(EGLTest, EGLDisplayP31010102) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
     EGLint winAttrs[] = {
@@ -571,7 +570,7 @@ TEST_F(EGLTest, EGLBT2020Linear) {
 
     ASSERT_NO_FATAL_FAILURE(get8BitConfig(config));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -581,7 +580,7 @@ TEST_F(EGLTest, EGLBT2020Linear) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -623,7 +622,7 @@ TEST_F(EGLTest, EGLBT2020PQ) {
 
     ASSERT_NO_FATAL_FAILURE(get8BitConfig(config));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -633,7 +632,7 @@ TEST_F(EGLTest, EGLBT2020PQ) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
     std::vector<EGLint> winAttrs;
@@ -706,7 +705,7 @@ TEST_F(EGLTest, EGLConfigFP16) {
     EXPECT_GE(components[2], 16);
     EXPECT_GE(components[3], 16);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -715,7 +714,7 @@ TEST_F(EGLTest, EGLConfigFP16) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -735,7 +734,7 @@ TEST_F(EGLTest, EGLNoConfigContext) {
 
     ASSERT_TRUE(hasEglExtension(mEglDisplay, "EGL_KHR_no_config_context"));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -810,7 +809,7 @@ TEST_F(EGLTest, EGLConfig1010102) {
     EXPECT_EQ(components[2], 10);
     EXPECT_EQ(components[3], 2);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -820,7 +819,7 @@ TEST_F(EGLTest, EGLConfig1010102) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -836,7 +835,7 @@ TEST_F(EGLTest, EGLInvalidColorspaceAttribute) {
 
     ASSERT_NO_FATAL_FAILURE(get8BitConfig(config));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -846,7 +845,7 @@ TEST_F(EGLTest, EGLInvalidColorspaceAttribute) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -883,7 +882,7 @@ TEST_F(EGLTest, EGLUnsupportedColorspaceFormatCombo) {
     ASSERT_EQ(EGL_UNSIGNED_TRUE, success);
     ASSERT_EQ(1, numConfigs);
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -893,7 +892,7 @@ TEST_F(EGLTest, EGLUnsupportedColorspaceFormatCombo) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -914,7 +913,7 @@ TEST_F(EGLTest, EGLCreateWindowFailAndSucceed) {
 
     ASSERT_NO_FATAL_FAILURE(get8BitConfig(config));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -924,7 +923,7 @@ TEST_F(EGLTest, EGLCreateWindowFailAndSucceed) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 
@@ -954,7 +953,7 @@ TEST_F(EGLTest, EGLCreateWindowTwoColorspaces) {
 
     ASSERT_NO_FATAL_FAILURE(get8BitConfig(config));
 
-    struct DummyConsumer : public BnConsumerListener {
+    struct MockConsumer : public BnConsumerListener {
         void onFrameAvailable(const BufferItem& /* item */) override {}
         void onBuffersReleased() override {}
         void onSidebandStreamChanged() override {}
@@ -964,7 +963,7 @@ TEST_F(EGLTest, EGLCreateWindowTwoColorspaces) {
     sp<IGraphicBufferProducer> producer;
     sp<IGraphicBufferConsumer> consumer;
     BufferQueue::createBufferQueue(&producer, &consumer);
-    consumer->consumerConnect(new DummyConsumer, false);
+    consumer->consumerConnect(new MockConsumer, false);
     sp<Surface> mSTC = new Surface(producer);
     sp<ANativeWindow> mANW = mSTC;
 

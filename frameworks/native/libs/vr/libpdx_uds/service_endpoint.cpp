@@ -334,8 +334,8 @@ Status<void> Endpoint::CloseChannelLocked(int32_t channel_id) {
 
   int channel_fd = iter->second.data_fd.Get();
   Status<void> status;
-  epoll_event dummy;  // See BUGS in man 2 epoll_ctl.
-  if (epoll_ctl(epoll_fd_.Get(), EPOLL_CTL_DEL, channel_fd, &dummy) < 0) {
+  epoll_event ee;  // See BUGS in man 2 epoll_ctl.
+  if (epoll_ctl(epoll_fd_.Get(), EPOLL_CTL_DEL, channel_fd, &ee) < 0) {
     status.SetError(errno);
     ALOGE(
         "Endpoint::CloseChannelLocked: Failed to remove channel from endpoint: "
@@ -535,13 +535,13 @@ Status<void> Endpoint::ReceiveMessageForChannel(
   *message = Message{info};
   auto* state = static_cast<MessageState*>(message->GetState());
   state->request = std::move(request);
-  if (request.send_len > 0 && !request.is_impulse) {
-    state->request_data.resize(request.send_len);
+  if (state->request.send_len > 0 && !state->request.is_impulse) {
+    state->request_data.resize(state->request.send_len);
     status = ReceiveData(channel_fd, state->request_data.data(),
                          state->request_data.size());
   }
 
-  if (status && request.is_impulse)
+  if (status && state->request.is_impulse)
     status = ReenableEpollEvent(channel_fd);
 
   if (!status) {

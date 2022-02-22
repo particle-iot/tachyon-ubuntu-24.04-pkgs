@@ -45,6 +45,10 @@ namespace hiddenapi {
 class AccessContext;
 }  // namespace hiddenapi
 
+namespace linker {
+class ImageWriter;
+}  // namespace linker
+
 template<typename T> class ArraySlice;
 class ArtField;
 class ArtMethod;
@@ -77,6 +81,8 @@ using StringDexCacheType = std::atomic<StringDexCachePair>;
 // C++ mirror of java.lang.Class
 class MANAGED Class final : public Object {
  public:
+  MIRROR_CLASS("Ljava/lang/Class;");
+
   // A magic value for reference_instance_offsets_. Ignore the bits and walk the super chain when
   // this is the value.
   // [This is an unlikely "natural" value, since it would be 30 non-ref instance fields followed by
@@ -169,6 +175,13 @@ class MANAGED Class final : public Object {
     return GetStatus<kVerifyFlags>() == ClassStatus::kRetryVerificationAtRuntime;
   }
 
+  // Returns true if the class has been verified at compile time, but should be
+  // executed with access checks.
+  template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
+  bool IsVerifiedNeedsAccessChecks() REQUIRES_SHARED(Locks::mutator_lock_) {
+    return GetStatus<kVerifyFlags>() == ClassStatus::kVerifiedNeedsAccessChecks;
+  }
+
   // Returns true if the class has been verified.
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
   bool IsVerified() REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -216,6 +229,10 @@ class MANAGED Class final : public Object {
   }
   void SetClassFlags(uint32_t new_flags) REQUIRES_SHARED(Locks::mutator_lock_);
 
+  // Set access flags during linking, these cannot be rolled back by a Transaction.
+  void SetAccessFlagsDuringLinking(uint32_t new_access_flags) REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Set access flags, recording the change if running inside a Transaction.
   void SetAccessFlags(uint32_t new_access_flags) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Returns true if the class is an enum.
@@ -258,7 +275,7 @@ class MANAGED Class final : public Object {
 
   ALWAYS_INLINE void SetFinalizable() REQUIRES_SHARED(Locks::mutator_lock_) {
     uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
-    SetAccessFlags(flags | kAccClassIsFinalizable);
+    SetAccessFlagsDuringLinking(flags | kAccClassIsFinalizable);
   }
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
@@ -302,22 +319,6 @@ class MANAGED Class final : public Object {
   // Returns true if the class is synthetic.
   ALWAYS_INLINE bool IsSynthetic() REQUIRES_SHARED(Locks::mutator_lock_) {
     return (GetAccessFlags() & kAccSynthetic) != 0;
-  }
-
-  // Return whether the class had run the verifier at least once.
-  // This does not necessarily mean that access checks are avoidable,
-  // since the class methods might still need to be run with access checks.
-  bool WasVerificationAttempted() REQUIRES_SHARED(Locks::mutator_lock_) {
-    return (GetAccessFlags() & kAccVerificationAttempted) != 0;
-  }
-
-  // Mark the class as having gone through a verification attempt.
-  // Mutually exclusive from whether or not each method is allowed to skip access checks.
-  void SetVerificationAttempted() REQUIRES_SHARED(Locks::mutator_lock_) {
-    uint32_t flags = GetField32(OFFSET_OF_OBJECT_MEMBER(Class, access_flags_));
-    if ((flags & kAccVerificationAttempted) == 0) {
-      SetAccessFlags(flags | kAccVerificationAttempted);
-    }
   }
 
   bool IsObsoleteObject() REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -403,7 +404,8 @@ class MANAGED Class final : public Object {
     DCHECK_EQ(v32 & kPrimitiveTypeMask, v32) << "upper 16 bits aren't zero";
     // Store the component size shift in the upper 16 bits.
     v32 |= Primitive::ComponentSizeShift(new_type) << kPrimitiveTypeSizeShiftShift;
-    SetField32Transaction(OFFSET_OF_OBJECT_MEMBER(Class, primitive_type_), v32);
+    SetField32</*kTransactionActive=*/ false, /*kCheckTransaction=*/ false>(
+        OFFSET_OF_OBJECT_MEMBER(Class, primitive_type_), v32);
   }
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
@@ -507,7 +509,7 @@ class MANAGED Class final : public Object {
   };
 
   // Creates a raw object instance but does not invoke the default constructor.
-  // kCheckAddFinalizer controls whether we use a DCHECK to sanity check that we create a
+  // kCheckAddFinalizer controls whether we use a DCHECK to check that we create a
   // finalizer-reference if needed. This should only be disabled when doing structural class
   // redefinition.
   template <bool kIsInstrumented = true,
@@ -659,7 +661,6 @@ class MANAGED Class final : public Object {
            ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
   ObjPtr<ClassLoader> GetClassLoader() ALWAYS_INLINE REQUIRES_SHARED(Locks::mutator_lock_);
 
-  template <bool kCheckTransaction = true>
   void SetClassLoader(ObjPtr<ClassLoader> new_cl) REQUIRES_SHARED(Locks::mutator_lock_);
 
   static constexpr MemberOffset DexCacheOffset() {
@@ -736,7 +737,7 @@ class MANAGED Class final : public Object {
         PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  template <PointerSize kPointerSize, bool kTransactionActive>
+  template <PointerSize kPointerSize>
   static ObjPtr<Method> GetDeclaredMethodInternal(
       Thread* self,
       ObjPtr<Class> klass,
@@ -745,7 +746,7 @@ class MANAGED Class final : public Object {
       const std::function<hiddenapi::AccessContext()>& fn_get_access_context)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  template <PointerSize kPointerSize, bool kTransactionActive>
+  template <PointerSize kPointerSize>
   static ObjPtr<Constructor> GetDeclaredConstructorInternal(Thread* self,
                                                             ObjPtr<Class> klass,
                                                             ObjPtr<ObjectArray<Class>> args)
@@ -758,6 +759,9 @@ class MANAGED Class final : public Object {
   ALWAYS_INLINE ArraySlice<ArtMethod> GetDeclaredVirtualMethods(
         PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // The index in the methods_ array where the first copied method is.
+  ALWAYS_INLINE uint32_t GetCopiedMethodsStartOffset() REQUIRES_SHARED(Locks::mutator_lock_);
 
   template<VerifyObjectFlags kVerifyFlags = kDefaultVerifyFlags>
   ALWAYS_INLINE ArraySlice<ArtMethod> GetCopiedMethodsSlice(PointerSize pointer_size)
@@ -906,6 +910,12 @@ class MANAGED Class final : public Object {
   ArtMethod* FindInterfaceMethod(ObjPtr<DexCache> dex_cache,
                                  uint32_t dex_method_idx,
                                  PointerSize pointer_size)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Return the first public SDK method from the list of interfaces implemented by
+  // this class.
+  ArtMethod* FindAccessibleInterfaceMethod(ArtMethod* implementation_method,
+                                           PointerSize pointer_size)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Find a method with the given name and signature in a non-interface class.
@@ -1066,10 +1076,7 @@ class MANAGED Class final : public Object {
   ArtField* GetStaticField(uint32_t i) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Find a static or instance field using the JLS resolution order
-  static ArtField* FindField(Thread* self,
-                             ObjPtr<Class> klass,
-                             std::string_view name,
-                             std::string_view type)
+  ArtField* FindField(ObjPtr<mirror::DexCache> dex_cache, uint32_t field_idx)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Finds the given instance field in this class or a superclass.
@@ -1088,18 +1095,12 @@ class MANAGED Class final : public Object {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Finds the given static field in this class or a superclass.
-  static ArtField* FindStaticField(Thread* self,
-                                   ObjPtr<Class> klass,
-                                   std::string_view name,
-                                   std::string_view type)
+  ArtField* FindStaticField(std::string_view name, std::string_view type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Finds the given static field in this class or superclass, only searches classes that
   // have the same dex cache.
-  static ArtField* FindStaticField(Thread* self,
-                                   ObjPtr<Class> klass,
-                                   ObjPtr<DexCache> dex_cache,
-                                   uint32_t dex_field_idx)
+  ArtField* FindStaticField(ObjPtr<DexCache> dex_cache, uint32_t dex_field_idx)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   ArtField* FindDeclaredStaticField(std::string_view name, std::string_view type)
@@ -1130,7 +1131,8 @@ class MANAGED Class final : public Object {
   }
 
   void SetDexClassDefIndex(uint16_t class_def_idx) REQUIRES_SHARED(Locks::mutator_lock_) {
-    SetField32Transaction(OFFSET_OF_OBJECT_MEMBER(Class, dex_class_def_idx_), class_def_idx);
+    SetField32</*kTransactionActive=*/ false, /*kCheckTransaction=*/ false>(
+        OFFSET_OF_OBJECT_MEMBER(Class, dex_class_def_idx_), class_def_idx);
   }
 
   dex::TypeIndex GetDexTypeIndex() REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -1139,7 +1141,8 @@ class MANAGED Class final : public Object {
   }
 
   void SetDexTypeIndex(dex::TypeIndex type_idx) REQUIRES_SHARED(Locks::mutator_lock_) {
-    SetField32Transaction(OFFSET_OF_OBJECT_MEMBER(Class, dex_type_idx_), type_idx.index_);
+    SetField32</*kTransactionActive=*/ false, /*kCheckTransaction=*/ false>(
+        OFFSET_OF_OBJECT_MEMBER(Class, dex_type_idx_), type_idx.index_);
   }
 
   dex::TypeIndex FindTypeIndexInOtherDexFile(const DexFile& dex_file)
@@ -1191,11 +1194,10 @@ class MANAGED Class final : public Object {
 
   dex::TypeIndex GetDirectInterfaceTypeIdx(uint32_t idx) REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Get the direct interface of the `klass` at index `idx` if resolved, otherwise return null.
+  // Get the direct interface at index `idx` if resolved, otherwise return null.
   // If the caller expects the interface to be resolved, for example for a resolved `klass`,
   // that assumption should be checked by `DCHECK(result != nullptr)`.
-  static ObjPtr<Class> GetDirectInterface(Thread* self, ObjPtr<Class> klass, uint32_t idx)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  ObjPtr<Class> GetDirectInterface(uint32_t idx) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Resolve and get the direct interface of the `klass` at index `idx`.
   // Returns null with a pending exception if the resolution fails.
@@ -1371,15 +1373,10 @@ class MANAGED Class final : public Object {
   // The index in the methods_ array where the first direct method is.
   ALWAYS_INLINE uint32_t GetDirectMethodsStartOffset() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // The index in the methods_ array where the first copied method is.
-  ALWAYS_INLINE uint32_t GetCopiedMethodsStartOffset() REQUIRES_SHARED(Locks::mutator_lock_);
-
   bool ProxyDescriptorEquals(const char* match) REQUIRES_SHARED(Locks::mutator_lock_);
 
   template<VerifyObjectFlags kVerifyFlags>
   void GetAccessFlagsDCheck() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void SetAccessFlagsDCheck(uint32_t new_access_flags) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Check that the pointer size matches the one in the class linker.
   ALWAYS_INLINE static void CheckPointerSize(PointerSize pointer_size);
@@ -1390,6 +1387,10 @@ class MANAGED Class final : public Object {
             typename Visitor>
   void VisitReferences(ObjPtr<Class> klass, const Visitor& visitor)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Helper to set the status without any validity cheks.
+  void SetStatusInternal(ClassStatus new_status)
+      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(!Roles::uninterruptible_);
 
   // 'Class' Object Fields
   // Order governed by java field ordering. See art::ClassLinker::LinkFields.
@@ -1545,6 +1546,7 @@ class MANAGED Class final : public Object {
   ART_FRIEND_TEST(DexCacheTest, TestResolvedFieldAccess);  // For ResolvedFieldAccessTest
   friend struct art::ClassOffsets;  // for verifying offset information
   friend class Object;  // For VisitReferences
+  friend class linker::ImageWriter;  // For SetStatusInternal
   DISALLOW_IMPLICIT_CONSTRUCTORS(Class);
 };
 

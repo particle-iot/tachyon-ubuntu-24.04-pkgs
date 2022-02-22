@@ -63,12 +63,11 @@ inline T* DexCachePair<T>::GetObjectForIndex(uint32_t idx) {
 }
 
 template <typename T>
-inline void NativeDexCachePair<T>::Initialize(std::atomic<NativeDexCachePair<T>>* dex_cache,
-                                              PointerSize pointer_size) {
+inline void NativeDexCachePair<T>::Initialize(std::atomic<NativeDexCachePair<T>>* dex_cache) {
   NativeDexCachePair<T> first_elem;
   first_elem.object = nullptr;
   first_elem.index = InvalidIndexForSlot(0);
-  DexCache::SetNativePairPtrSize(dex_cache, 0, first_elem, pointer_size);
+  DexCache::SetNativePair(dex_cache, 0, first_elem);
 }
 
 inline uint32_t DexCache::ClassSize(PointerSize pointer_size) {
@@ -164,6 +163,7 @@ inline Class* DexCache::GetResolvedType(dex::TypeIndex type_idx) {
 
 inline void DexCache::SetResolvedType(dex::TypeIndex type_idx, ObjPtr<Class> resolved) {
   DCHECK(resolved != nullptr);
+  DCHECK(resolved->IsResolved()) << resolved->GetStatus();
   // TODO default transaction support.
   // Use a release store for SetResolvedType. This is done to prevent other threads from seeing a
   // class but not necessarily seeing the loaded members like the static fields array.
@@ -202,8 +202,25 @@ inline void DexCache::SetResolvedMethodType(dex::ProtoIndex proto_idx, MethodTyp
   DCHECK(resolved != nullptr);
   GetResolvedMethodTypes()[MethodTypeSlotIndex(proto_idx)].store(
       MethodTypeDexCachePair(resolved, proto_idx.index_), std::memory_order_relaxed);
+  Runtime* const runtime = Runtime::Current();
+  if (UNLIKELY(runtime->IsActiveTransaction())) {
+    DCHECK(runtime->IsAotCompiler());
+    runtime->RecordResolveMethodType(this, proto_idx);
+  }
   // TODO: Fine-grained marking, so that we don't need to go through all arrays in full.
   WriteBarrier::ForEveryFieldWrite(this);
+}
+
+inline void DexCache::ClearMethodType(dex::ProtoIndex proto_idx) {
+  DCHECK(Runtime::Current()->IsAotCompiler());
+  uint32_t slot_idx = MethodTypeSlotIndex(proto_idx);
+  MethodTypeDexCacheType* slot = &GetResolvedMethodTypes()[slot_idx];
+  // This is racy but should only be called from the transactional interpreter.
+  if (slot->load(std::memory_order_relaxed).index == proto_idx.index_) {
+    MethodTypeDexCachePair cleared(nullptr,
+                                   MethodTypeDexCachePair::InvalidIndexForSlot(proto_idx.index_));
+    slot->store(cleared, std::memory_order_relaxed);
+  }
 }
 
 inline CallSite* DexCache::GetResolvedCallSite(uint32_t call_site_idx) {
@@ -243,29 +260,15 @@ inline uint32_t DexCache::FieldSlotIndex(uint32_t field_idx) {
   return slot_idx;
 }
 
-inline ArtField* DexCache::GetResolvedField(uint32_t field_idx, PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
-  auto pair = GetNativePairPtrSize(GetResolvedFields(), FieldSlotIndex(field_idx), ptr_size);
+inline ArtField* DexCache::GetResolvedField(uint32_t field_idx) {
+  auto pair = GetNativePair(GetResolvedFields(), FieldSlotIndex(field_idx));
   return pair.GetObjectForIndex(field_idx);
 }
 
-inline void DexCache::SetResolvedField(uint32_t field_idx, ArtField* field, PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
+inline void DexCache::SetResolvedField(uint32_t field_idx, ArtField* field) {
   DCHECK(field != nullptr);
   FieldDexCachePair pair(field, field_idx);
-  SetNativePairPtrSize(GetResolvedFields(), FieldSlotIndex(field_idx), pair, ptr_size);
-}
-
-inline void DexCache::ClearResolvedField(uint32_t field_idx, PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
-  uint32_t slot_idx = FieldSlotIndex(field_idx);
-  auto* resolved_fields = GetResolvedFields();
-  // This is racy but should only be called from the single-threaded ImageWriter.
-  DCHECK(Runtime::Current()->IsAotCompiler());
-  if (GetNativePairPtrSize(resolved_fields, slot_idx, ptr_size).index == field_idx) {
-    FieldDexCachePair cleared(nullptr, FieldDexCachePair::InvalidIndexForSlot(slot_idx));
-    SetNativePairPtrSize(resolved_fields, slot_idx, cleared, ptr_size);
-  }
+  SetNativePair(GetResolvedFields(), FieldSlotIndex(field_idx), pair);
 }
 
 inline uint32_t DexCache::MethodSlotIndex(uint32_t method_idx) {
@@ -275,38 +278,21 @@ inline uint32_t DexCache::MethodSlotIndex(uint32_t method_idx) {
   return slot_idx;
 }
 
-inline ArtMethod* DexCache::GetResolvedMethod(uint32_t method_idx, PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
-  auto pair = GetNativePairPtrSize(GetResolvedMethods(), MethodSlotIndex(method_idx), ptr_size);
+inline ArtMethod* DexCache::GetResolvedMethod(uint32_t method_idx) {
+  auto pair = GetNativePair(GetResolvedMethods(), MethodSlotIndex(method_idx));
   return pair.GetObjectForIndex(method_idx);
 }
 
-inline void DexCache::SetResolvedMethod(uint32_t method_idx,
-                                        ArtMethod* method,
-                                        PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
+inline void DexCache::SetResolvedMethod(uint32_t method_idx, ArtMethod* method) {
   DCHECK(method != nullptr);
   MethodDexCachePair pair(method, method_idx);
-  SetNativePairPtrSize(GetResolvedMethods(), MethodSlotIndex(method_idx), pair, ptr_size);
-}
-
-inline void DexCache::ClearResolvedMethod(uint32_t method_idx, PointerSize ptr_size) {
-  DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), ptr_size);
-  uint32_t slot_idx = MethodSlotIndex(method_idx);
-  auto* resolved_methods = GetResolvedMethods();
-  // This is racy but should only be called from the single-threaded ImageWriter.
-  DCHECK(Runtime::Current()->IsAotCompiler());
-  if (GetNativePairPtrSize(resolved_methods, slot_idx, ptr_size).index == method_idx) {
-    MethodDexCachePair cleared(nullptr, MethodDexCachePair::InvalidIndexForSlot(slot_idx));
-    SetNativePairPtrSize(resolved_methods, slot_idx, cleared, ptr_size);
-  }
+  SetNativePair(GetResolvedMethods(), MethodSlotIndex(method_idx), pair);
 }
 
 template <typename T>
-NativeDexCachePair<T> DexCache::GetNativePairPtrSize(std::atomic<NativeDexCachePair<T>>* pair_array,
-                                                     size_t idx,
-                                                     PointerSize ptr_size) {
-  if (ptr_size == PointerSize::k64) {
+NativeDexCachePair<T> DexCache::GetNativePair(std::atomic<NativeDexCachePair<T>>* pair_array,
+                                              size_t idx) {
+  if (kRuntimePointerSize == PointerSize::k64) {
     auto* array = reinterpret_cast<std::atomic<ConversionPair64>*>(pair_array);
     ConversionPair64 value = AtomicLoadRelaxed16B(&array[idx]);
     return NativeDexCachePair<T>(reinterpret_cast64<T*>(value.first),
@@ -319,11 +305,10 @@ NativeDexCachePair<T> DexCache::GetNativePairPtrSize(std::atomic<NativeDexCacheP
 }
 
 template <typename T>
-void DexCache::SetNativePairPtrSize(std::atomic<NativeDexCachePair<T>>* pair_array,
-                                    size_t idx,
-                                    NativeDexCachePair<T> pair,
-                                    PointerSize ptr_size) {
-  if (ptr_size == PointerSize::k64) {
+void DexCache::SetNativePair(std::atomic<NativeDexCachePair<T>>* pair_array,
+                             size_t idx,
+                             NativeDexCachePair<T> pair) {
+  if (kRuntimePointerSize == PointerSize::k64) {
     auto* array = reinterpret_cast<std::atomic<ConversionPair64>*>(pair_array);
     ConversionPair64 v(reinterpret_cast64<uint64_t>(pair.object), pair.index);
     AtomicStoreRelease16B(&array[idx], v);
@@ -382,9 +367,11 @@ inline void DexCache::VisitReferences(ObjPtr<Class> klass, const Visitor& visito
     }
 
     GcRoot<mirror::String>* const preresolved_strings = GetPreResolvedStrings();
-    const size_t num_preresolved_strings = NumPreResolvedStrings();
-    for (size_t i = 0; i != num_preresolved_strings; ++i) {
-      visitor.VisitRootIfNonNull(preresolved_strings[i].AddressWithoutBarrier());
+    if (preresolved_strings != nullptr) {
+      const size_t num_preresolved_strings = NumPreResolvedStrings();
+      for (size_t i = 0; i != num_preresolved_strings; ++i) {
+        visitor.VisitRootIfNonNull(preresolved_strings[i].AddressWithoutBarrier());
+      }
     }
   }
 }

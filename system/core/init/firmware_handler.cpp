@@ -17,6 +17,9 @@
 #include "firmware_handler.h"
 
 #include <fcntl.h>
+#include <fnmatch.h>
+#include <glob.h>
+#include <grp.h>
 #include <pwd.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -30,6 +33,7 @@
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/scopeguard.h>
 #include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 
@@ -43,6 +47,20 @@ using android::base::WriteFully;
 
 namespace android {
 namespace init {
+
+namespace {
+bool PrefixMatch(const std::string& pattern, const std::string& path) {
+    return android::base::StartsWith(path, pattern);
+}
+
+bool FnMatch(const std::string& pattern, const std::string& path) {
+    return fnmatch(pattern.c_str(), path.c_str(), 0) == 0;
+}
+
+bool EqualMatch(const std::string& pattern, const std::string& path) {
+    return pattern == path;
+}
+}  // namespace
 
 static void LoadFirmware(const std::string& firmware, const std::string& root, int fw_fd,
                          size_t fw_size, int loading_fd, int data_fd) {
@@ -64,13 +82,33 @@ static bool IsBooting() {
     return access("/dev/.booting", F_OK) == 0;
 }
 
+ExternalFirmwareHandler::ExternalFirmwareHandler(std::string devpath, uid_t uid, gid_t gid,
+                                                 std::string handler_path)
+    : devpath(std::move(devpath)), uid(uid), gid(gid), handler_path(std::move(handler_path)) {
+    auto wildcard_position = this->devpath.find('*');
+    if (wildcard_position != std::string::npos) {
+        if (wildcard_position == this->devpath.length() - 1) {
+            this->devpath.pop_back();
+            match = std::bind(PrefixMatch, this->devpath, std::placeholders::_1);
+        } else {
+            match = std::bind(FnMatch, this->devpath, std::placeholders::_1);
+        }
+    } else {
+        match = std::bind(EqualMatch, this->devpath, std::placeholders::_1);
+    }
+}
+
+ExternalFirmwareHandler::ExternalFirmwareHandler(std::string devpath, uid_t uid,
+                                                 std::string handler_path)
+    : ExternalFirmwareHandler(devpath, uid, 0, handler_path) {}
+
 FirmwareHandler::FirmwareHandler(std::vector<std::string> firmware_directories,
                                  std::vector<ExternalFirmwareHandler> external_firmware_handlers)
     : firmware_directories_(std::move(firmware_directories)),
       external_firmware_handlers_(std::move(external_firmware_handlers)) {}
 
 Result<std::string> FirmwareHandler::RunExternalHandler(const std::string& handler, uid_t uid,
-                                                        const Uevent& uevent) const {
+                                                        gid_t gid, const Uevent& uevent) const {
     unique_fd child_stdout;
     unique_fd parent_stdout;
     if (!Socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, &child_stdout, &parent_stdout)) {
@@ -106,6 +144,13 @@ Result<std::string> FirmwareHandler::RunExternalHandler(const std::string& handl
             c_args.emplace_back(arg.data());
         }
         c_args.emplace_back(nullptr);
+
+        if (gid != 0) {
+            if (setgid(gid) != 0) {
+                fprintf(stderr, "setgid() failed: %s", strerror(errno));
+                _exit(EXIT_FAILURE);
+            }
+        }
 
         if (setuid(uid) != 0) {
             fprintf(stderr, "setuid() failed: %s", strerror(errno));
@@ -158,13 +203,13 @@ Result<std::string> FirmwareHandler::RunExternalHandler(const std::string& handl
 
 std::string FirmwareHandler::GetFirmwarePath(const Uevent& uevent) const {
     for (const auto& external_handler : external_firmware_handlers_) {
-        if (external_handler.devpath == uevent.path) {
+        if (external_handler.match(uevent.path)) {
             LOG(INFO) << "Launching external firmware handler '" << external_handler.handler_path
                       << "' for devpath: '" << uevent.path << "' firmware: '" << uevent.firmware
                       << "'";
 
-            auto result =
-                    RunExternalHandler(external_handler.handler_path, external_handler.uid, uevent);
+            auto result = RunExternalHandler(external_handler.handler_path, external_handler.uid,
+                                             external_handler.gid, uevent);
             if (!result.ok()) {
                 LOG(ERROR) << "Using default firmware; External firmware handler failed: "
                            << result.error();
@@ -203,25 +248,28 @@ void FirmwareHandler::ProcessFirmwareEvent(const std::string& root,
     }
 
     std::vector<std::string> attempted_paths_and_errors;
-
-    int booting = IsBooting();
-try_loading_again:
-    attempted_paths_and_errors.clear();
-    for (const auto& firmware_directory : firmware_directories_) {
+    auto TryLoadFirmware = [&](const std::string& firmware_directory) {
         std::string file = firmware_directory + firmware;
         unique_fd fw_fd(open(file.c_str(), O_RDONLY | O_CLOEXEC));
         if (fw_fd == -1) {
             attempted_paths_and_errors.emplace_back("firmware: attempted " + file +
                                                     ", open failed: " + strerror(errno));
-            continue;
+            return false;
         }
         struct stat sb;
         if (fstat(fw_fd, &sb) == -1) {
             attempted_paths_and_errors.emplace_back("firmware: attempted " + file +
                                                     ", fstat failed: " + strerror(errno));
-            continue;
+            return false;
         }
         LoadFirmware(firmware, root, fw_fd, sb.st_size, loading_fd, data_fd);
+        return true;
+    };
+
+    int booting = IsBooting();
+try_loading_again:
+    attempted_paths_and_errors.clear();
+    if (ForEachFirmwareDirectory(TryLoadFirmware)) {
         return;
     }
 
@@ -240,6 +288,33 @@ try_loading_again:
 
     // Write "-1" as our response to the kernel's firmware request, since we have nothing for it.
     write(loading_fd, "-1", 2);
+}
+
+bool FirmwareHandler::ForEachFirmwareDirectory(
+        std::function<bool(const std::string&)> handler) const {
+    for (const std::string& firmware_directory : firmware_directories_) {
+        if (std::invoke(handler, firmware_directory)) {
+            return true;
+        }
+    }
+
+    glob_t glob_result;
+    glob("/apex/*/etc/firmware/", GLOB_MARK, nullptr, &glob_result);
+    auto free_glob = android::base::make_scope_guard(std::bind(&globfree, &glob_result));
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        char* apex_firmware_directory = glob_result.gl_pathv[i];
+        // Filter-out /apex/<name>@<ver> paths. The paths are bind-mounted to
+        // /apex/<name> paths, so unless we filter them out, we will look into the
+        // same apex twice.
+        if (strchr(apex_firmware_directory, '@')) {
+            continue;
+        }
+        if (std::invoke(handler, apex_firmware_directory)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void FirmwareHandler::HandleUevent(const Uevent& uevent) {

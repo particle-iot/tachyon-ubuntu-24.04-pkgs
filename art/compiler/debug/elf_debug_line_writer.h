@@ -32,7 +32,7 @@
 namespace art {
 namespace debug {
 
-typedef std::vector<DexFile::PositionInfo> PositionInfos;
+using PositionInfos = std::vector<DexFile::PositionInfo>;
 
 template<typename ElfTypes>
 class ElfDebugLineWriter {
@@ -70,8 +70,6 @@ class ElfDebugLineWriter {
         dwarf_isa = 1;  // DW_ISA_ARM_thumb.
         break;
       case InstructionSet::kArm64:
-      case InstructionSet::kMips:
-      case InstructionSet::kMips64:
         code_factor_bits_ = 2;  // 32-bit instructions
         break;
       case InstructionSet::kNone:

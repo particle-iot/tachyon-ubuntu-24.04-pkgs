@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <jni.h>
 
+#include <functional>
 #include <string>
 
 #include <android-base/logging.h>
@@ -37,6 +38,9 @@
 #include "scoped_thread_state_change-inl.h"
 
 namespace art {
+
+class MethodReference;
+class TypeReference;
 
 using LogSeverity = android::base::LogSeverity;
 using ScopedLogSeverity = android::base::ScopedLogSeverity;
@@ -62,7 +66,7 @@ class CompilerCallbacks;
 class DexFile;
 class JavaVMExt;
 class Runtime;
-typedef std::vector<std::pair<std::string, const void*>> RuntimeOptions;
+using RuntimeOptions = std::vector<std::pair<std::string, const void*>>;
 class Thread;
 class VariableSizedHandleScope;
 
@@ -70,8 +74,6 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
  public:
   CommonRuntimeTestImpl();
   virtual ~CommonRuntimeTestImpl();
-
-  static std::string GetAndroidTargetToolsDir(InstructionSet isa);
 
   // A helper function to fill the heap.
   static void FillHeap(Thread* self,
@@ -111,7 +113,8 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool StartDex2OatCommandLine(/*out*/std::vector<std::string>* argv,
-                               /*out*/std::string* error_msg);
+                               /*out*/std::string* error_msg,
+                               bool use_runtime_bcp_and_image = true);
 
   bool CompileBootImage(const std::vector<std::string>& extra_args,
                         const std::string& image_file_name_prefix,
@@ -162,6 +165,25 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
                                         jobject parent_loader,
                                         jobject shared_libraries = nullptr);
 
+  void VisitDexes(ArrayRef<const std::string> dexes,
+                  const std::function<void(MethodReference)>& method_visitor,
+                  const std::function<void(TypeReference)>& class_visitor,
+                  size_t method_frequency = 1u,
+                  size_t class_frequency = 1u);
+
+  void GenerateProfile(ArrayRef<const std::string> dexes,
+                       File* out_file,
+                       size_t method_frequency = 1u,
+                       size_t type_frequency = 1u,
+                       bool for_boot_image = false);
+  void GenerateBootProfile(ArrayRef<const std::string> dexes,
+                           File* out_file,
+                           size_t method_frequency = 1u,
+                           size_t type_frequency = 1u) {
+    return GenerateProfile(
+        dexes, out_file, method_frequency, type_frequency, /*for_boot_image=*/ true);
+  }
+
   std::unique_ptr<Runtime> runtime_;
 
   // The class_linker_, java_lang_dex_file_, and boot_class_path_ are all
@@ -190,8 +212,7 @@ class CommonRuntimeTestImpl : public CommonArtTestImpl {
   // initializers, initialize well-known classes, and creates the heap thread pool.
   virtual void FinalizeSetup();
 
-  // Returns the directory where the pre-compiled core.art can be found.
-  static std::string GetImageDirectory();
+  // Returns the directory where the pre-compiled boot.art can be found.
   static std::string GetImageLocation();
   static std::string GetSystemImageFile();
 
@@ -257,18 +278,6 @@ class CheckJniAbortCatcher {
 #define TEST_DISABLED_FOR_ARM64() \
   if (kRuntimeISA == InstructionSet::kArm64) { \
     printf("WARNING: TEST DISABLED FOR ARM64\n"); \
-    return; \
-  }
-
-#define TEST_DISABLED_FOR_MIPS() \
-  if (kRuntimeISA == InstructionSet::kMips) { \
-    printf("WARNING: TEST DISABLED FOR MIPS\n"); \
-    return; \
-  }
-
-#define TEST_DISABLED_FOR_MIPS64() \
-  if (kRuntimeISA == InstructionSet::kMips64) { \
-    printf("WARNING: TEST DISABLED FOR MIPS64\n"); \
     return; \
   }
 

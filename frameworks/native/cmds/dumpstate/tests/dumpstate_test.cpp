@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "dumpstate"
-#include <cutils/log.h>
+#define LOG_TAG "dumpstate_test"
 
 #include "DumpstateInternal.h"
 #include "DumpstateService.h"
 #include "android/os/BnDumpstate.h"
 #include "dumpstate.h"
+#include "DumpPool.h"
 
 #include <gmock/gmock.h>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
 #include <fcntl.h>
@@ -36,19 +37,25 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <android-base/unique_fd.h>
+#include <android/hardware/dumpstate/1.1/types.h>
+#include <cutils/log.h>
 #include <cutils/properties.h>
+#include <ziparchive/zip_archive.h>
 
 namespace android {
 namespace os {
 namespace dumpstate {
 
+using ::android::hardware::dumpstate::V1_1::DumpstateMode;
 using ::testing::EndsWith;
+using ::testing::Eq;
 using ::testing::HasSubstr;
-using ::testing::IsNull;
 using ::testing::IsEmpty;
+using ::testing::IsNull;
 using ::testing::NotNull;
-using ::testing::StrEq;
 using ::testing::StartsWith;
+using ::testing::StrEq;
 using ::testing::Test;
 using ::testing::internal::CaptureStderr;
 using ::testing::internal::CaptureStdout;
@@ -62,6 +69,8 @@ class DumpstateListenerMock : public IDumpstateListener {
     MOCK_METHOD1(onProgress, binder::Status(int32_t progress));
     MOCK_METHOD1(onError, binder::Status(int32_t error_code));
     MOCK_METHOD0(onFinished, binder::Status());
+    MOCK_METHOD1(onScreenshotTaken, binder::Status(bool success));
+    MOCK_METHOD0(onUiIntensiveBugreportDumpsFinished, binder::Status());
 
   protected:
     MOCK_METHOD0(onAsBinder, IBinder*());
@@ -87,6 +96,10 @@ class DumpstateBaseTest : public Test {
 
     void SetUnroot(bool unroot) const {
         PropertiesHelper::unroot_ = unroot;
+    }
+
+    void SetParallelRun(bool parallel_run) const {
+        PropertiesHelper::parallel_run_ = parallel_run;
     }
 
     bool IsStandalone() const {
@@ -148,10 +161,9 @@ class DumpOptionsTest : public Test {
         options_ = Dumpstate::DumpOptions();
     }
     void TearDown() {
-        // Reset the property
-        property_set("dumpstate.options", "");
     }
     Dumpstate::DumpOptions options_;
+    android::base::unique_fd fd;
 };
 
 TEST_F(DumpOptionsTest, InitializeNone) {
@@ -165,16 +177,16 @@ TEST_F(DumpOptionsTest, InitializeNone) {
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
 
-    EXPECT_FALSE(options_.do_add_date);
-    EXPECT_FALSE(options_.do_zip_file);
-    EXPECT_FALSE(options_.use_socket);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_EQ("", options_.out_dir);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.do_broadcast);
+    EXPECT_FALSE(options_.limited_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializeAdbBugreport) {
@@ -182,26 +194,23 @@ TEST_F(DumpOptionsTest, InitializeAdbBugreport) {
     char* argv[] = {
         const_cast<char*>("dumpstatez"),
         const_cast<char*>("-S"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-z"),
     };
     // clang-format on
 
     Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_zip_file);
-    EXPECT_TRUE(options_.use_control_socket);
+    EXPECT_TRUE(options_.progress_updates_to_socket);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
     EXPECT_FALSE(options_.show_header_only);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.do_broadcast);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializeAdbShellBugreport) {
@@ -215,202 +224,137 @@ TEST_F(DumpOptionsTest, InitializeAdbShellBugreport) {
     Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.use_socket);
+    EXPECT_TRUE(options_.stream_to_socket);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.do_add_date);
-    EXPECT_FALSE(options_.do_zip_file);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.do_broadcast);
+    EXPECT_FALSE(options_.limited_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializeFullBugReport) {
-    // clang-format off
-    char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
-    };
-    // clang-format on
-    property_set("dumpstate.options", "bugreportfull");
-
-    Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
-
-    EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_fb);
-    EXPECT_TRUE(options_.do_zip_file);
-    EXPECT_TRUE(options_.do_broadcast);
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_FULL, fd, fd, true);
+    EXPECT_TRUE(options_.do_screenshot);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::FULL);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
-    EXPECT_FALSE(options_.do_start_service);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializeInteractiveBugReport) {
-    // clang-format off
-    char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
-    };
-    // clang-format on
-
-    property_set("dumpstate.options", "bugreportplus");
-
-    Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
-
-    EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_broadcast);
-    EXPECT_TRUE(options_.do_zip_file);
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_INTERACTIVE, fd, fd, true);
     EXPECT_TRUE(options_.do_progress_updates);
-    EXPECT_TRUE(options_.do_start_service);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_TRUE(options_.do_screenshot);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::INTERACTIVE);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializeRemoteBugReport) {
-    // clang-format off
-    char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
-    };
-    // clang-format on
-
-    property_set("dumpstate.options", "bugreportremote");
-
-    Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
-
-    EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_broadcast);
-    EXPECT_TRUE(options_.do_zip_file);
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_REMOTE, fd, fd, false);
     EXPECT_TRUE(options_.is_remote_mode);
     EXPECT_FALSE(options_.do_vibrate);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_FALSE(options_.do_screenshot);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::REMOTE);
 
     // Other options retain default values
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.do_progress_updates);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializeWearBugReport) {
-    // clang-format off
-    char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
-    };
-    // clang-format on
-
-    property_set("dumpstate.options", "bugreportwear");
-
-    Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
-
-    EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_fb);
-    EXPECT_TRUE(options_.do_broadcast);
-    EXPECT_TRUE(options_.do_zip_file);
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_WEAR, fd, fd, true);
+    EXPECT_TRUE(options_.do_screenshot);
     EXPECT_TRUE(options_.do_progress_updates);
-    EXPECT_TRUE(options_.do_start_service);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::WEAR);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializeTelephonyBugReport) {
-    // clang-format off
-    char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
-    };
-    // clang-format on
-
-    property_set("dumpstate.options", "bugreporttelephony");
-
-    Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
-
-    EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_FALSE(options_.do_fb);
-    EXPECT_TRUE(options_.do_broadcast);
-    EXPECT_TRUE(options_.do_zip_file);
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_TELEPHONY, fd, fd, false);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_TRUE(options_.telephony_only);
     EXPECT_TRUE(options_.do_progress_updates);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::CONNECTIVITY);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializeWifiBugReport) {
+    options_.Initialize(Dumpstate::BugreportMode::BUGREPORT_WIFI, fd, fd, false);
+    EXPECT_FALSE(options_.do_screenshot);
+    EXPECT_TRUE(options_.wifi_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::WIFI);
+
+    // Other options retain default values
+    EXPECT_TRUE(options_.do_vibrate);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
+    EXPECT_FALSE(options_.show_header_only);
+    EXPECT_FALSE(options_.do_progress_updates);
+    EXPECT_FALSE(options_.is_remote_mode);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.limited_only);
+}
+
+TEST_F(DumpOptionsTest, InitializeLimitedOnlyBugreport) {
     // clang-format off
     char* argv[] = {
-        const_cast<char*>("bugreport"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
-        const_cast<char*>("-z"),
+        const_cast<char*>("dumpstatez"),
+        const_cast<char*>("-S"),
+        const_cast<char*>("-q"),
+        const_cast<char*>("-L"),
+        const_cast<char*>("-o abc")
     };
     // clang-format on
-
-    property_set("dumpstate.options", "bugreportwifi");
 
     Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_FALSE(options_.do_fb);
-    EXPECT_TRUE(options_.do_broadcast);
-    EXPECT_TRUE(options_.do_zip_file);
-    EXPECT_TRUE(options_.wifi_only);
+    EXPECT_TRUE(options_.progress_updates_to_socket);
+    EXPECT_FALSE(options_.do_vibrate);
+    EXPECT_TRUE(options_.limited_only);
+    EXPECT_EQ(" abc", std::string(options_.out_dir));
 
     // Other options retain default values
-    EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
     EXPECT_FALSE(options_.show_header_only);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializeDefaultBugReport) {
@@ -420,37 +364,30 @@ TEST_F(DumpOptionsTest, InitializeDefaultBugReport) {
         const_cast<char*>("bugreport"),
         const_cast<char*>("-d"),
         const_cast<char*>("-p"),
-        const_cast<char*>("-B"),
         const_cast<char*>("-z"),
     };
     // clang-format on
-
-    property_set("dumpstate.options", "");
-
     Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_fb);
-    EXPECT_TRUE(options_.do_zip_file);
-    EXPECT_TRUE(options_.do_broadcast);
+    EXPECT_TRUE(options_.do_screenshot);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 
     // Other options retain default values
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.use_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
     EXPECT_FALSE(options_.wifi_only);
+    EXPECT_FALSE(options_.limited_only);
 }
 
 TEST_F(DumpOptionsTest, InitializePartial1) {
     // clang-format off
     char* argv[] = {
         const_cast<char*>("dumpstate"),
-        const_cast<char*>("-d"),
-        const_cast<char*>("-z"),
         const_cast<char*>("-s"),
         const_cast<char*>("-S"),
 
@@ -460,19 +397,18 @@ TEST_F(DumpOptionsTest, InitializePartial1) {
     Dumpstate::RunStatus status = options_.Initialize(ARRAY_SIZE(argv), argv);
 
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
-    EXPECT_TRUE(options_.do_add_date);
-    EXPECT_TRUE(options_.do_zip_file);
     // TODO: Maybe we should trim the filename
-    EXPECT_TRUE(options_.use_socket);
-    EXPECT_TRUE(options_.use_control_socket);
+    EXPECT_TRUE(options_.stream_to_socket);
+    EXPECT_TRUE(options_.progress_updates_to_socket);
 
     // Other options retain default values
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_TRUE(options_.do_vibrate);
-    EXPECT_FALSE(options_.do_fb);
+    EXPECT_FALSE(options_.do_screenshot);
     EXPECT_FALSE(options_.do_progress_updates);
     EXPECT_FALSE(options_.is_remote_mode);
-    EXPECT_FALSE(options_.do_broadcast);
+    EXPECT_FALSE(options_.limited_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializePartial2) {
@@ -484,7 +420,6 @@ TEST_F(DumpOptionsTest, InitializePartial2) {
         const_cast<char*>("-p"),
         const_cast<char*>("-P"),
         const_cast<char*>("-R"),
-        const_cast<char*>("-B"),
     };
     // clang-format on
 
@@ -493,16 +428,15 @@ TEST_F(DumpOptionsTest, InitializePartial2) {
     EXPECT_EQ(status, Dumpstate::RunStatus::OK);
     EXPECT_TRUE(options_.show_header_only);
     EXPECT_FALSE(options_.do_vibrate);
-    EXPECT_TRUE(options_.do_fb);
+    EXPECT_TRUE(options_.do_screenshot);
     EXPECT_TRUE(options_.do_progress_updates);
     EXPECT_TRUE(options_.is_remote_mode);
-    EXPECT_TRUE(options_.do_broadcast);
 
     // Other options retain default values
-    EXPECT_FALSE(options_.do_add_date);
-    EXPECT_FALSE(options_.do_zip_file);
-    EXPECT_FALSE(options_.use_socket);
-    EXPECT_FALSE(options_.use_control_socket);
+    EXPECT_FALSE(options_.stream_to_socket);
+    EXPECT_FALSE(options_.progress_updates_to_socket);
+    EXPECT_FALSE(options_.limited_only);
+    EXPECT_EQ(options_.dumpstate_hal_mode, DumpstateMode::DEFAULT);
 }
 
 TEST_F(DumpOptionsTest, InitializeHelp) {
@@ -533,49 +467,31 @@ TEST_F(DumpOptionsTest, InitializeUnknown) {
     EXPECT_EQ(status, Dumpstate::RunStatus::INVALID_INPUT);
 }
 
-TEST_F(DumpOptionsTest, ValidateOptionsNeedOutfile1) {
-    options_.do_zip_file = true;
-    // Writing to socket = !writing to file.
-    options_.use_socket = true;
+TEST_F(DumpOptionsTest, ValidateOptionsSocketUsage1) {
+    options_.progress_updates_to_socket = true;
+    options_.stream_to_socket = true;
     EXPECT_FALSE(options_.ValidateOptions());
 
-    options_.use_socket = false;
+    options_.stream_to_socket = false;
     EXPECT_TRUE(options_.ValidateOptions());
 }
 
-TEST_F(DumpOptionsTest, ValidateOptionsNeedOutfile2) {
-    options_.do_broadcast = true;
-    // Writing to socket = !writing to file.
-    options_.use_socket = true;
-    EXPECT_FALSE(options_.ValidateOptions());
-
-    options_.use_socket = false;
-    EXPECT_TRUE(options_.ValidateOptions());
-}
-
-TEST_F(DumpOptionsTest, ValidateOptionsNeedZipfile) {
-    options_.use_control_socket = true;
-    EXPECT_FALSE(options_.ValidateOptions());
-
-    options_.do_zip_file = true;
-    EXPECT_TRUE(options_.ValidateOptions());
-}
-
-TEST_F(DumpOptionsTest, ValidateOptionsUpdateProgressNeedsBroadcast) {
+TEST_F(DumpOptionsTest, ValidateOptionsSocketUsage2) {
     options_.do_progress_updates = true;
+    // Writing to socket = !writing to file.
+    options_.stream_to_socket = true;
     EXPECT_FALSE(options_.ValidateOptions());
 
-    options_.do_broadcast = true;
+    options_.stream_to_socket = false;
     EXPECT_TRUE(options_.ValidateOptions());
 }
 
 TEST_F(DumpOptionsTest, ValidateOptionsRemoteMode) {
+    options_.do_progress_updates = true;
     options_.is_remote_mode = true;
     EXPECT_FALSE(options_.ValidateOptions());
 
-    options_.do_broadcast = true;
-    options_.do_zip_file = true;
-    options_.do_add_date = true;
+    options_.do_progress_updates = false;
     EXPECT_TRUE(options_.ValidateOptions());
 }
 
@@ -587,6 +503,10 @@ class DumpstateTest : public DumpstateBaseTest {
         SetBuildType(android::base::GetProperty("ro.build.type", "(unknown)"));
         ds.progress_.reset(new Progress());
         ds.options_.reset(new Dumpstate::DumpOptions());
+    }
+
+    void TearDown() {
+        ds.ShutdownDumpPool();
     }
 
     // Runs a command and capture `stdout` and `stderr`.
@@ -616,8 +536,12 @@ class DumpstateTest : public DumpstateBaseTest {
         ds.progress_.reset(new Progress(initial_max, progress, 1.2));
     }
 
-    std::string GetProgressMessage(const std::string& listener_name, int progress, int max,
-                                   int old_max = 0, bool update_progress = true) {
+    void EnableParallelRunIfNeeded() {
+        ds.EnableParallelRunIfNeeded();
+    }
+
+    std::string GetProgressMessage(int progress, int max,
+            int old_max = 0, bool update_progress = true) {
         EXPECT_EQ(progress, ds.progress_->Get()) << "invalid progress";
         EXPECT_EQ(max, ds.progress_->GetMax()) << "invalid max";
 
@@ -630,9 +554,8 @@ class DumpstateTest : public DumpstateBaseTest {
         }
 
         if (update_progress) {
-            message += android::base::StringPrintf("Setting progress (%s): %d/%d (%d%%)\n",
-                                                   listener_name.c_str(), progress, max,
-                                                   (100 * progress / max));
+            message += android::base::StringPrintf("Setting progress: %d/%d (%d%%)\n",
+                                                   progress, max, (100 * progress / max));
         }
 
         return message;
@@ -787,18 +710,17 @@ TEST_F(DumpstateTest, RunCommandIsKilled) {
 TEST_F(DumpstateTest, RunCommandProgress) {
     sp<DumpstateListenerMock> listener(new DumpstateListenerMock());
     ds.listener_ = listener;
-    ds.listener_name_ = "FoxMulder";
     SetProgress(0, 30);
 
     EXPECT_CALL(*listener, onProgress(66));  // 20/30 %
     EXPECT_EQ(0, RunCommand("", {kSimpleCommand}, CommandOptions::WithTimeout(20).Build()));
-    std::string progress_message = GetProgressMessage(ds.listener_name_, 20, 30);
+    std::string progress_message = GetProgressMessage(20, 30);
     EXPECT_THAT(out, StrEq("stdout\n"));
     EXPECT_THAT(err, StrEq("stderr\n" + progress_message));
 
     EXPECT_CALL(*listener, onProgress(80));  // 24/30 %
     EXPECT_EQ(0, RunCommand("", {kSimpleCommand}, CommandOptions::WithTimeout(4).Build()));
-    progress_message = GetProgressMessage(ds.listener_name_, 24, 30);
+    progress_message = GetProgressMessage(24, 30);
     EXPECT_THAT(out, StrEq("stdout\n"));
     EXPECT_THAT(err, StrEq("stderr\n" + progress_message));
 
@@ -806,20 +728,20 @@ TEST_F(DumpstateTest, RunCommandProgress) {
     SetDryRun(true);
     EXPECT_CALL(*listener, onProgress(90));  // 27/30 %
     EXPECT_EQ(0, RunCommand("", {kSimpleCommand}, CommandOptions::WithTimeout(3).Build()));
-    progress_message = GetProgressMessage(ds.listener_name_, 27, 30);
+    progress_message = GetProgressMessage(27, 30);
     EXPECT_THAT(out, IsEmpty());
     EXPECT_THAT(err, StrEq(progress_message));
 
     SetDryRun(false);
     EXPECT_CALL(*listener, onProgress(96));  // 29/30 %
     EXPECT_EQ(0, RunCommand("", {kSimpleCommand}, CommandOptions::WithTimeout(2).Build()));
-    progress_message = GetProgressMessage(ds.listener_name_, 29, 30);
+    progress_message = GetProgressMessage(29, 30);
     EXPECT_THAT(out, StrEq("stdout\n"));
     EXPECT_THAT(err, StrEq("stderr\n" + progress_message));
 
     EXPECT_CALL(*listener, onProgress(100));  // 30/30 %
     EXPECT_EQ(0, RunCommand("", {kSimpleCommand}, CommandOptions::WithTimeout(1).Build()));
-    progress_message = GetProgressMessage(ds.listener_name_, 30, 30);
+    progress_message = GetProgressMessage(30, 30);
     EXPECT_THAT(out, StrEq("stdout\n"));
     EXPECT_THAT(err, StrEq("stderr\n" + progress_message));
 
@@ -1044,66 +966,99 @@ TEST_F(DumpstateTest, DumpFileOnDryRun) {
 TEST_F(DumpstateTest, DumpFileUpdateProgress) {
     sp<DumpstateListenerMock> listener(new DumpstateListenerMock());
     ds.listener_ = listener;
-    ds.listener_name_ = "FoxMulder";
     SetProgress(0, 30);
 
     EXPECT_CALL(*listener, onProgress(16));  // 5/30 %
     EXPECT_EQ(0, DumpFile("", kTestDataPath + "single-line.txt"));
 
-    std::string progress_message =
-        GetProgressMessage(ds.listener_name_, 5, 30);  // TODO: unhardcode WEIGHT_FILE (5)?
+    std::string progress_message = GetProgressMessage(5, 30);  // TODO: unhardcode WEIGHT_FILE (5)?
     EXPECT_THAT(err, StrEq(progress_message));
     EXPECT_THAT(out, StrEq("I AM LINE1\n"));  // dumpstate adds missing newline
 
     ds.listener_.clear();
 }
 
+TEST_F(DumpstateTest, DumpPool_withParallelRunEnabled_notNull) {
+    SetParallelRun(true);
+    EnableParallelRunIfNeeded();
+    EXPECT_TRUE(ds.zip_entry_tasks_);
+    EXPECT_TRUE(ds.dump_pool_);
+}
+
+TEST_F(DumpstateTest, DumpPool_withParallelRunDisabled_isNull) {
+    SetParallelRun(false);
+    EnableParallelRunIfNeeded();
+    EXPECT_FALSE(ds.zip_entry_tasks_);
+    EXPECT_FALSE(ds.dump_pool_);
+}
+
+class ZippedBugReportStreamTest : public DumpstateBaseTest {
+  public:
+    void SetUp() {
+        DumpstateBaseTest::SetUp();
+        ds_.options_.reset(new Dumpstate::DumpOptions());
+    }
+    void TearDown() {
+        CloseArchive(handle_);
+    }
+
+    // Set bugreport mode and options before here.
+    void GenerateBugreport() {
+        ds_.Initialize();
+        EXPECT_EQ(Dumpstate::RunStatus::OK, ds_.Run(/*calling_uid=*/-1, /*calling_package=*/""));
+    }
+
+    // Most bugreports droproot, ensure the file can be opened by shell to verify file content.
+    void CreateFd(const std::string& path, android::base::unique_fd* out_fd) {
+        out_fd->reset(TEMP_FAILURE_RETRY(open(path.c_str(),
+                                              O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+                                              S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)));
+        ASSERT_GE(out_fd->get(), 0) << "could not create FD for path " << path;
+    }
+
+    void VerifyEntry(const ZipArchiveHandle archive, const std::string_view entry_name,
+                     ZipEntry* data) {
+        int32_t e = FindEntry(archive, entry_name, data);
+        EXPECT_EQ(0, e) << ErrorCodeString(e) << " entry name: " << entry_name;
+    }
+
+    // While testing dumpstate in process, using STDOUT may get confused about
+    // the internal fd redirection. Redirect to a dedicate fd to save content.
+    void RedirectOutputToFd(android::base::unique_fd& ufd) {
+        ds_.open_socket_fn_ = [&](const char*) -> int { return ufd.release(); };
+    };
+
+    Dumpstate& ds_ = Dumpstate::GetInstance();
+    ZipArchiveHandle handle_;
+};
+
+// Generate a quick LimitedOnly report redirected to a file, open it and verify entry exist.
+TEST_F(ZippedBugReportStreamTest, StreamLimitedOnlyReport) {
+    std::string out_path = kTestDataPath + "StreamLimitedOnlyReportOut.zip";
+    android::base::unique_fd out_fd;
+    CreateFd(out_path, &out_fd);
+    ds_.options_->limited_only = true;
+    ds_.options_->stream_to_socket = true;
+    RedirectOutputToFd(out_fd);
+
+    GenerateBugreport();
+    OpenArchive(out_path.c_str(), &handle_);
+
+    ZipEntry entry;
+    VerifyEntry(handle_, "main_entry.txt", &entry);
+    std::string bugreport_txt_name;
+    bugreport_txt_name.resize(entry.uncompressed_length);
+    ExtractToMemory(handle_, &entry, reinterpret_cast<uint8_t*>(bugreport_txt_name.data()),
+                    entry.uncompressed_length);
+    EXPECT_THAT(bugreport_txt_name,
+                testing::ContainsRegex("(bugreport-.+(-[[:digit:]]+){6}\\.txt)"));
+    VerifyEntry(handle_, bugreport_txt_name, &entry);
+}
+
 class DumpstateServiceTest : public DumpstateBaseTest {
   public:
     DumpstateService dss;
 };
-
-TEST_F(DumpstateServiceTest, SetListenerNoName) {
-    sp<DumpstateListenerMock> listener(new DumpstateListenerMock());
-    sp<IDumpstateToken> token;
-    EXPECT_TRUE(dss.setListener("", listener, /* getSectionDetails = */ false, &token).isOk());
-    ASSERT_THAT(token, IsNull());
-}
-
-TEST_F(DumpstateServiceTest, SetListenerNoPointer) {
-    sp<IDumpstateToken> token;
-    EXPECT_TRUE(
-        dss.setListener("whatever", nullptr, /* getSectionDetails = */ false, &token).isOk());
-    ASSERT_THAT(token, IsNull());
-}
-
-TEST_F(DumpstateServiceTest, SetListenerTwice) {
-    sp<DumpstateListenerMock> listener(new DumpstateListenerMock());
-    sp<IDumpstateToken> token;
-    EXPECT_TRUE(
-        dss.setListener("whatever", listener, /* getSectionDetails = */ false, &token).isOk());
-    ASSERT_THAT(token, NotNull());
-    EXPECT_THAT(Dumpstate::GetInstance().listener_name_, StrEq("whatever"));
-    EXPECT_FALSE(Dumpstate::GetInstance().report_section_);
-
-    token.clear();
-    EXPECT_TRUE(
-        dss.setListener("whatsoever", listener, /* getSectionDetails = */ false, &token).isOk());
-    ASSERT_THAT(token, IsNull());
-    EXPECT_THAT(Dumpstate::GetInstance().listener_name_, StrEq("whatever"));
-    EXPECT_FALSE(Dumpstate::GetInstance().report_section_);
-}
-
-TEST_F(DumpstateServiceTest, SetListenerWithSectionDetails) {
-    sp<DumpstateListenerMock> listener(new DumpstateListenerMock());
-    sp<IDumpstateToken> token;
-    Dumpstate::GetInstance().listener_ = nullptr;
-    EXPECT_TRUE(
-        dss.setListener("whatever", listener, /* getSectionDetails = */ true, &token).isOk());
-    ASSERT_THAT(token, NotNull());
-    EXPECT_THAT(Dumpstate::GetInstance().listener_name_, StrEq("whatever"));
-    EXPECT_TRUE(Dumpstate::GetInstance().report_section_);
-}
 
 class ProgressTest : public DumpstateBaseTest {
   public:
@@ -1710,6 +1665,175 @@ TEST_F(DumpstateUtilTest, DumpFileOnDryRun) {
         out, StartsWith("------ Might as well dump. Dump! (" + kTestDataPath + "single-line.txt:"));
     EXPECT_THAT(out, EndsWith("skipped on dry run\n"));
 }
+
+class DumpPoolTest : public DumpstateBaseTest {
+  public:
+    void SetUp() {
+        dump_pool_ = std::make_unique<DumpPool>(kTestDataPath);
+        DumpstateBaseTest::SetUp();
+        CreateOutputFile();
+    }
+
+    void CreateOutputFile() {
+        out_path_ = kTestDataPath + "out.txt";
+        out_fd_.reset(TEMP_FAILURE_RETRY(open(out_path_.c_str(),
+                O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
+                S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)));
+        ASSERT_GE(out_fd_.get(), 0) << "could not create FD for path "
+                << out_path_;
+    }
+
+    int getTempFileCounts(const std::string& folder) {
+        int count = 0;
+        std::unique_ptr<DIR, decltype(&closedir)> dir_ptr(opendir(folder.c_str()),
+                &closedir);
+        if (!dir_ptr) {
+            return -1;
+        }
+        int dir_fd = dirfd(dir_ptr.get());
+        if (dir_fd < 0) {
+            return -1;
+        }
+
+        struct dirent* de;
+        while ((de = readdir(dir_ptr.get()))) {
+            if (de->d_type != DT_REG) {
+                continue;
+            }
+            std::string file_name(de->d_name);
+            if (file_name.find(DumpPool::PREFIX_TMPFILE_NAME) != 0) {
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    void setLogDuration(bool log_duration) {
+        dump_pool_->setLogDuration(log_duration);
+    }
+
+    std::unique_ptr<DumpPool> dump_pool_;
+    android::base::unique_fd out_fd_;
+    std::string out_path_;
+};
+
+TEST_F(DumpPoolTest, EnqueueTaskWithFd) {
+    auto dump_func_1 = [](int out_fd) {
+        dprintf(out_fd, "A");
+    };
+    auto dump_func_2 = [](int out_fd) {
+        dprintf(out_fd, "B");
+        sleep(1);
+    };
+    auto dump_func_3 = [](int out_fd) {
+        dprintf(out_fd, "C");
+    };
+    setLogDuration(/* log_duration = */false);
+    dump_pool_->enqueueTaskWithFd(/* task_name = */"1", dump_func_1, std::placeholders::_1);
+    dump_pool_->enqueueTaskWithFd(/* task_name = */"2", dump_func_2, std::placeholders::_1);
+    dump_pool_->enqueueTaskWithFd(/* task_name = */"3", dump_func_3, std::placeholders::_1);
+
+    dump_pool_->waitForTask("1", "", out_fd_.get());
+    dump_pool_->waitForTask("2", "", out_fd_.get());
+    dump_pool_->waitForTask("3", "", out_fd_.get());
+    dump_pool_->shutdown();
+
+    std::string result;
+    ReadFileToString(out_path_, &result);
+    EXPECT_THAT(result, StrEq("A\nB\nC\n"));
+    EXPECT_THAT(getTempFileCounts(kTestDataPath), Eq(0));
+}
+
+TEST_F(DumpPoolTest, EnqueueTask_withDurationLog) {
+    bool run_1 = false;
+    auto dump_func_1 = [&]() {
+        run_1 = true;
+    };
+
+    dump_pool_->enqueueTask(/* task_name = */"1", dump_func_1);
+    dump_pool_->waitForTask("1", "", out_fd_.get());
+    dump_pool_->shutdown();
+
+    std::string result;
+    ReadFileToString(out_path_, &result);
+    EXPECT_TRUE(run_1);
+    EXPECT_THAT(result, StrEq("------ 0.000s was the duration of '1' ------\n"));
+    EXPECT_THAT(getTempFileCounts(kTestDataPath), Eq(0));
+}
+
+TEST_F(DumpPoolTest, Shutdown_withoutCrash) {
+    bool run_1 = false;
+    auto dump_func_1 = [&]() {
+        run_1 = true;
+    };
+    auto dump_func = []() {
+        sleep(1);
+    };
+
+    dump_pool_->start(/* thread_counts = */1);
+    dump_pool_->enqueueTask(/* task_name = */"1", dump_func_1);
+    dump_pool_->enqueueTask(/* task_name = */"2", dump_func);
+    dump_pool_->enqueueTask(/* task_name = */"3", dump_func);
+    dump_pool_->enqueueTask(/* task_name = */"4", dump_func);
+    dump_pool_->waitForTask("1", "", out_fd_.get());
+    dump_pool_->shutdown();
+
+    EXPECT_TRUE(run_1);
+    EXPECT_THAT(getTempFileCounts(kTestDataPath), Eq(0));
+}
+
+class TaskQueueTest : public DumpstateBaseTest {
+public:
+    void SetUp() {
+        DumpstateBaseTest::SetUp();
+    }
+
+    TaskQueue task_queue_;
+};
+
+TEST_F(TaskQueueTest, runTask) {
+    bool is_task1_run = false;
+    bool is_task2_run = false;
+    auto task_1 = [&](bool task_cancelled) {
+        if (task_cancelled) {
+            return;
+        }
+        is_task1_run = true;
+    };
+    auto task_2 = [&](bool task_cancelled) {
+        if (task_cancelled) {
+            return;
+        }
+        is_task2_run = true;
+    };
+    task_queue_.add(task_1, std::placeholders::_1);
+    task_queue_.add(task_2, std::placeholders::_1);
+
+    task_queue_.run(/* do_cancel = */false);
+
+    EXPECT_TRUE(is_task1_run);
+    EXPECT_TRUE(is_task2_run);
+}
+
+TEST_F(TaskQueueTest, runTask_withCancelled) {
+    bool is_task1_cancelled = false;
+    bool is_task2_cancelled = false;
+    auto task_1 = [&](bool task_cancelled) {
+        is_task1_cancelled = task_cancelled;
+    };
+    auto task_2 = [&](bool task_cancelled) {
+        is_task2_cancelled = task_cancelled;
+    };
+    task_queue_.add(task_1, std::placeholders::_1);
+    task_queue_.add(task_2, std::placeholders::_1);
+
+    task_queue_.run(/* do_cancel = */true);
+
+    EXPECT_TRUE(is_task1_cancelled);
+    EXPECT_TRUE(is_task2_cancelled);
+}
+
 
 }  // namespace dumpstate
 }  // namespace os

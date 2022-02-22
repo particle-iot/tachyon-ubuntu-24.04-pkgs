@@ -127,6 +127,7 @@ class DmTargetVerity final : public DmTarget {
     void UseFec(const std::string& device, uint32_t num_roots, uint32_t num_blocks, uint32_t start);
     void SetVerityMode(const std::string& mode);
     void IgnoreZeroBlocks();
+    void CheckAtMostOnce();
 
     std::string name() const override { return "verity"; }
     std::string GetParameterString() const override;
@@ -175,11 +176,14 @@ class DmTargetBow final : public DmTarget {
     DmTargetBow(uint64_t start, uint64_t length, const std::string& target_string)
         : DmTarget(start, length), target_string_(target_string) {}
 
+    void SetBlockSize(uint32_t block_size) { block_size_ = block_size; }
+
     std::string name() const override { return "bow"; }
-    std::string GetParameterString() const override { return target_string_; }
+    std::string GetParameterString() const override;
 
   private:
     std::string target_string_;
+    uint32_t block_size_ = 0;
 };
 
 enum class SnapshotStorageMode {
@@ -280,29 +284,43 @@ class DmTargetCrypt final : public DmTarget {
 class DmTargetDefaultKey final : public DmTarget {
   public:
     DmTargetDefaultKey(uint64_t start, uint64_t length, const std::string& cipher,
-                       const std::string& key, const std::string& blockdev, uint64_t start_sector,
-                       bool is_legacy, bool set_dun)
+                       const std::string& key, const std::string& blockdev, uint64_t start_sector)
         : DmTarget(start, length),
           cipher_(cipher),
           key_(key),
           blockdev_(blockdev),
-          start_sector_(start_sector),
-          is_legacy_(is_legacy),
-          set_dun_(set_dun) {}
+          start_sector_(start_sector) {}
 
-    std::string name() const override { return name_; }
+    std::string name() const override { return kName; }
     bool Valid() const override;
     std::string GetParameterString() const override;
-    static bool IsLegacy(bool* result);
+    void SetUseLegacyOptionsFormat() { use_legacy_options_format_ = true; }
+    void SetSetDun() { set_dun_ = true; }
+    void SetWrappedKeyV0() { is_hw_wrapped_ = true; }
 
   private:
-    static const std::string name_;
+    inline static const std::string kName = "default-key";
+
     std::string cipher_;
     std::string key_;
     std::string blockdev_;
     uint64_t start_sector_;
-    bool is_legacy_;
-    bool set_dun_;
+    bool use_legacy_options_format_ = false;
+    bool set_dun_ = false;
+    bool is_hw_wrapped_ = false;
+};
+
+class DmTargetUser final : public DmTarget {
+  public:
+    DmTargetUser(uint64_t start, uint64_t length, std::string control_device)
+        : DmTarget(start, length), control_device_(control_device) {}
+
+    std::string name() const override { return "user"; }
+    std::string control_device() const { return control_device_; }
+    std::string GetParameterString() const override;
+
+  private:
+    std::string control_device_;
 };
 
 }  // namespace dm

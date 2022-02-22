@@ -27,10 +27,12 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <ext4_utils/ext4_utils.h>
 #include <fs_mgr_overlayfs.h>
 #include <fstab/fstab.h>
+#include <libavb/libavb.h>
 #include <liblp/builder.h>
 #include <liblp/liblp.h>
 #include <libsnapshot/snapshot.h>
@@ -66,7 +68,7 @@ void WipeOverlayfsForPartition(FastbootDevice* device, const std::string& partit
 
         if ((partition + device->GetCurrentSlot()) == partition_name) {
             mount_metadata.emplace();
-            fs_mgr_overlayfs_teardown(entry.mount_point.c_str());
+            android::fs_mgr::TeardownAllOverlayForMountPoint(entry.mount_point);
         }
     }
 }
@@ -122,6 +124,27 @@ int FlashBlockDevice(int fd, std::vector<char>& downloaded_data) {
     }
 }
 
+static void CopyAVBFooter(std::vector<char>* data, const uint64_t block_device_size) {
+    if (data->size() < AVB_FOOTER_SIZE) {
+        return;
+    }
+    std::string footer;
+    uint64_t footer_offset = data->size() - AVB_FOOTER_SIZE;
+    for (int idx = 0; idx < AVB_FOOTER_MAGIC_LEN; idx++) {
+        footer.push_back(data->at(footer_offset + idx));
+    }
+    if (0 != footer.compare(AVB_FOOTER_MAGIC)) {
+        return;
+    }
+
+    // copy AVB footer from end of data to end of block device
+    uint64_t original_data_size = data->size();
+    data->resize(block_device_size, 0);
+    for (int idx = 0; idx < AVB_FOOTER_SIZE; idx++) {
+        data->at(block_device_size - 1 - idx) = data->at(original_data_size - 1 - idx);
+    }
+}
+
 int Flash(FastbootDevice* device, const std::string& partition_name) {
     PartitionHandle handle;
     if (!OpenPartition(device, partition_name, &handle)) {
@@ -131,11 +154,21 @@ int Flash(FastbootDevice* device, const std::string& partition_name) {
     std::vector<char> data = std::move(device->download_data());
     if (data.size() == 0) {
         return -EINVAL;
-    } else if (data.size() > get_block_device_size(handle.fd())) {
-        return -EOVERFLOW;
     }
-    WipeOverlayfsForPartition(device, partition_name);
-    return FlashBlockDevice(handle.fd(), data);
+    uint64_t block_device_size = get_block_device_size(handle.fd());
+    if (data.size() > block_device_size) {
+        return -EOVERFLOW;
+    } else if (data.size() < block_device_size &&
+               (partition_name == "boot" || partition_name == "boot_a" ||
+                partition_name == "boot_b")) {
+        CopyAVBFooter(&data, block_device_size);
+    }
+    if (android::base::GetProperty("ro.system.build.type", "") != "user") {
+        WipeOverlayfsForPartition(device, partition_name);
+    }
+    int result = FlashBlockDevice(handle.fd(), data);
+    sync();
+    return result;
 }
 
 bool UpdateSuper(FastbootDevice* device, const std::string& super_name, bool wipe) {
@@ -164,7 +197,8 @@ bool UpdateSuper(FastbootDevice* device, const std::string& super_name, bool wip
         if (!FlashPartitionTable(super_name, *new_metadata.get())) {
             return device->WriteFail("Unable to flash new partition table");
         }
-        fs_mgr_overlayfs_teardown();
+        android::fs_mgr::TeardownAllOverlayForMountPoint();
+        sync();
         return device->WriteOkay("Successfully flashed partition table");
     }
 
@@ -203,6 +237,7 @@ bool UpdateSuper(FastbootDevice* device, const std::string& super_name, bool wip
     if (!UpdateAllPartitionMetadata(device, super_name, *new_metadata.get())) {
         return device->WriteFail("Unable to write new partition table");
     }
-    fs_mgr_overlayfs_teardown();
+    android::fs_mgr::TeardownAllOverlayForMountPoint();
+    sync();
     return device->WriteOkay("Successfully updated partition table");
 }

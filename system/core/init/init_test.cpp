@@ -17,6 +17,8 @@
 #include <functional>
 
 #include <android-base/file.h>
+#include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <gtest/gtest.h>
 
 #include "action.h"
@@ -31,6 +33,8 @@
 #include "service_list.h"
 #include "service_parser.h"
 #include "util.h"
+
+using android::base::GetIntProperty;
 
 namespace android {
 namespace init {
@@ -239,6 +243,43 @@ TEST(init, EventTriggerOrderMultipleFiles) {
     EXPECT_EQ(6, num_executed);
 }
 
+TEST(init, RejectsCriticalAndOneshotService) {
+    if (GetIntProperty("ro.product.first_api_level", 10000) < 30) {
+        GTEST_SKIP() << "Test only valid for devices launching with R or later";
+    }
+
+    std::string init_script =
+            R"init(
+service A something
+  class first
+  critical
+  oneshot
+)init";
+
+    TemporaryFile tf;
+    ASSERT_TRUE(tf.fd != -1);
+    ASSERT_TRUE(android::base::WriteStringToFd(init_script, tf.fd));
+
+    ServiceList service_list;
+    Parser parser;
+    parser.AddSectionParser("service",
+                            std::make_unique<ServiceParser>(&service_list, nullptr, std::nullopt));
+
+    ASSERT_TRUE(parser.ParseConfig(tf.path));
+    ASSERT_EQ(1u, parser.parse_error_count());
+}
+
+class TestCaseLogger : public ::testing::EmptyTestEventListener {
+    void OnTestStart(const ::testing::TestInfo& test_info) override {
+#ifdef __ANDROID__
+        LOG(INFO) << "===== " << test_info.test_suite_name() << "::" << test_info.name() << " ("
+                  << test_info.file() << ":" << test_info.line() << ")";
+#else
+        UNUSED(test_info);
+#endif
+    }
+};
+
 }  // namespace init
 }  // namespace android
 
@@ -255,5 +296,6 @@ int main(int argc, char** argv) {
     }
 
     testing::InitGoogleTest(&argc, argv);
+    testing::UnitTest::GetInstance()->listeners().Append(new android::init::TestCaseLogger());
     return RUN_ALL_TESTS();
 }

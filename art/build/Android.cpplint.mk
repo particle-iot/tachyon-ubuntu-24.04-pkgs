@@ -16,6 +16,9 @@
 
 include art/build/Android.common_build.mk
 
+# We need to be in art directory to properly initialize ART_CPPLINT_SRC variable.
+LOCAL_PATH := $(art_path)
+
 # Use upstream cpplint (toolpath from .repo/manifests/GLOBAL-PREUPLOAD.cfg).
 ART_CPPLINT := external/google-styleguide/cpplint/cpplint.py
 
@@ -67,6 +70,9 @@ $(foreach file, $(ART_CPPLINT_SRC), $(eval $(call declare-art-cpplint-target,$(f
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := cpplint-art-phony
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../NOTICE
 LOCAL_MODULE_TAGS := optional
 LOCAL_ADDITIONAL_DEPENDENCIES := $(ART_CPPLINT_TARGETS)
 include $(BUILD_PHONY_PACKAGE)

@@ -21,6 +21,8 @@
 
 #include <sys/types.h>
 
+#include <optional>
+
 #include <cutils/multiuser.h>
 
 namespace android {
@@ -34,8 +36,10 @@ static constexpr int DEX2OAT_FOR_FILTER          = 3;
 
 #define ANDROID_ART_APEX_BIN "/apex/com.android.art/bin"
 // Location of binaries in the Android Runtime APEX.
-static constexpr const char* kDex2oatPath = ANDROID_ART_APEX_BIN "/dex2oat";
-static constexpr const char* kDex2oatDebugPath = ANDROID_ART_APEX_BIN "/dex2oatd";
+static constexpr const char* kDex2oat32Path = ANDROID_ART_APEX_BIN "/dex2oat32";
+static constexpr const char* kDex2oat64Path = ANDROID_ART_APEX_BIN "/dex2oat64";
+static constexpr const char* kDex2oatDebug32Path = ANDROID_ART_APEX_BIN "/dex2oatd32";
+static constexpr const char* kDex2oatDebug64Path = ANDROID_ART_APEX_BIN "/dex2oatd64";
 static constexpr const char* kProfmanPath = ANDROID_ART_APEX_BIN "/profman";
 static constexpr const char* kProfmanDebugPath = ANDROID_ART_APEX_BIN "/profmand";
 static constexpr const char* kDexoptanalyzerPath = ANDROID_ART_APEX_BIN "/dexoptanalyzer";
@@ -50,15 +54,20 @@ bool clear_primary_current_profile(const std::string& pkgname, const std::string
 // Clear all current profiles identified by the given profile name (all users).
 bool clear_primary_current_profiles(const std::string& pkgname, const std::string& profile_name);
 
-// Decide if profile guided compilation is needed or not based on existing profiles.
+// Decides if profile guided compilation is needed or not based on existing profiles.
 // The analysis is done for a single profile name (which corresponds to a single code path).
-// Returns true if there is enough information in the current profiles that makes it
-// worth to recompile the package.
-// If the return value is true all the current profiles would have been merged into
-// the reference profiles accessible with open_reference_profile().
-bool analyze_primary_profiles(uid_t uid,
-                              const std::string& pkgname,
-                              const std::string& profile_name);
+//
+// Returns PROFILES_ANALYSIS_OPTIMIZE if there is enough information in the current profiles
+// that makes it worth to recompile the package.
+// If the return value is PROFILES_ANALYSIS_OPTIMIZE all the current profiles would have been
+// merged into the reference profiles accessible with open_reference_profile().
+//
+// Return PROFILES_ANALYSIS_DONT_OPTIMIZE_SMALL_DELTA if the package should not optimize.
+// As a special case returns PROFILES_ANALYSIS_DONT_OPTIMIZE_EMPTY_PROFILES if all profiles are
+// empty.
+int analyze_primary_profiles(uid_t uid,
+                             const std::string& pkgname,
+                             const std::string& profile_name);
 
 // Create a snapshot of the profile information for the given package profile.
 // If appId is -1, the method creates the profile snapshot for the boot image.
@@ -98,17 +107,18 @@ bool prepare_app_profile(const std::string& package_name,
                          appid_t app_id,
                          const std::string& profile_name,
                          const std::string& code_path,
-                         const std::unique_ptr<std::string>& dex_metadata);
+                         const std::optional<std::string>& dex_metadata);
 
-bool delete_odex(const char* apk_path, const char* instruction_set, const char* output_path);
+// Returns the total bytes that were freed, or -1 in case of errors.
+int64_t delete_odex(const char* apk_path, const char* instruction_set, const char* output_path);
 
 bool reconcile_secondary_dex_file(const std::string& dex_path,
         const std::string& pkgname, int uid, const std::vector<std::string>& isas,
-        const std::unique_ptr<std::string>& volumeUuid, int storage_flag,
+        const std::optional<std::string>& volumeUuid, int storage_flag,
         /*out*/bool* out_secondary_dex_exists);
 
 bool hash_secondary_dex_file(const std::string& dex_path,
-        const std::string& pkgname, int uid, const std::unique_ptr<std::string>& volume_uuid,
+        const std::string& pkgname, int uid, const std::optional<std::string>& volume_uuid,
         int storage_flag, std::vector<uint8_t>* out_secondary_dex_hash);
 
 int dexopt(const char *apk_path, uid_t uid, const char *pkgName, const char *instruction_set,

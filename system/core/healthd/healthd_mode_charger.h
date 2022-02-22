@@ -53,6 +53,11 @@ class Charger : public ::android::hardware::health::V2_1::implementation::HalHea
     // HalHealthLoop overrides
     void OnHealthInfoChanged(const HealthInfo_2_1& health_info) override;
 
+    // Allowed to be mocked for testing.
+    virtual int CreateDisplaySurface(const std::string& name, GRSurface** surface);
+    virtual int CreateMultiDisplaySurface(const std::string& name, int* frames, int* fps,
+                                          GRSurface*** surface);
+
   private:
     void InitDefaultAnimationFrames();
     void UpdateScreenState(int64_t now);
@@ -72,7 +77,7 @@ class Charger : public ::android::hardware::health::V2_1::implementation::HalHea
     int64_t next_pwr_check_ = 0;
     int64_t wait_batt_level_timestamp_ = 0;
 
-    key_state keys_[KEY_MAX + 1];
+    key_state keys_[KEY_MAX + 1] = {};
 
     animation batt_anim_;
     GRSurface* surf_unknown_ = nullptr;

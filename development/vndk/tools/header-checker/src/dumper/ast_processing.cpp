@@ -17,9 +17,9 @@
 #include "dumper/abi_wrappers.h"
 #include "repr/ir_dumper.h"
 
-#include <clang/Lex/Token.h>
+#include <clang/AST/PrettyPrinter.h>
 #include <clang/AST/QualTypeNames.h>
-#include <clang/Index/CodegenNameGenerator.h>
+#include <clang/Lex/Token.h>
 
 #include <fstream>
 #include <iostream>
@@ -29,6 +29,19 @@
 namespace header_checker {
 namespace dumper {
 
+
+class PrintNormalizedPath : public clang::PrintingCallbacks {
+ public:
+  PrintNormalizedPath(const utils::RootDirs &root_dirs)
+      : root_dirs_(root_dirs) {}
+
+  std::string remapPath(llvm::StringRef path) const {
+    return utils::NormalizePath(path.str(), root_dirs_);
+  }
+
+ private:
+  const utils::RootDirs &root_dirs_;
+};
 
 HeaderASTVisitor::HeaderASTVisitor(
     const HeaderCheckerOptions &options, clang::MangleContext *mangle_contextp,
@@ -92,7 +105,8 @@ static bool AddMangledFunctions(const repr::FunctionIR *function,
 bool HeaderASTVisitor::ShouldSkipFunctionDecl(const clang::FunctionDecl *decl) {
   if (!decl->getDefinition()) {
     if (!options_.dump_function_declarations_ ||
-        options_.source_file_ != ABIWrapper::GetDeclSourceFile(decl, cip_)) {
+        options_.source_file_ !=
+            ABIWrapper::GetDeclSourceFile(decl, cip_, options_.root_dirs_)) {
       return true;
     }
   }
@@ -135,7 +149,7 @@ bool HeaderASTVisitor::VisitFunctionDecl(const clang::FunctionDecl *decl) {
   auto function_wrapper = function_decl_wrapper.GetFunctionDecl();
   // Destructors and Constructors can have more than 1 symbol generated from the
   // same Decl.
-  clang::index::CodegenNameGenerator cg(*ast_contextp_);
+  clang::ASTNameGenerator cg(*ast_contextp_);
   std::vector<std::string> manglings = cg.getAllManglings(decl);
   if (!manglings.empty()) {
     return AddMangledFunctions(function_wrapper.get(), module_, manglings);
@@ -157,21 +171,19 @@ bool HeaderASTVisitor::VisitVarDecl(const clang::VarDecl *decl) {
   return global_var_decl_wrapper.GetGlobalVarDecl();
 }
 
-static bool AreHeadersExported(const std::set<std::string> &exported_headers) {
-  return !exported_headers.empty();
-}
-
 // We don't need to recurse into Declarations which are not exported.
 bool HeaderASTVisitor::TraverseDecl(clang::Decl *decl) {
   if (!decl) {
     return true;
   }
-  std::string source_file = ABIWrapper::GetDeclSourceFile(decl, cip_);
+  std::string source_file =
+      ABIWrapper::GetDeclSourceFile(decl, cip_, options_.root_dirs_);
   ast_caches_->decl_to_source_file_cache_.insert(
       std::make_pair(decl, source_file));
   // If no exported headers are specified we assume the whole AST is exported.
   const auto &exported_headers = options_.exported_headers_;
-  if ((decl != tu_decl_) && AreHeadersExported(exported_headers) &&
+  if ((decl != tu_decl_) && options_.dump_exported_only_ &&
+      source_file != ast_caches_->translation_unit_source_ &&
       (exported_headers.find(source_file) == exported_headers.end())) {
     return true;
   }
@@ -190,21 +202,21 @@ HeaderASTConsumer::HeaderASTConsumer(
     : cip_(compiler_instancep), options_(options) {}
 
 void HeaderASTConsumer::HandleTranslationUnit(clang::ASTContext &ctx) {
-  clang::PrintingPolicy policy(ctx.getPrintingPolicy());
+  clang::PrintingPolicy old_policy(ctx.getPrintingPolicy());
+  clang::PrintingPolicy policy(old_policy);
   // Suppress 'struct' keyword for C source files while getting QualType string
   // names to avoid inconsistency between C and C++ (for C++ files, this is true
   // by default)
   policy.SuppressTagKeyword = true;
+  PrintNormalizedPath callbacks(options_.root_dirs_);
+  policy.Callbacks = &callbacks;
   ctx.setPrintingPolicy(policy);
   clang::TranslationUnitDecl *translation_unit = ctx.getTranslationUnitDecl();
   std::unique_ptr<clang::MangleContext> mangle_contextp(
       ctx.createMangleContext());
-  const std::string &translation_unit_source =
-      ABIWrapper::GetDeclSourceFile(translation_unit, cip_);
-  ASTCaches ast_caches(translation_unit_source);
-  if (!options_.exported_headers_.empty()) {
-    options_.exported_headers_.insert(translation_unit_source);
-  }
+  ASTCaches ast_caches(ABIWrapper::GetDeclSourceFile(translation_unit, cip_,
+                                                     options_.root_dirs_),
+                       options_.root_dirs_);
 
   std::unique_ptr<repr::ModuleIR> module(
       new repr::ModuleIR(nullptr /*FIXME*/));
@@ -223,6 +235,8 @@ void HeaderASTConsumer::HandleTranslationUnit(clang::ASTContext &ctx) {
     llvm::errs() << "Serialization failed\n";
     ::exit(1);
   }
+
+  ctx.setPrintingPolicy(old_policy);
 }
 
 

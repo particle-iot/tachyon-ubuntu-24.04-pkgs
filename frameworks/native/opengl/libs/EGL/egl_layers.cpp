@@ -18,9 +18,9 @@
 
 #include <EGL/egl.h>
 #include <android-base/file.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <android/dlext.h>
-#include <cutils/properties.h>
 #include <dlfcn.h>
 #include <graphicsenv/GraphicsEnv.h>
 #include <log/log.h>
@@ -151,15 +151,13 @@ LayerLoader& LayerLoader::getInstance() {
 const char kSystemLayerLibraryDir[] = "/data/local/debug/gles";
 
 std::string LayerLoader::GetDebugLayers() {
-    // Layers can be specified at the Java level in GraphicsEnvironemnt
+    // Layers can be specified at the Java level in GraphicsEnvironment
     // gpu_debug_layers_gles = layer1:layer2:layerN
     std::string debug_layers = android::GraphicsEnv::getInstance().getDebugLayersGLES();
 
     if (debug_layers.empty()) {
         // Only check system properties if Java settings are empty
-        char prop[PROPERTY_VALUE_MAX];
-        property_get("debug.gles.layers", prop, "");
-        debug_layers = prop;
+        debug_layers = base::GetProperty("debug.gles.layers", "");
     }
 
     return debug_layers;
@@ -337,7 +335,7 @@ void LayerLoader::LoadLayers() {
 
     // Only enable the system search path for non-user builds
     std::string system_path;
-    if (property_get_bool("ro.debuggable", false) && prctl(PR_GET_DUMPABLE, 0, 0, 0, 0)) {
+    if (android::GraphicsEnv::getInstance().isDebuggable()) {
         system_path = kSystemLayerLibraryDir;
     }
 

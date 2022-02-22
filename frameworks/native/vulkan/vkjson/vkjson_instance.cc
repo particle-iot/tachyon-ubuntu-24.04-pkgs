@@ -136,6 +136,16 @@ VkJsonDevice VkJsonGetDevice(VkInstance instance,
       features.pNext =
           &device.ext_variable_pointer_features.variable_pointer_features_khr;
     }
+    if (HasExtension("VK_KHR_shader_float16_int8", device.extensions)) {
+      device.ext_shader_float16_int8_features.reported = true;
+      device.ext_shader_float16_int8_features.shader_float16_int8_features_khr
+          .sType =
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR;
+      device.ext_shader_float16_int8_features.shader_float16_int8_features_khr
+          .pNext = features.pNext;
+      features.pNext = &device.ext_shader_float16_int8_features
+                            .shader_float16_int8_features_khr;
+    }
     vkpGetPhysicalDeviceFeatures2KHR(physical_device, &features);
     device.features = features.features;
   } else {
@@ -155,7 +165,9 @@ VkJsonDevice VkJsonGetDevice(VkInstance instance,
 
   VkFormatProperties format_properties = {};
   for (VkFormat format = VK_FORMAT_R4G4_UNORM_PACK8;
-       format <= VK_FORMAT_END_RANGE;
+       // TODO(http://b/171403054): avoid hard-coding last value in the
+       // contiguous range
+       format <= VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
        format = static_cast<VkFormat>(format + 1)) {
     vkGetPhysicalDeviceFormatProperties(physical_device, format,
                                         &format_properties);
@@ -168,6 +180,8 @@ VkJsonDevice VkJsonGetDevice(VkInstance instance,
 
   if (device.properties.apiVersion >= VK_API_VERSION_1_1) {
     for (VkFormat format = VK_FORMAT_G8B8G8R8_422_UNORM;
+         // TODO(http://b/171403054): avoid hard-coding last value in the
+         // contiguous range
          format <= VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM;
          format = static_cast<VkFormat>(format + 1)) {
       vkGetPhysicalDeviceFormatProperties(physical_device, format,
@@ -419,6 +433,10 @@ VkJsonInstance VkJsonGetInstance() {
     VkJsonDeviceGroup device_group;
     std::vector<VkPhysicalDeviceGroupProperties> group_properties;
     group_properties.resize(count);
+    for (auto& properties : group_properties) {
+      properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES;
+      properties.pNext = nullptr;
+    }
     result = (*vkpEnumeratePhysicalDeviceGroups)(vkinstance, &count,
                                                  group_properties.data());
     if (result != VK_SUCCESS) {

@@ -21,6 +21,7 @@
 
 #include <android-base/parseint.h>
 
+#include "import_parser.h"
 #include "keyword_map.h"
 #include "parser.h"
 
@@ -33,12 +34,12 @@ Result<void> ParsePermissionsLine(std::vector<std::string>&& args,
                                   std::vector<SysfsPermissions>* out_sysfs_permissions,
                                   std::vector<Permissions>* out_dev_permissions) {
     bool is_sysfs = out_sysfs_permissions != nullptr;
-    if (is_sysfs && args.size() != 5) {
-        return Error() << "/sys/ lines must have 5 entries";
+    if (is_sysfs && !(args.size() == 5 || args.size() == 6)) {
+        return Error() << "/sys/ lines must have 5 or 6 entries";
     }
 
-    if (!is_sysfs && args.size() != 4) {
-        return Error() << "/dev/ lines must have 4 entries";
+    if (!is_sysfs && !(args.size() == 4 || args.size() == 5)) {
+        return Error() << "/dev/ lines must have 4 or 5 entries";
     }
 
     auto it = args.begin();
@@ -69,10 +70,19 @@ Result<void> ParsePermissionsLine(std::vector<std::string>&& args,
     }
     gid_t gid = grp->gr_gid;
 
+    bool no_fnm_pathname = false;
+    if (it != args.end()) {
+        std::string& flags = *it++;
+        if (flags != "no_fnm_pathname") {
+            return Error() << "invalid option '" << flags << "', only no_fnm_pathname is supported";
+        }
+        no_fnm_pathname = true;
+    }
+
     if (is_sysfs) {
-        out_sysfs_permissions->emplace_back(name, sysfs_attribute, perm, uid, gid);
+        out_sysfs_permissions->emplace_back(name, sysfs_attribute, perm, uid, gid, no_fnm_pathname);
     } else {
-        out_dev_permissions->emplace_back(name, perm, uid, gid);
+        out_dev_permissions->emplace_back(name, perm, uid, gid, no_fnm_pathname);
     }
     return {};
 }
@@ -91,15 +101,15 @@ Result<void> ParseFirmwareDirectoriesLine(std::vector<std::string>&& args,
 Result<void> ParseExternalFirmwareHandlerLine(
         std::vector<std::string>&& args,
         std::vector<ExternalFirmwareHandler>* external_firmware_handlers) {
-    if (args.size() != 4) {
-        return Error() << "external_firmware_handler lines must have exactly 3 parameters";
+    if (args.size() != 4 && args.size() != 5) {
+        return Error() << "external_firmware_handler lines must have 3 or 4 parameters";
     }
 
     if (std::find_if(external_firmware_handlers->begin(), external_firmware_handlers->end(),
-                     [&args](const auto& other) { return other.devpath == args[2]; }) !=
+                     [&args](const auto& other) { return other.devpath == args[1]; }) !=
         external_firmware_handlers->end()) {
         return Error() << "found a previous external_firmware_handler with the same devpath, '"
-                       << args[2] << "'";
+                       << args[1] << "'";
     }
 
     passwd* pwd = getpwnam(args[2].c_str());
@@ -107,7 +117,19 @@ Result<void> ParseExternalFirmwareHandlerLine(
         return ErrnoError() << "invalid handler uid'" << args[2] << "'";
     }
 
-    ExternalFirmwareHandler handler(std::move(args[1]), pwd->pw_uid, std::move(args[3]));
+    gid_t gid = 0;
+    int handler_index = 3;
+    if (args.size() == 5) {
+        struct group* grp = getgrnam(args[3].c_str());
+        if (!grp) {
+            return ErrnoError() << "invalid handler gid '" << args[3] << "'";
+        }
+        gid = grp->gr_gid;
+        handler_index = 4;
+    }
+
+    ExternalFirmwareHandler handler(std::move(args[1]), pwd->pw_uid, gid,
+                                    std::move(args[handler_index]));
     external_firmware_handlers->emplace_back(std::move(handler));
 
     return {};
@@ -125,6 +147,17 @@ Result<void> ParseEnabledDisabledLine(std::vector<std::string>&& args, bool* fea
     } else {
         return Error() << args[0] << " takes either 'enabled' or 'disabled' as a parameter";
     }
+
+    return {};
+}
+
+Result<void> ParseParallelRestoreconDirsLine(std::vector<std::string>&& args,
+                                          std::vector<std::string>* parallel_restorecon_dirs) {
+    if (args.size() != 2) {
+        return Error() << "parallel_restorecon_dir lines must have exactly 2 parameters";
+    }
+
+    std::move(std::next(args.begin()), args.end(), std::back_inserter(*parallel_restorecon_dirs));
 
     return {};
 }
@@ -224,6 +257,7 @@ UeventdConfiguration ParseConfig(const std::vector<std::string>& configs) {
     Parser parser;
     UeventdConfiguration ueventd_configuration;
 
+    parser.AddSectionParser("import", std::make_unique<ImportParser>(&parser));
     parser.AddSectionParser("subsystem",
                             std::make_unique<SubsystemParser>(&ueventd_configuration.subsystems));
 
@@ -245,6 +279,9 @@ UeventdConfiguration ParseConfig(const std::vector<std::string>& configs) {
     parser.AddSingleLineParser("uevent_socket_rcvbuf_size",
                                std::bind(ParseUeventSocketRcvbufSizeLine, _1,
                                          &ueventd_configuration.uevent_socket_rcvbuf_size));
+    parser.AddSingleLineParser("parallel_restorecon_dir",
+                               std::bind(ParseParallelRestoreconDirsLine, _1,
+                                         &ueventd_configuration.parallel_restorecon_dirs));
     parser.AddSingleLineParser("parallel_restorecon",
                                std::bind(ParseEnabledDisabledLine, _1,
                                          &ueventd_configuration.enable_parallel_restorecon));

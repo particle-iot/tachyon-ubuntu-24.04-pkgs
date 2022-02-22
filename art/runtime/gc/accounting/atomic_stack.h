@@ -113,7 +113,7 @@ class AtomicStack {
     *start_address = begin_ + index;
     *end_address = begin_ + new_index;
     if (kIsDebugBuild) {
-      // Sanity check that the memory is zero.
+      // Check that the memory is zero.
       for (int32_t i = index; i < new_index; ++i) {
         DCHECK_EQ(begin_[i].AsMirrorPtr(), static_cast<T*>(nullptr))
             << "i=" << i << " index=" << index << " new_index=" << new_index;
@@ -285,7 +285,7 @@ class AtomicStack {
   DISALLOW_COPY_AND_ASSIGN(AtomicStack);
 };
 
-typedef AtomicStack<mirror::Object> ObjectStack;
+using ObjectStack = AtomicStack<mirror::Object>;
 
 }  // namespace accounting
 }  // namespace gc

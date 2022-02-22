@@ -14,6 +14,10 @@
 // limitations under the License.
 //
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_library_static {
     name: "libdm",
     defaults: ["fs_mgr_defaults"],
@@ -42,6 +46,8 @@ cc_library_static {
             enabled: false,
         },
     },
+    ramdisk_available: true,
+    vendor_ramdisk_available: true,
 }
 
 filegroup {
@@ -58,11 +64,11 @@ cc_defaults {
     defaults: ["fs_mgr_defaults"],
     static_libs: [
         "libdm",
+        "libext2_uuid",
+        "libfs_mgr",
     ],
     shared_libs: [
         "libbase",
-        "libext2_uuid",
-        "libfs_mgr",
         "liblog",
     ],
     srcs: [":libdm_test_srcs"],
@@ -79,22 +85,22 @@ cc_test {
 cc_test {
     name: "vts_libdm_test",
     defaults: ["libdm_test_defaults"],
-    test_suites: ["vts-core"],
+    test_suites: ["vts"],
     test_min_api_level: 29,
 }
 
 cc_fuzz {
-  name: "dm_linear_table_fuzzer",
-  defaults: ["fs_mgr_defaults"],
-  srcs: [
-    "dm_linear_fuzzer.cpp",
-    "test_util.cpp",
-  ],
-  static_libs: [
+    name: "dm_linear_table_fuzzer",
+    defaults: ["fs_mgr_defaults"],
+    srcs: [
+        "dm_linear_fuzzer.cpp",
+        "test_util.cpp",
+    ],
+    static_libs: [
         "libdm",
         "libbase",
         "libext2_uuid",
         "libfs_mgr",
         "liblog",
-  ],
+    ],
 }

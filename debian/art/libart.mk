@@ -1,8 +1,11 @@
 NAME = libart
 
+# From art/runtime/Android.bp
 SOURCES_runtime = \
+  app_info.cc \
   aot_class_linker.cc \
   art_field.cc \
+  sdk_checker.cc \
   art_method.cc \
   backtrace_helper.cc \
   barrier.cc \
@@ -17,12 +20,11 @@ SOURCES_runtime = \
   class_root.cc \
   class_table.cc \
   common_throws.cc \
-  compiler_filter.cc \
+  compat_framework.cc \
   debug_print.cc \
   debugger.cc \
   dex/dex_file_annotations.cc \
   dex_register_location.cc \
-  dex_to_dex_decompiler.cc \
   elf_file.cc \
   exec_utils.cc \
   fault_handler.cc \
@@ -59,8 +61,8 @@ SOURCES_runtime = \
   gc/space/zygote_space.cc \
   gc/task_processor.cc \
   gc/verification.cc \
+  handle.cc \
   hidden_api.cc \
-  hidden_api_jni.cc \
   hprof/hprof.cc \
   image.cc \
   index_bss_mapping.cc \
@@ -79,6 +81,7 @@ SOURCES_runtime = \
   interpreter/shadow_frame.cc \
   interpreter/unstarted_runtime.cc \
   java_frame_root_info.cc \
+  javaheapprof/javaheapsampler.cc \
   jit/debugger_interface.cc \
   jit/jit.cc \
   jit/jit_code_cache.cc \
@@ -91,8 +94,8 @@ SOURCES_runtime = \
   jni/jni_id_manager.cc \
   jni/jni_internal.cc \
   linear_alloc.cc \
-  managed_stack.cc \
   method_handles.cc \
+  metrics/reporter.cc \
   mirror/array.cc \
   mirror/class.cc \
   mirror/class_ext.cc \
@@ -194,10 +197,6 @@ SOURCES_runtime = \
   arch/arm/registers_arm.cc \
   arch/arm64/instruction_set_features_arm64.cc \
   arch/arm64/registers_arm64.cc \
-  arch/mips/instruction_set_features_mips.cc \
-  arch/mips/registers_mips.cc \
-  arch/mips64/instruction_set_features_mips64.cc \
-  arch/mips64/registers_mips64.cc \
   arch/x86/instruction_set_features_x86.cc \
   arch/x86/registers_x86.cc \
   arch/x86_64/registers_x86_64.cc \
@@ -225,10 +224,9 @@ SOURCES_runtime += \
   runtime_linux.cc \
   thread_linux.cc \
 
-# Architecture specific sources, which come from runtime/Android.bp
+# Architecture specific sources, which comes from art/runtime/Android.bp
 SOURCES_runtime_arm = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
+  interpreter/mterp/nterp.cc \
   arch/arm/context_arm.cc \
   arch/arm/entrypoints_init_arm.cc \
   arch/arm/instruction_set_features_assembly_tests.S \
@@ -240,8 +238,7 @@ SOURCES_runtime_arm = \
   arch/arm/fault_handler_arm.cc \
 
 SOURCES_runtime_arm64 = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
+  interpreter/mterp/nterp.cc \
   arch/arm64/context_arm64.cc \
   arch/arm64/entrypoints_init_arm64.cc \
   arch/arm64/jni_entrypoints_arm64.S \
@@ -252,8 +249,7 @@ SOURCES_runtime_arm64 = \
   arch/arm64/fault_handler_arm64.cc \
 
 SOURCES_runtime_x86 = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
+  interpreter/mterp/nterp.cc \
   arch/x86/context_x86.cc \
   arch/x86/entrypoints_init_x86.cc \
   arch/x86/jni_entrypoints_x86.S \
@@ -263,8 +259,7 @@ SOURCES_runtime_x86 = \
   arch/x86/fault_handler_x86.cc \
 
 SOURCES_runtime_x86_64 = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
+  interpreter/mterp/nterp.cc \
   arch/x86_64/context_x86_64.cc \
   arch/x86_64/entrypoints_init_x86_64.cc \
   arch/x86_64/jni_entrypoints_x86_64.S \
@@ -274,43 +269,21 @@ SOURCES_runtime_x86_64 = \
   monitor_pool.cc \
   arch/x86/fault_handler_x86.cc \
 
-SOURCES_runtime_mips = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
-  arch/mips/context_mips.cc \
-  arch/mips/entrypoints_init_mips.cc \
-  arch/mips/jni_entrypoints_mips.S \
-  arch/mips/memcmp16_mips.S \
-  arch/mips/quick_entrypoints_mips.S \
-  arch/mips/thread_mips.cc \
-  arch/mips/fault_handler_mips.cc \
-
-SOURCES_runtime_mips64 = \
-  interpreter/mterp/mterp.cc \
-  interpreter/mterp/nterp_stub.cc \
-  arch/mips64/context_mips64.cc \
-  arch/mips64/entrypoints_init_mips64.cc \
-  arch/mips64/jni_entrypoints_mips64.S \
-  arch/mips64/memcmp16_mips64.S \
-  arch/mips64/quick_entrypoints_mips64.S \
-  arch/mips64/thread_mips64.cc \
-  monitor_pool.cc \
-  arch/mips64/fault_handler_mips64.cc \
-
-
 include debian/art/detect-arch.mk
 SOURCES_runtime += $(SOURCES_runtime_$(CPU))
 
-# From libartbase/Android.bp
+# From art/libartbase/Android.bp
 SOURCES_libartbase = \
   arch/instruction_set.cc \
   base/allocator.cc \
   base/arena_allocator.cc \
   base/arena_bit_vector.cc \
   base/bit_vector.cc \
+  base/compiler_filter.cc \
   base/enums.cc \
   base/file_magic.cc \
   base/file_utils.cc \
+  base/flags.cc \
   base/hex_dump.cc \
   base/hiddenapi_flags.cc \
   base/logging.cc \
@@ -319,6 +292,7 @@ SOURCES_libartbase = \
   base/memfd.cc \
   base/memory_region.cc \
   base/mem_map.cc \
+  base/metrics/metrics_common.cc \
   base/os_linux.cc \
   base/runtime_debug.cc \
   base/safe_copy.cc \
@@ -330,9 +304,10 @@ SOURCES_libartbase = \
   base/unix_file/random_access_file_utils.cc \
   base/utils.cc \
   base/zip_archive.cc \
+  base/globals_unix.cc \
   base/mem_map_unix.cc \
 
-# From libdexfile/Android.bp
+# From art/libdexfile/Android.bp
 SOURCES_libdexfile = \
   dex/art_dex_file_loader.cc \
   dex/compact_dex_file.cc \
@@ -371,15 +346,13 @@ SOURCES += \
 SOURCES_OPERATOR = \
   base/callee_save_type.h \
   base/locks.h \
-  class_loader_context.h \
   class_status.h \
-  debugger.h \
+  compilation_kind.h \
   gc_root.h \
   gc/allocator_type.h \
   gc/allocator/rosalloc.h \
   gc/collector_type.h \
   gc/collector/gc_type.h \
-  gc/heap.h \
   gc/space/region_space.h \
   gc/space/space.h \
   gc/weak_root_state.h \
@@ -390,20 +363,18 @@ SOURCES_OPERATOR = \
   jni_id_type.h \
   lock_word.h \
   oat_file.h \
-  object_callbacks.h \
   process_state.h \
   reflective_value_visitor.h \
   stack.h \
   suspend_reason.h \
   thread.h \
   thread_state.h \
-  ti/agent.h \
   trace.h \
   verifier/verifier_enums.h \
 
 SOURCES_OPERATOR := $(foreach source, $(SOURCES_OPERATOR), runtime/$(source))
 
-# from libartbase/Android.bp, and libdexfile/Android.bp
+# From art/libartbase/Android.bp, and art/libdexfile/Android.bp
 SOURCES_OPERATOR += \
   libartbase/arch/instruction_set.h \
   libartbase/base/allocator.h \
@@ -414,7 +385,7 @@ SOURCES_OPERATOR += \
   libdexfile/dex/dex_instruction.h \
   libdexfile/dex/dex_instruction_utils.h \
   libdexfile/dex/invoke_type.h \
-  libdexfile/dex/method_reference.h \
+#  libdexfile/dex/method_reference.h \
 
 SOURCES_OPERATOR := $(foreach source, $(SOURCES_OPERATOR), art/$(source))
 
@@ -480,19 +451,21 @@ CPPFLAGS += \
   -Iart/libnativebridge/include \
   -Iart/libnativeloader/include \
   -Iart/libprofile \
+  -Iart/odrefresh/include \
   -Iart/runtime \
   -Iart/sigchainlib \
   -Iart/tools/cpp-define-generator \
   -Idebian/out/art \
+  -Iexternal/cpu_features/include \
   -Ilibnativehelper/header_only_include \
   -Ilibnativehelper/include \
   -Ilibnativehelper/include_jni \
-  -Ilibnativehelper/platform_include \
-  -Isystem/core/base/include \
-  -Isystem/core/libbacktrace/include \
-  -Isystem/core/liblog/include \
-  -Isystem/core/libunwindstack/include \
-  -Isystem/core/libziparchive/include \
+  -Ilibnativehelper/include_platform_header_only \
+  -Isystem/libbase/include \
+  -Isystem/libziparchive/include \
+  -Isystem/logging/liblog/include \
+  -Isystem/unwinding/libbacktrace/include \
+  -Isystem/unwinding/libunwindstack/include \
   -Umips \
 
 CC_ASSEMBLY = clang
@@ -513,15 +486,15 @@ $(OBJECTS_ASSEMBLY): %.o: %.S
 
 debian/out/art/operator_out.cc: $(SOURCES_OPERATOR)
 	mkdir --parents debian/out/art
-	python3 art/tools/generate_operator_out.py art/libartbase $^ > $@
+	art/tools/generate_operator_out.py art/runtime $^ > $@
 
-debian/out/art/mterp.S: art/runtime/interpreter/mterp/$(CPU)/*.S
+debian/out/art/mterp.S: art/runtime/interpreter/mterp/$(CPU)ng/*.S
 	mkdir --parents debian/out/art
 	python3 art/runtime/interpreter/mterp/gen_mterp.py $@ $^
 
 debian/out/art/asm_defines.h: debian/out/art/asm_defines.output
 	mkdir --parents debian/out/art
-	python3 art/tools/cpp-define-generator/make_header.py $^ > $@
+	art/tools/cpp-define-generator/make_header.py $^ > $@
 
 debian/out/art/asm_defines.output: art/tools/cpp-define-generator/asm_defines.cc
 	mkdir --parents debian/out/art

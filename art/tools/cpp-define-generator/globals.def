@@ -22,7 +22,7 @@
 #include "dex/modifiers.h"
 #include "gc/accounting/card_table.h"
 #include "gc/heap.h"
-#include "interpreter/mterp/mterp.h"
+#include "interpreter/mterp/nterp.h"
 #include "jit/jit.h"
 #include "mirror/object.h"
 #include "mirror/object_reference.h"
@@ -30,8 +30,14 @@
 #include "stack.h"
 #endif
 
+ASM_DEFINE(ACCESS_FLAGS_METHOD_IS_NATIVE,
+           art::kAccNative)
+ASM_DEFINE(ACCESS_FLAGS_METHOD_IS_NATIVE_BIT,
+           art::MostSignificantBit(art::kAccNative))
 ASM_DEFINE(ACCESS_FLAGS_METHOD_IS_FAST_NATIVE,
            art::kAccFastNative)
+ASM_DEFINE(ACCESS_FLAGS_METHOD_IS_CRITICAL_NATIVE,
+           art::kAccCriticalNative)
 ASM_DEFINE(ACCESS_FLAGS_CLASS_IS_FINALIZABLE,
            art::kAccClassIsFinalizable)
 ASM_DEFINE(ACCESS_FLAGS_CLASS_IS_FINALIZABLE_BIT,
@@ -54,10 +60,10 @@ ASM_DEFINE(JIT_HOTNESS_DISABLE,
            art::jit::kJitHotnessDisabled)
 ASM_DEFINE(MIN_LARGE_OBJECT_THRESHOLD,
            art::gc::Heap::kMinLargeObjectThreshold)
-ASM_DEFINE(MTERP_HANDLER_SIZE,
-           art::interpreter::kMterpHandlerSize)
-ASM_DEFINE(MTERP_HANDLER_SIZE_LOG2,
-           art::WhichPowerOf2(art::interpreter::kMterpHandlerSize))
+ASM_DEFINE(NTERP_HANDLER_SIZE,
+           art::interpreter::kNterpHandlerSize)
+ASM_DEFINE(NTERP_HANDLER_SIZE_LOG2,
+           art::WhichPowerOf2(art::interpreter::kNterpHandlerSize))
 ASM_DEFINE(OBJECT_ALIGNMENT_MASK,
            art::kObjectAlignment - 1)
 ASM_DEFINE(OBJECT_ALIGNMENT_MASK_TOGGLED,
@@ -74,3 +80,7 @@ ASM_DEFINE(STD_MEMORY_ORDER_RELAXED,
            std::memory_order_relaxed)
 ASM_DEFINE(STACK_OVERFLOW_RESERVED_BYTES,
            GetStackOverflowReservedBytes(art::kRuntimeISA))
+ASM_DEFINE(NTERP_HOTNESS_MASK,
+           art::interpreter::kNterpHotnessMask)
+ASM_DEFINE(NTERP_HOTNESS_BITS,
+           art::POPCOUNT(art::interpreter::kNterpHotnessMask))

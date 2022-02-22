@@ -86,7 +86,9 @@ TEST_F(ParsedOptionsTest, ParsedOptions) {
 
   EXPECT_PARSED_EQ_AS_STRING_VECTOR(expected_boot_class_path, Opt::BootClassPath);
   EXPECT_PARSED_EQ(class_path, Opt::ClassPath);
-  EXPECT_PARSED_EQ(std::string("boot_image"), Opt::Image);
+  std::vector<std::string> boot_images = map.GetOrDefault(Opt::Image);
+  ASSERT_EQ(1U, boot_images.size());
+  EXPECT_EQ(std::string("boot_image"), boot_images[0]);
   EXPECT_PARSED_EXISTS(Opt::CheckJni);
   EXPECT_PARSED_EQ(2048U, Opt::MemoryInitialSize);
   EXPECT_PARSED_EQ(4 * KB, Opt::MemoryMaximumSize);
@@ -163,13 +165,11 @@ TEST_F(ParsedOptionsTest, ParsedOptionsInstructionSet) {
     EXPECT_EQ(kRuntimeISA, isa);
   }
 
-  const char* isa_strings[] = { "arm", "arm64", "x86", "x86_64", "mips", "mips64" };
+  const char* isa_strings[] = { "arm", "arm64", "x86", "x86_64" };
   InstructionSet ISAs[] = { InstructionSet::kArm,
                             InstructionSet::kArm64,
                             InstructionSet::kX86,
-                            InstructionSet::kX86_64,
-                            InstructionSet::kMips,
-                            InstructionSet::kMips64 };
+                            InstructionSet::kX86_64 };
   static_assert(arraysize(isa_strings) == arraysize(ISAs), "Need same amount.");
 
   for (size_t i = 0; i < arraysize(isa_strings); ++i) {

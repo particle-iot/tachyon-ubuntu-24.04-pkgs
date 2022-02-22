@@ -41,12 +41,15 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), external/boringssl/$(source))
 OBJECTS = $(SOURCES:.cc=.o)
 
-CXXFLAGS += -std=gnu++2a -fvisibility=hidden
+CXXFLAGS += -std=gnu++2a \
+  -fno-common \
+  -fvisibility=hidden \
+  -Wa,--noexecstack # Fixes `shlib-with-executable-stack`, see `src/util/BUILD.toplevel`
+
 CPPFLAGS += \
   -D_XOPEN_SOURCE=700 \
   -DBORINGSSL_ANDROID_SYSTEM \
   -DBORINGSSL_IMPLEMENTATION \
-  -DBORINGSSL_SHARED_LIBRARY \
   -DOPENSSL_SMALL \
   -Iexternal/boringssl/src/include \
 

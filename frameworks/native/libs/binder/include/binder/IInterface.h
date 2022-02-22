@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-//
-#ifndef ANDROID_IINTERFACE_H
-#define ANDROID_IINTERFACE_H
+#pragma once
 
 #include <binder/Binder.h>
+
+#include <assert.h>
 
 namespace android {
 
@@ -143,11 +143,10 @@ public:                                                                 \
     {                                                                   \
         ::android::sp<I##INTERFACE> intr;                               \
         if (obj != nullptr) {                                           \
-            intr = static_cast<I##INTERFACE*>(                          \
-                obj->queryLocalInterface(                               \
-                        I##INTERFACE::descriptor).get());               \
+            intr = ::android::sp<I##INTERFACE>::cast(                   \
+                obj->queryLocalInterface(I##INTERFACE::descriptor));    \
             if (intr == nullptr) {                                      \
-                intr = new Bp##INTERFACE(obj);                          \
+                intr = ::android::sp<Bp##INTERFACE>::make(obj);         \
             }                                                           \
         }                                                               \
         return intr;                                                    \
@@ -155,7 +154,11 @@ public:                                                                 \
     std::unique_ptr<I##INTERFACE> I##INTERFACE::default_impl;           \
     bool I##INTERFACE::setDefaultImpl(std::unique_ptr<I##INTERFACE> impl)\
     {                                                                   \
-        if (!I##INTERFACE::default_impl && impl) {                      \
+        /* Only one user of this interface can use this function     */ \
+        /* at a time. This is a heuristic to detect if two different */ \
+        /* users in the same process use this function.              */ \
+        assert(!I##INTERFACE::default_impl);                            \
+        if (impl) {                                                     \
             I##INTERFACE::default_impl = std::move(impl);               \
             return true;                                                \
         }                                                               \
@@ -182,7 +185,7 @@ template<typename INTERFACE>
 inline sp<IInterface> BnInterface<INTERFACE>::queryLocalInterface(
         const String16& _descriptor)
 {
-    if (_descriptor == INTERFACE::descriptor) return this;
+    if (_descriptor == INTERFACE::descriptor) return sp<IInterface>::fromExisting(this);
     return nullptr;
 }
 
@@ -253,7 +256,6 @@ constexpr const char* const kManualInterfaces[] = {
   "android.media.IDrmClient",
   "android.media.IEffect",
   "android.media.IEffectClient",
-  "android.media.IMediaAnalyticsService",
   "android.media.IMediaCodecList",
   "android.media.IMediaDrmService",
   "android.media.IMediaExtractor",
@@ -262,6 +264,7 @@ constexpr const char* const kManualInterfaces[] = {
   "android.media.IMediaHTTPService",
   "android.media.IMediaLogService",
   "android.media.IMediaMetadataRetriever",
+  "android.media.IMediaMetricsService",
   "android.media.IMediaPlayer",
   "android.media.IMediaPlayerClient",
   "android.media.IMediaPlayerService",
@@ -329,5 +332,3 @@ constexpr bool allowedManualInterface(const char* name) {
 
 } // namespace internal
 } // namespace android
-
-#endif // ANDROID_IINTERFACE_H

@@ -11,8 +11,8 @@ CPPFLAGS += \
   -Ilibnativehelper/header_only_include \
   -Ilibnativehelper/include \
   -Ilibnativehelper/include_jni \
-  -Isystem/core/base/include \
   -Isystem/core/include \
+  -Isystem/libbase/include \
 
 debian/out/art/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/art

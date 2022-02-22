@@ -28,7 +28,6 @@
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "hidden_api.h"
-#include "hidden_api_jni.h"
 #include "jni/jni_internal.h"
 #include "jni_id_type.h"
 #include "mirror/class.h"
@@ -76,6 +75,8 @@ jclass WellKnownClasses::java_lang_System;
 jclass WellKnownClasses::java_lang_Thread;
 jclass WellKnownClasses::java_lang_ThreadGroup;
 jclass WellKnownClasses::java_lang_Throwable;
+jclass WellKnownClasses::java_lang_Void;
+jclass WellKnownClasses::java_nio_Buffer;
 jclass WellKnownClasses::java_nio_ByteBuffer;
 jclass WellKnownClasses::java_nio_DirectByteBuffer;
 jclass WellKnownClasses::java_util_Collections;
@@ -97,7 +98,9 @@ jmethodID WellKnownClasses::java_lang_ClassNotFoundException_init;
 jmethodID WellKnownClasses::java_lang_Daemons_start;
 jmethodID WellKnownClasses::java_lang_Daemons_stop;
 jmethodID WellKnownClasses::java_lang_Daemons_waitForDaemonStart;
+jmethodID WellKnownClasses::java_lang_Double_doubleToRawLongBits;
 jmethodID WellKnownClasses::java_lang_Double_valueOf;
+jmethodID WellKnownClasses::java_lang_Float_floatToRawIntBits;
 jmethodID WellKnownClasses::java_lang_Float_valueOf;
 jmethodID WellKnownClasses::java_lang_Integer_valueOf;
 jmethodID WellKnownClasses::java_lang_invoke_MethodHandles_lookup;
@@ -117,6 +120,7 @@ jmethodID WellKnownClasses::java_lang_Thread_init;
 jmethodID WellKnownClasses::java_lang_Thread_run;
 jmethodID WellKnownClasses::java_lang_ThreadGroup_add;
 jmethodID WellKnownClasses::java_lang_ThreadGroup_removeThread;
+jmethodID WellKnownClasses::java_nio_Buffer_isDirect;
 jmethodID WellKnownClasses::java_nio_DirectByteBuffer_init;
 jmethodID WellKnownClasses::java_util_function_Consumer_accept;
 jmethodID WellKnownClasses::libcore_reflect_AnnotationFactory_createAnnotation;
@@ -131,6 +135,8 @@ jfieldID WellKnownClasses::dalvik_system_BaseDexClassLoader_sharedLibraryLoaders
 jfieldID WellKnownClasses::dalvik_system_DexPathList_dexElements;
 jfieldID WellKnownClasses::dalvik_system_DexPathList__Element_dexFile;
 jfieldID WellKnownClasses::dalvik_system_VMRuntime_nonSdkApiUsageConsumer;
+jfieldID WellKnownClasses::java_io_FileDescriptor_descriptor;
+jfieldID WellKnownClasses::java_lang_ClassLoader_parent;
 jfieldID WellKnownClasses::java_lang_Thread_parkBlocker;
 jfieldID WellKnownClasses::java_lang_Thread_daemon;
 jfieldID WellKnownClasses::java_lang_Thread_group;
@@ -151,13 +157,16 @@ jfieldID WellKnownClasses::java_lang_Throwable_detailMessage;
 jfieldID WellKnownClasses::java_lang_Throwable_stackTrace;
 jfieldID WellKnownClasses::java_lang_Throwable_stackState;
 jfieldID WellKnownClasses::java_lang_Throwable_suppressedExceptions;
+jfieldID WellKnownClasses::java_nio_Buffer_address;
+jfieldID WellKnownClasses::java_nio_Buffer_capacity;
+jfieldID WellKnownClasses::java_nio_Buffer_elementSizeShift;
+jfieldID WellKnownClasses::java_nio_Buffer_limit;
+jfieldID WellKnownClasses::java_nio_Buffer_position;
 jfieldID WellKnownClasses::java_nio_ByteBuffer_address;
 jfieldID WellKnownClasses::java_nio_ByteBuffer_hb;
 jfieldID WellKnownClasses::java_nio_ByteBuffer_isReadOnly;
 jfieldID WellKnownClasses::java_nio_ByteBuffer_limit;
 jfieldID WellKnownClasses::java_nio_ByteBuffer_offset;
-jfieldID WellKnownClasses::java_nio_DirectByteBuffer_capacity;
-jfieldID WellKnownClasses::java_nio_DirectByteBuffer_effectiveDirectAddress;
 jfieldID WellKnownClasses::java_util_Collections_EMPTY_LIST;
 jfieldID WellKnownClasses::libcore_util_EmptyArray_STACK_TRACE_ELEMENT;
 jfieldID WellKnownClasses::org_apache_harmony_dalvik_ddmc_Chunk_data;
@@ -178,7 +187,6 @@ static jfieldID CacheField(JNIEnv* env, jclass c, bool is_static,
   jfieldID fid;
   {
     ScopedObjectAccess soa(env);
-    hiddenapi::ScopedCorePlatformApiCheck scpac;
     if (Runtime::Current()->GetJniIdType() != JniIdType::kSwapablePointer) {
       fid = jni::EncodeArtField</*kEnableIndexIds*/ true>(
           FindFieldJNI(soa, c, name, signature, is_static));
@@ -205,7 +213,6 @@ static jmethodID CacheMethod(JNIEnv* env, jclass c, bool is_static,
   jmethodID mid;
   {
     ScopedObjectAccess soa(env);
-    hiddenapi::ScopedCorePlatformApiCheck scpac;
     if (Runtime::Current()->GetJniIdType() != JniIdType::kSwapablePointer) {
       mid = jni::EncodeArtMethod</*kEnableIndexIds*/ true>(
           FindMethodJNI(soa, c, name, signature, is_static));
@@ -361,6 +368,8 @@ void WellKnownClasses::Init(JNIEnv* env) {
   java_lang_Thread = CacheClass(env, "java/lang/Thread");
   java_lang_ThreadGroup = CacheClass(env, "java/lang/ThreadGroup");
   java_lang_Throwable = CacheClass(env, "java/lang/Throwable");
+  java_lang_Void = CacheClass(env, "java/lang/Void");
+  java_nio_Buffer = CacheClass(env, "java/nio/Buffer");
   java_nio_ByteBuffer = CacheClass(env, "java/nio/ByteBuffer");
   java_nio_DirectByteBuffer = CacheClass(env, "java/nio/DirectByteBuffer");
   java_util_Collections = CacheClass(env, "java/util/Collections");
@@ -381,6 +390,7 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   dalvik_system_BaseDexClassLoader_getLdLibraryPath = CacheMethod(env, dalvik_system_BaseDexClassLoader, false, "getLdLibraryPath", "()Ljava/lang/String;");
   dalvik_system_VMRuntime_runFinalization = CacheMethod(env, dalvik_system_VMRuntime, true, "runFinalization", "(J)V");
   dalvik_system_VMRuntime_hiddenApiUsed = CacheMethod(env, dalvik_system_VMRuntime, true, "hiddenApiUsed", "(ILjava/lang/String;Ljava/lang/String;IZ)V");
+
   java_lang_ClassNotFoundException_init = CacheMethod(env, java_lang_ClassNotFoundException, false, "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V");
   java_lang_ClassLoader_loadClass = CacheMethod(env, java_lang_ClassLoader, false, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
 
@@ -401,6 +411,7 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_lang_Thread_run = CacheMethod(env, java_lang_Thread, false, "run", "()V");
   java_lang_ThreadGroup_add = CacheMethod(env, java_lang_ThreadGroup, false, "add", "(Ljava/lang/Thread;)V");
   java_lang_ThreadGroup_removeThread = CacheMethod(env, java_lang_ThreadGroup, false, "threadTerminated", "(Ljava/lang/Thread;)V");
+  java_nio_Buffer_isDirect = CacheMethod(env, java_nio_Buffer, false, "isDirect", "()Z");
   java_nio_DirectByteBuffer_init = CacheMethod(env, java_nio_DirectByteBuffer, false, "<init>", "(JI)V");
   java_util_function_Consumer_accept = CacheMethod(env, java_util_function_Consumer, false, "accept", "(Ljava/lang/Object;)V");
   libcore_reflect_AnnotationFactory_createAnnotation = CacheMethod(env, libcore_reflect_AnnotationFactory, true, "createAnnotation", "(Ljava/lang/Class;[Llibcore/reflect/AnnotationMember;)Ljava/lang/annotation/Annotation;");
@@ -415,39 +426,70 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   dalvik_system_DexPathList_dexElements = CacheField(env, dalvik_system_DexPathList, false, "dexElements", "[Ldalvik/system/DexPathList$Element;");
   dalvik_system_DexPathList__Element_dexFile = CacheField(env, dalvik_system_DexPathList__Element, false, "dexFile", "Ldalvik/system/DexFile;");
   dalvik_system_VMRuntime_nonSdkApiUsageConsumer = CacheField(env, dalvik_system_VMRuntime, true, "nonSdkApiUsageConsumer", "Ljava/util/function/Consumer;");
-  java_lang_Thread_parkBlocker = CacheField(env, java_lang_Thread, false, "parkBlocker", "Ljava/lang/Object;");
+
+  ScopedLocalRef<jclass> java_io_FileDescriptor(env, env->FindClass("java/io/FileDescriptor"));
+  java_io_FileDescriptor_descriptor = CacheField(env, java_io_FileDescriptor.get(), false, "descriptor", "I");
+
+  java_lang_ClassLoader_parent =
+      CacheField(env, java_lang_ClassLoader, false, "parent", "Ljava/lang/ClassLoader;");
+  java_lang_Thread_parkBlocker =
+      CacheField(env, java_lang_Thread, false, "parkBlocker", "Ljava/lang/Object;");
   java_lang_Thread_daemon = CacheField(env, java_lang_Thread, false, "daemon", "Z");
-  java_lang_Thread_group = CacheField(env, java_lang_Thread, false, "group", "Ljava/lang/ThreadGroup;");
+  java_lang_Thread_group =
+      CacheField(env, java_lang_Thread, false, "group", "Ljava/lang/ThreadGroup;");
   java_lang_Thread_lock = CacheField(env, java_lang_Thread, false, "lock", "Ljava/lang/Object;");
   java_lang_Thread_name = CacheField(env, java_lang_Thread, false, "name", "Ljava/lang/String;");
   java_lang_Thread_priority = CacheField(env, java_lang_Thread, false, "priority", "I");
   java_lang_Thread_nativePeer = CacheField(env, java_lang_Thread, false, "nativePeer", "J");
   java_lang_Thread_systemDaemon = CacheField(env, java_lang_Thread, false, "systemDaemon", "Z");
-  java_lang_Thread_unparkedBeforeStart = CacheField(env, java_lang_Thread, false, "unparkedBeforeStart", "Z");
-  java_lang_ThreadGroup_groups = CacheField(env, java_lang_ThreadGroup, false, "groups", "[Ljava/lang/ThreadGroup;");
+  java_lang_Thread_unparkedBeforeStart =
+      CacheField(env, java_lang_Thread, false, "unparkedBeforeStart", "Z");
+  java_lang_ThreadGroup_groups =
+      CacheField(env, java_lang_ThreadGroup, false, "groups", "[Ljava/lang/ThreadGroup;");
   java_lang_ThreadGroup_ngroups = CacheField(env, java_lang_ThreadGroup, false, "ngroups", "I");
-  java_lang_ThreadGroup_mainThreadGroup = CacheField(env, java_lang_ThreadGroup, true, "mainThreadGroup", "Ljava/lang/ThreadGroup;");
-  java_lang_ThreadGroup_name = CacheField(env, java_lang_ThreadGroup, false, "name", "Ljava/lang/String;");
-  java_lang_ThreadGroup_parent = CacheField(env, java_lang_ThreadGroup, false, "parent", "Ljava/lang/ThreadGroup;");
-  java_lang_ThreadGroup_systemThreadGroup = CacheField(env, java_lang_ThreadGroup, true, "systemThreadGroup", "Ljava/lang/ThreadGroup;");
-  java_lang_Throwable_cause = CacheField(env, java_lang_Throwable, false, "cause", "Ljava/lang/Throwable;");
-  java_lang_Throwable_detailMessage = CacheField(env, java_lang_Throwable, false, "detailMessage", "Ljava/lang/String;");
-  java_lang_Throwable_stackTrace = CacheField(env, java_lang_Throwable, false, "stackTrace", "[Ljava/lang/StackTraceElement;");
-  java_lang_Throwable_stackState = CacheField(env, java_lang_Throwable, false, "backtrace", "Ljava/lang/Object;");
-  java_lang_Throwable_suppressedExceptions = CacheField(env, java_lang_Throwable, false, "suppressedExceptions", "Ljava/util/List;");
+  java_lang_ThreadGroup_mainThreadGroup =
+      CacheField(env, java_lang_ThreadGroup, true, "mainThreadGroup", "Ljava/lang/ThreadGroup;");
+  java_lang_ThreadGroup_name =
+      CacheField(env, java_lang_ThreadGroup, false, "name", "Ljava/lang/String;");
+  java_lang_ThreadGroup_parent =
+      CacheField(env, java_lang_ThreadGroup, false, "parent", "Ljava/lang/ThreadGroup;");
+  java_lang_ThreadGroup_systemThreadGroup =
+      CacheField(env, java_lang_ThreadGroup, true, "systemThreadGroup", "Ljava/lang/ThreadGroup;");
+  java_lang_Throwable_cause =
+      CacheField(env, java_lang_Throwable, false, "cause", "Ljava/lang/Throwable;");
+  java_lang_Throwable_detailMessage =
+      CacheField(env, java_lang_Throwable, false, "detailMessage", "Ljava/lang/String;");
+  java_lang_Throwable_stackTrace =
+      CacheField(env, java_lang_Throwable, false, "stackTrace", "[Ljava/lang/StackTraceElement;");
+  java_lang_Throwable_stackState =
+      CacheField(env, java_lang_Throwable, false, "backtrace", "Ljava/lang/Object;");
+  java_lang_Throwable_suppressedExceptions =
+      CacheField(env, java_lang_Throwable, false, "suppressedExceptions", "Ljava/util/List;");
+
+  java_nio_Buffer_address = CacheField(env, java_nio_Buffer, false, "address", "J");
+  java_nio_Buffer_capacity = CacheField(env, java_nio_Buffer, false, "capacity", "I");
+  java_nio_Buffer_elementSizeShift =
+      CacheField(env, java_nio_Buffer, false, "_elementSizeShift", "I");
+  java_nio_Buffer_limit = CacheField(env, java_nio_Buffer, false, "limit", "I");
+  java_nio_Buffer_position = CacheField(env, java_nio_Buffer, false, "position", "I");
+
   java_nio_ByteBuffer_address = CacheField(env, java_nio_ByteBuffer, false, "address", "J");
   java_nio_ByteBuffer_hb = CacheField(env, java_nio_ByteBuffer, false, "hb", "[B");
   java_nio_ByteBuffer_isReadOnly = CacheField(env, java_nio_ByteBuffer, false, "isReadOnly", "Z");
   java_nio_ByteBuffer_limit = CacheField(env, java_nio_ByteBuffer, false, "limit", "I");
   java_nio_ByteBuffer_offset = CacheField(env, java_nio_ByteBuffer, false, "offset", "I");
-  java_nio_DirectByteBuffer_capacity = CacheField(env, java_nio_DirectByteBuffer, false, "capacity", "I");
-  java_nio_DirectByteBuffer_effectiveDirectAddress = CacheField(env, java_nio_DirectByteBuffer, false, "address", "J");
-  java_util_Collections_EMPTY_LIST = CacheField(env, java_util_Collections, true, "EMPTY_LIST", "Ljava/util/List;");
-  libcore_util_EmptyArray_STACK_TRACE_ELEMENT = CacheField(env, libcore_util_EmptyArray, true, "STACK_TRACE_ELEMENT", "[Ljava/lang/StackTraceElement;");
-  org_apache_harmony_dalvik_ddmc_Chunk_data = CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "data", "[B");
-  org_apache_harmony_dalvik_ddmc_Chunk_length = CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "length", "I");
-  org_apache_harmony_dalvik_ddmc_Chunk_offset = CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "offset", "I");
-  org_apache_harmony_dalvik_ddmc_Chunk_type = CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "type", "I");
+  java_util_Collections_EMPTY_LIST =
+      CacheField(env, java_util_Collections, true, "EMPTY_LIST", "Ljava/util/List;");
+  libcore_util_EmptyArray_STACK_TRACE_ELEMENT = CacheField(
+      env, libcore_util_EmptyArray, true, "STACK_TRACE_ELEMENT", "[Ljava/lang/StackTraceElement;");
+  org_apache_harmony_dalvik_ddmc_Chunk_data =
+      CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "data", "[B");
+  org_apache_harmony_dalvik_ddmc_Chunk_length =
+      CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "length", "I");
+  org_apache_harmony_dalvik_ddmc_Chunk_offset =
+      CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "offset", "I");
+  org_apache_harmony_dalvik_ddmc_Chunk_type =
+      CacheField(env, org_apache_harmony_dalvik_ddmc_Chunk, false, "type", "I");
 
   java_lang_Boolean_valueOf = CachePrimitiveBoxingMethod(env, 'Z', "java/lang/Boolean");
   java_lang_Byte_valueOf = CachePrimitiveBoxingMethod(env, 'B', "java/lang/Byte");
@@ -457,13 +499,18 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_lang_Integer_valueOf = CachePrimitiveBoxingMethod(env, 'I', "java/lang/Integer");
   java_lang_Long_valueOf = CachePrimitiveBoxingMethod(env, 'J', "java/lang/Long");
   java_lang_Short_valueOf = CachePrimitiveBoxingMethod(env, 'S', "java/lang/Short");
+
+  java_lang_Double_doubleToRawLongBits =
+      CacheMethod(env, "java/lang/Double", /*is_static=*/ true, "doubleToRawLongBits", "(D)J");
+  java_lang_Float_floatToRawIntBits =
+      CacheMethod(env, "java/lang/Float", /*is_static=*/ true, "floatToRawIntBits", "(F)I");
 }
 
 void WellKnownClasses::LateInit(JNIEnv* env) {
-  ScopedLocalRef<jclass> java_lang_Runtime(env, env->FindClass("java/lang/Runtime"));
   // CacheField and CacheMethod will initialize their classes. Classes below
   // have clinit sections that call JNI methods. Late init is required
   // to make sure these JNI methods are available.
+  ScopedLocalRef<jclass> java_lang_Runtime(env, env->FindClass("java/lang/Runtime"));
   java_lang_Runtime_nativeLoad =
       CacheMethod(env, java_lang_Runtime.get(), true, "nativeLoad",
                   "(Ljava/lang/String;Ljava/lang/ClassLoader;Ljava/lang/Class;)"
@@ -521,7 +568,9 @@ void WellKnownClasses::Clear() {
   java_lang_Thread = nullptr;
   java_lang_ThreadGroup = nullptr;
   java_lang_Throwable = nullptr;
+  java_lang_Void = nullptr;
   java_util_Collections = nullptr;
+  java_nio_Buffer = nullptr;
   java_nio_ByteBuffer = nullptr;
   java_nio_DirectByteBuffer = nullptr;
   libcore_reflect_AnnotationFactory = nullptr;
@@ -533,6 +582,7 @@ void WellKnownClasses::Clear() {
   dalvik_system_BaseDexClassLoader_getLdLibraryPath = nullptr;
   dalvik_system_VMRuntime_runFinalization = nullptr;
   dalvik_system_VMRuntime_hiddenApiUsed = nullptr;
+  java_io_FileDescriptor_descriptor = nullptr;
   java_lang_Boolean_valueOf = nullptr;
   java_lang_Byte_valueOf = nullptr;
   java_lang_Character_valueOf = nullptr;
@@ -540,7 +590,9 @@ void WellKnownClasses::Clear() {
   java_lang_ClassNotFoundException_init = nullptr;
   java_lang_Daemons_start = nullptr;
   java_lang_Daemons_stop = nullptr;
+  java_lang_Double_doubleToRawLongBits = nullptr;
   java_lang_Double_valueOf = nullptr;
+  java_lang_Float_floatToRawIntBits = nullptr;
   java_lang_Float_valueOf = nullptr;
   java_lang_Integer_valueOf = nullptr;
   java_lang_invoke_MethodHandles_lookup = nullptr;
@@ -560,6 +612,7 @@ void WellKnownClasses::Clear() {
   java_lang_Thread_run = nullptr;
   java_lang_ThreadGroup_add = nullptr;
   java_lang_ThreadGroup_removeThread = nullptr;
+  java_nio_Buffer_isDirect = nullptr;
   java_nio_DirectByteBuffer_init = nullptr;
   libcore_reflect_AnnotationFactory_createAnnotation = nullptr;
   libcore_reflect_AnnotationMember_init = nullptr;
@@ -572,6 +625,7 @@ void WellKnownClasses::Clear() {
   dalvik_system_DexPathList_dexElements = nullptr;
   dalvik_system_DexPathList__Element_dexFile = nullptr;
   dalvik_system_VMRuntime_nonSdkApiUsageConsumer = nullptr;
+  java_lang_ClassLoader_parent = nullptr;
   java_lang_Thread_parkBlocker = nullptr;
   java_lang_Thread_daemon = nullptr;
   java_lang_Thread_group = nullptr;
@@ -590,13 +644,15 @@ void WellKnownClasses::Clear() {
   java_lang_Throwable_stackTrace = nullptr;
   java_lang_Throwable_stackState = nullptr;
   java_lang_Throwable_suppressedExceptions = nullptr;
+  java_nio_Buffer_address = nullptr;
+  java_nio_Buffer_elementSizeShift = nullptr;
+  java_nio_Buffer_limit = nullptr;
+  java_nio_Buffer_position = nullptr;
   java_nio_ByteBuffer_address = nullptr;
   java_nio_ByteBuffer_hb = nullptr;
   java_nio_ByteBuffer_isReadOnly = nullptr;
   java_nio_ByteBuffer_limit = nullptr;
   java_nio_ByteBuffer_offset = nullptr;
-  java_nio_DirectByteBuffer_capacity = nullptr;
-  java_nio_DirectByteBuffer_effectiveDirectAddress = nullptr;
   java_util_Collections_EMPTY_LIST = nullptr;
   libcore_util_EmptyArray_STACK_TRACE_ELEMENT = nullptr;
   org_apache_harmony_dalvik_ddmc_Chunk_data = nullptr;

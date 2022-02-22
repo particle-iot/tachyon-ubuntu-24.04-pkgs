@@ -19,8 +19,8 @@ export DEB_HOST_MULTIARCH
 ## system/core
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-29.0.6/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 29.0.6
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-31.0.3/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 31.0.3
 
 ifneq (, $(shell which clang))
   export CC=clang
@@ -44,10 +44,10 @@ debian/manpages/system/core/%.1: debian/manpages/system/core/%.1.md
 s/core/libcrypto_utils.a: debian/system/core/libcrypto_utils.mk e/boringssl/libcrypto.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/libadb.a: debian/system/core/libadb.mk s/core/libcutils.a s/core/libbase.a s/core/libcrypto_utils.a e/boringssl/libcrypto.a
+s/core/libadb.a: debian/system/core/libadb.mk s/core/libcutils.a s/core/libbase.a s/core/libcrypto_utils.a e/boringssl/libssl.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/libbacktrace.a: debian/system/core/libbacktrace.mk s/core/libcutils.a s/core/libbase.a s/core/liblog.a e/libunwind/libunwind.a art/libdexfile_support.a
+s/core/libbacktrace.a: debian/system/core/libbacktrace.mk s/core/libcutils.a s/core/libbase.a s/core/liblog.a art/libdexfile_support.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/core/libbase.a: debian/system/core/libbase.mk s/core/liblog.a
@@ -62,10 +62,10 @@ s/core/libutils.a: debian/system/core/libutils.mk s/core/liblog.a s/core/libcuti
 s/core/libziparchive.a: debian/system/core/libziparchive.mk s/core/liblog.a s/core/libbase.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/adb: debian/system/core/adb.mk s/core/libadb.a s/core/libcutils.a s/core/libbase.a debian/manpages/system/core/adb.1
+s/core/adb: debian/system/core/adb.mk s/core/libziparchive.a s/core/libadb.a debian/manpages/system/core/adb.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/fastboot: debian/system/core/fastboot.mk s/core/libziparchive.a s/core/libsparse.a s/core/libbase.a s/core/libcutils.a s/core/libadb.a e/boringssl/libcrypto.a s/extras/libext4_utils.a debian/manpages/system/core/fastboot.1
+s/core/fastboot: debian/system/core/fastboot.mk s/core/libziparchive.a s/core/libsparse.a s/core/libbase.a s/core/libcutils.a s/core/libadb.a s/extras/libext4_utils.a debian/manpages/system/core/fastboot.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS = \
@@ -176,18 +176,6 @@ e/boringssl/libcrypto.a: debian/external/boringssl/libcrypto.mk
 e/boringssl/libssl.a: debian/external/boringssl/libssl.mk e/boringssl/libcrypto.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-## external/libunwind
-
-e/libunwind/libunwind.a: debian/external/libunwind/libunwind.mk
-	dh_auto_build --buildsystem=makefile -- --file=$<
-
-ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
-COMPONENTS += \
-  e/boringssl/libcrypto.a \
-  e/libunwind/libunwind.a \
-
-endif
-
 ## system/extras
 
 s/extras/libext4_utils.a: debian/system/extras/libext4_utils.mk s/core/libsparse.a s/core/libbase.a
@@ -221,7 +209,11 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure:
-	rm -rf external/selinux development/[a-s]* development/v* development/testrunner
+	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
+		(cd $$proto && \
+			find . -name '*.proto' -printf 'Regenerate %p\n' \
+			-exec protoc --cpp_out=. {} \;) \
+	done
 	dh_auto_configure
 
 override_dh_gencontrol:

@@ -14,14 +14,34 @@
 // limitations under the License.
 //
 
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "frameworks_native_libs_nativewindow_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: [
+        "frameworks_native_libs_nativewindow_license",
+    ],
+}
+
 cc_test {
-    name: "AHardwareBufferTest",
+    name: "libnativewindow_test",
+    test_suites: [
+        "device-tests",
+    ],
     shared_libs: [
+        "libgui",
+        "liblog",
         "libnativewindow",
+        "libsync",
+        "libutils",
         "android.hardware.graphics.common@1.0",
     ],
     srcs: [
         "AHardwareBufferTest.cpp",
-        "c_compatibility.c"],
+        "ANativeWindowTest.cpp",
+        "c_compatibility.c",
+    ],
     cflags: ["-Wall", "-Werror"],
 }

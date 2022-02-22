@@ -44,6 +44,7 @@ struct Description {
     bool hasInputTransformMatrix() const;
     bool hasOutputTransformMatrix() const;
     bool hasColorMatrix() const;
+    bool hasDisplayColorMatrix() const;
 
     // whether textures are premultiplied
     bool isPremultipliedAlpha = false;
@@ -71,14 +72,21 @@ struct Description {
     TransferFunction outputTransferFunction = TransferFunction::LINEAR;
 
     float displayMaxLuminance;
+    float maxMasteringLuminance;
+    float maxContentLuminance;
 
     // projection matrix
     mat4 projectionMatrix;
 
     // The color matrix will be applied in linear space right before OETF.
     mat4 colorMatrix;
+    // The display color matrix will be applied in gamma space after OETF
+    mat4 displayColorMatrix;
     mat4 inputTransformMatrix;
     mat4 outputTransformMatrix;
+
+    // True if this layer will draw a shadow.
+    bool drawShadows = false;
 };
 
 } // namespace renderengine

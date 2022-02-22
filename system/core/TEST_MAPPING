@@ -4,19 +4,31 @@
       "name": "adbd_test"
     },
     {
+      "name": "adb_crypto_test"
+    },
+    {
+      "name": "adb_pairing_auth_test"
+    },
+    {
+      "name": "adb_pairing_connection_test"
+    },
+    {
+      "name": "adb_tls_connection_test"
+    },
+    {
+      "name": "CtsFsMgrTestCases"
+    },
+    {
       "name": "CtsInitTestCases"
     },
     {
       "name": "debuggerd_test"
     },
     {
-      "name": "CtsFsMgrTestCases"
-    },
-    {
       "name": "fs_mgr_vendor_overlay_test"
     },
     {
-      "name": "libbase_test"
+      "name": "init_kill_services_test"
     },
     {
       "name": "libpackagelistparser_test"
@@ -40,17 +52,15 @@
       "name": "memunreachable_unit_test"
     },
     {
-      "name": "memunreachable_unit_test",
-      "host": true
-    },
-    {
       "name": "memunreachable_binder_test"
     },
     {
       "name": "propertyinfoserializer_tests"
-    },
+    }
+  ],
+  "imports": [
     {
-      "name": "ziparchive-tests"
+      "path": "frameworks/base/tests/StagedInstallTest"
     }
   ]
 }

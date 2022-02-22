@@ -24,7 +24,8 @@
 
 class Modprobe {
   public:
-    Modprobe(const std::vector<std::string>&);
+    Modprobe(const std::vector<std::string>&, const std::string load_file = "modules.load",
+             bool use_blocklist = true);
 
     bool LoadListedModules(bool strict = true);
     bool LoadWithAliases(const std::string& module_name, bool strict,
@@ -34,8 +35,8 @@ class Modprobe {
     bool GetAllDependencies(const std::string& module, std::vector<std::string>* pre_dependencies,
                             std::vector<std::string>* dependencies,
                             std::vector<std::string>* post_dependencies);
-    void EnableBlacklist(bool enable);
-    void EnableVerbose(bool enable);
+    void ResetModuleCount() { module_count_ = 0; }
+    int GetModuleCount() { return module_count_; }
 
   private:
     std::string MakeCanonical(const std::string& module_path);
@@ -47,13 +48,14 @@ class Modprobe {
     void AddOption(const std::string& module_name, const std::string& option_name,
                    const std::string& value);
     std::string GetKernelCmdline();
+    bool IsBlocklisted(const std::string& module_name);
 
     bool ParseDepCallback(const std::string& base_path, const std::vector<std::string>& args);
     bool ParseAliasCallback(const std::vector<std::string>& args);
     bool ParseSoftdepCallback(const std::vector<std::string>& args);
     bool ParseLoadCallback(const std::vector<std::string>& args);
     bool ParseOptionsCallback(const std::vector<std::string>& args);
-    bool ParseBlacklistCallback(const std::vector<std::string>& args);
+    bool ParseBlocklistCallback(const std::vector<std::string>& args);
     void ParseKernelCmdlineOptions();
     void ParseCfg(const std::string& cfg, std::function<bool(const std::vector<std::string>&)> f);
 
@@ -63,7 +65,8 @@ class Modprobe {
     std::vector<std::pair<std::string, std::string>> module_post_softdep_;
     std::vector<std::string> module_load_;
     std::unordered_map<std::string, std::string> module_options_;
-    std::set<std::string> module_blacklist_;
+    std::set<std::string> module_blocklist_;
     std::unordered_set<std::string> module_loaded_;
-    bool blacklist_enabled = false;
+    int module_count_ = 0;
+    bool blocklist_enabled = false;
 };

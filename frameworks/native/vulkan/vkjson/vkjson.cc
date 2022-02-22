@@ -21,19 +21,20 @@
 #include "vkjson.h"
 
 #include <assert.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include <cmath>
+#include <json/json.h>
+
+#include <algorithm>
 #include <cinttypes>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 #include <memory>
 #include <sstream>
 #include <type_traits>
 #include <utility>
-
-#include <json/json.h>
 
 namespace {
 
@@ -46,11 +47,27 @@ inline bool IsIntegral(double value) {
 #endif
 }
 
+// Floating point fields of Vulkan structure use single precision. The string
+// output of max double value in c++ will be larger than Java double's infinity
+// value. Below fake double max/min values are only to serve the safe json text
+// parsing in between C++ and Java, becasue Java json library simply cannot
+// handle infinity.
+static const double SAFE_DOUBLE_MAX = 0.99 * std::numeric_limits<double>::max();
+static const double SAFE_DOUBLE_MIN = -SAFE_DOUBLE_MAX;
+
 template <typename T> struct EnumTraits;
 template <> struct EnumTraits<VkPhysicalDeviceType> {
-  static uint32_t min() { return VK_PHYSICAL_DEVICE_TYPE_BEGIN_RANGE; }
-  static uint32_t max() { return VK_PHYSICAL_DEVICE_TYPE_END_RANGE; }
-  static bool exist(uint32_t e) { return e >= min() && e <= max(); }
+  static bool exist(uint32_t e) {
+    switch (e) {
+      case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+      case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+      case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+      case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+      case VK_PHYSICAL_DEVICE_TYPE_CPU:
+        return true;
+    }
+    return false;
+  }
 };
 
 template <> struct EnumTraits<VkFormat> {
@@ -241,6 +258,40 @@ template <> struct EnumTraits<VkFormat> {
       case VK_FORMAT_ASTC_12x10_SRGB_BLOCK:
       case VK_FORMAT_ASTC_12x12_UNORM_BLOCK:
       case VK_FORMAT_ASTC_12x12_SRGB_BLOCK:
+      case VK_FORMAT_G8B8G8R8_422_UNORM:
+      case VK_FORMAT_B8G8R8G8_422_UNORM:
+      case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+      case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+      case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM:
+      case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM:
+      case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM:
+      case VK_FORMAT_R10X6_UNORM_PACK16:
+      case VK_FORMAT_R10X6G10X6_UNORM_2PACK16:
+      case VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16:
+      case VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16:
+      case VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16:
+      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16:
+      case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16:
+      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16:
+      case VK_FORMAT_R12X4_UNORM_PACK16:
+      case VK_FORMAT_R12X4G12X4_UNORM_2PACK16:
+      case VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16:
+      case VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16:
+      case VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16:
+      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16:
+      case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16:
+      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16:
+      case VK_FORMAT_G16B16G16R16_422_UNORM:
+      case VK_FORMAT_B16G16R16G16_422_UNORM:
+      case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM:
+      case VK_FORMAT_G16_B16R16_2PLANE_420_UNORM:
+      case VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM:
+      case VK_FORMAT_G16_B16R16_2PLANE_422_UNORM:
+      case VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM:
       case VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG:
       case VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG:
       case VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG:
@@ -249,40 +300,22 @@ template <> struct EnumTraits<VkFormat> {
       case VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG:
       case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
       case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
-      case VK_FORMAT_G8B8G8R8_422_UNORM_KHR:
-      case VK_FORMAT_B8G8R8G8_422_UNORM_KHR:
-      case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM_KHR:
-      case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM_KHR:
-      case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM_KHR:
-      case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM_KHR:
-      case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM_KHR:
-      case VK_FORMAT_R10X6_UNORM_PACK16_KHR:
-      case VK_FORMAT_R10X6G10X6_UNORM_2PACK16_KHR:
-      case VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16_KHR:
-      case VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16_KHR:
-      case VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16_KHR:
-      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16_KHR:
-      case VK_FORMAT_R12X4_UNORM_PACK16_KHR:
-      case VK_FORMAT_R12X4G12X4_UNORM_2PACK16_KHR:
-      case VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16_KHR:
-      case VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16_KHR:
-      case VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16_KHR:
-      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16_KHR:
-      case VK_FORMAT_G16B16G16R16_422_UNORM_KHR:
-      case VK_FORMAT_B16G16R16G16_422_UNORM_KHR:
-      case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM_KHR:
-      case VK_FORMAT_G16_B16R16_2PLANE_420_UNORM_KHR:
-      case VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM_KHR:
-      case VK_FORMAT_G16_B16R16_2PLANE_422_UNORM_KHR:
-      case VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM_KHR:
+      case VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_5x4_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_5x5_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_6x5_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_6x6_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_8x5_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_8x6_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_8x8_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_10x5_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_10x6_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_10x8_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_10x10_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_12x10_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_ASTC_12x12_SFLOAT_BLOCK_EXT:
+      case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+      case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
         return true;
     }
     return false;
@@ -291,9 +324,14 @@ template <> struct EnumTraits<VkFormat> {
 
 template <>
 struct EnumTraits<VkPointClippingBehavior> {
-  static uint32_t min() { return VK_POINT_CLIPPING_BEHAVIOR_BEGIN_RANGE; }
-  static uint32_t max() { return VK_POINT_CLIPPING_BEHAVIOR_END_RANGE; }
-  static bool exist(uint32_t e) { return e >= min() && e <= max(); }
+  static bool exist(uint32_t e) {
+    switch (e) {
+      case VK_POINT_CLIPPING_BEHAVIOR_ALL_CLIP_PLANES:
+      case VK_POINT_CLIPPING_BEHAVIOR_USER_CLIP_PLANES_ONLY:
+        return true;
+    }
+    return false;
+  }
 };
 
 template <>
@@ -327,9 +365,26 @@ struct EnumTraits<VkExternalSemaphoreHandleTypeFlagBits> {
 
 template <>
 struct EnumTraits<VkDriverIdKHR> {
-  static uint32_t min() { return VK_DRIVER_ID_BEGIN_RANGE_KHR; }
-  static uint32_t max() { return VK_DRIVER_ID_END_RANGE_KHR; }
-  static bool exist(uint32_t e) { return e >= min() && e <= max(); }
+  static bool exist(uint32_t e) {
+    switch (e) {
+      case VK_DRIVER_ID_AMD_PROPRIETARY:
+      case VK_DRIVER_ID_AMD_OPEN_SOURCE:
+      case VK_DRIVER_ID_MESA_RADV:
+      case VK_DRIVER_ID_NVIDIA_PROPRIETARY:
+      case VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS:
+      case VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA:
+      case VK_DRIVER_ID_IMAGINATION_PROPRIETARY:
+      case VK_DRIVER_ID_QUALCOMM_PROPRIETARY:
+      case VK_DRIVER_ID_ARM_PROPRIETARY:
+      case VK_DRIVER_ID_GOOGLE_SWIFTSHADER:
+      case VK_DRIVER_ID_GGP_PROPRIETARY:
+      case VK_DRIVER_ID_BROADCOM_PROPRIETARY:
+      case VK_DRIVER_ID_MESA_LLVMPIPE:
+      case VK_DRIVER_ID_MOLTENVK:
+        return true;
+    }
+    return false;
+  }
 };
 
 // VkSparseImageFormatProperties
@@ -582,6 +637,13 @@ inline bool Iterate(Visitor* visitor,
 }
 
 template <typename Visitor>
+inline bool Iterate(Visitor* visitor,
+                    VkJsonExtShaderFloat16Int8Features* features) {
+  return visitor->Visit("shaderFloat16Int8FeaturesKHR",
+                        &features->shader_float16_int8_features_khr);
+}
+
+template <typename Visitor>
 inline bool Iterate(Visitor* visitor, VkMemoryType* type) {
   return
     visitor->Visit("propertyFlags", &type->propertyFlags) &&
@@ -683,6 +745,13 @@ inline bool Iterate(Visitor* visitor,
 
 template <typename Visitor>
 inline bool Iterate(Visitor* visitor,
+                    VkPhysicalDeviceShaderFloat16Int8FeaturesKHR* features) {
+  return visitor->Visit("shaderFloat16", &features->shaderFloat16) &&
+         visitor->Visit("shaderInt8", &features->shaderInt8);
+}
+
+template <typename Visitor>
+inline bool Iterate(Visitor* visitor,
                     VkPhysicalDeviceProtectedMemoryFeatures* features) {
   return visitor->Visit("protectedMemory", &features->protectedMemory);
 }
@@ -773,6 +842,8 @@ inline bool Iterate(Visitor* visitor, VkJsonDevice* device) {
   bool ret = true;
   switch (device->properties.apiVersion ^
           VK_VERSION_PATCH(device->properties.apiVersion)) {
+    case VK_API_VERSION_1_2:
+      FALLTHROUGH_INTENDED;
     case VK_API_VERSION_1_1:
       ret &=
           visitor->Visit("subgroupProperties", &device->subgroup_properties) &&
@@ -815,6 +886,10 @@ inline bool Iterate(Visitor* visitor, VkJsonDevice* device) {
         ret &= visitor->Visit("VK_KHR_variable_pointers",
                             &device->ext_variable_pointer_features);
       }
+      if (device->ext_shader_float16_int8_features.reported) {
+        ret &= visitor->Visit("VK_KHR_shader_float16_int8",
+                              &device->ext_shader_float16_int8_features);
+      }
   }
   return ret;
 }
@@ -823,6 +898,8 @@ template <typename Visitor>
 inline bool Iterate(Visitor* visitor, VkJsonInstance* instance) {
   bool ret = true;
   switch (instance->api_version ^ VK_VERSION_PATCH(instance->api_version)) {
+    case VK_API_VERSION_1_2:
+      FALLTHROUGH_INTENDED;
     case VK_API_VERSION_1_1:
       ret &= visitor->Visit("deviceGroups", &instance->device_groups);
       FALLTHROUGH_INTENDED;
@@ -851,7 +928,8 @@ Json::Value ToJsonValue(const T& value);
 
 template <typename T, typename = EnableForArithmetic<T>>
 inline Json::Value ToJsonValue(const T& value) {
-  return Json::Value(static_cast<double>(value));
+  return Json::Value(
+      std::clamp(static_cast<double>(value), SAFE_DOUBLE_MIN, SAFE_DOUBLE_MAX));
 }
 
 inline Json::Value ToJsonValue(const uint64_t& value) {
@@ -1122,10 +1200,10 @@ template <typename T> bool VkTypeFromJson(const std::string& json,
                                           std::string* errors) {
   *t = T();
   Json::Value object(Json::objectValue);
-  Json::Reader reader;
-  reader.parse(json, object, false);
-  if (!object) {
-    if (errors) errors->assign(reader.getFormatedErrorMessages());
+  Json::CharReaderBuilder builder;
+  builder["collectComments"] = false;
+  std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  if (!reader->parse(json.data(), json.data() + json.size(), &object, errors)) {
     return false;
   }
   return AsValue(&object, t);

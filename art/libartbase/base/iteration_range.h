@@ -18,6 +18,7 @@
 #define ART_LIBARTBASE_BASE_ITERATION_RANGE_H_
 
 #include <iterator>
+#include <type_traits>
 
 namespace art {
 
@@ -26,11 +27,11 @@ namespace art {
 template <typename Iter>
 class IterationRange {
  public:
-  typedef Iter iterator;
-  typedef typename std::iterator_traits<Iter>::difference_type difference_type;
-  typedef typename std::iterator_traits<Iter>::value_type value_type;
-  typedef typename std::iterator_traits<Iter>::pointer pointer;
-  typedef typename std::iterator_traits<Iter>::reference reference;
+  using iterator        = Iter;
+  using difference_type = typename std::iterator_traits<Iter>::difference_type;
+  using value_type      = typename std::iterator_traits<Iter>::value_type;
+  using pointer         = typename std::iterator_traits<Iter>::pointer;
+  using reference       = typename std::iterator_traits<Iter>::reference;
 
   IterationRange(iterator first, iterator last) : first_(first), last_(last) { }
 
@@ -49,9 +50,11 @@ inline IterationRange<Iter> MakeIterationRange(const Iter& begin_it, const Iter&
   return IterationRange<Iter>(begin_it, end_it);
 }
 
-template<typename List>
-inline IterationRange<typename List::iterator> MakeIterationRange(List& list) {
-  return IterationRange<typename List::iterator>(list.begin(), list.end());
+template <typename List>
+inline auto MakeIterationRange(List& list) -> IterationRange<decltype(list.begin())> {
+  static_assert(std::is_same_v<decltype(list.begin()), decltype(list.end())>,
+                "Different iterator types");
+  return MakeIterationRange(list.begin(), list.end());
 }
 
 template <typename Iter>
@@ -61,7 +64,7 @@ inline IterationRange<Iter> MakeEmptyIterationRange(const Iter& it) {
 
 template <typename Container>
 inline auto ReverseRange(Container&& c) {
-  typedef typename std::reverse_iterator<decltype(c.begin())> riter;
+  using riter = typename std::reverse_iterator<decltype(c.begin())>;
   return MakeIterationRange(riter(c.end()), riter(c.begin()));
 }
 

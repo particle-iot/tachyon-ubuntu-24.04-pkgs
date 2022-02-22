@@ -1,4 +1,3 @@
-system/core/adb/OVERVIEW.TXT
-system/core/adb/SERVICES.TXT
-system/core/adb/SYNC.TXT
-system/core/NOTICE
+packages/modules/adb/OVERVIEW.TXT
+packages/modules/adb/SERVICES.TXT
+packages/modules/adb/SYNC.TXT

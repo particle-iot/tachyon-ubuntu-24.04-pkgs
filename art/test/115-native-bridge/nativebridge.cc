@@ -211,7 +211,7 @@ static jint trampoline_Java_Main_testSignal(JNIEnv*, jclass) {
   struct sigaction tmp;
   sigemptyset(&tmp.sa_mask);
   tmp.sa_sigaction = test_sigaction_handler;
-#if !defined(__APPLE__) && !defined(__mips__)
+#if !defined(__APPLE__)
   tmp.sa_restorer = nullptr;
 #endif
 
@@ -579,7 +579,7 @@ static bool StandardSignalHandler(int sig, siginfo_t* info ATTRIBUTE_UNUSED,
   return true;
 }
 
-// A dummy special handler, continueing after the faulting location. This code comes from
+// A placeholder special handler, continueing after the faulting location. This code comes from
 // 004-SignalTest.
 static bool nb_signalhandler(int sig, siginfo_t* info, void* context) {
   printf("NB signal handler with signal %d.\n", sig);

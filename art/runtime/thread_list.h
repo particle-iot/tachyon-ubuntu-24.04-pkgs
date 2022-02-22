@@ -81,11 +81,8 @@ class ThreadList {
 
   // Suspend a thread using a peer, typically used by the debugger. Returns the thread on success,
   // else null. The peer is used to identify the thread to avoid races with the thread terminating.
-  // If the thread should be suspended then value of request_suspension should be true otherwise
-  // the routine will wait for a previous suspend request. If the suspension times out then *timeout
-  // is set to true.
+  // If the suspension times out then *timeout is set to true.
   Thread* SuspendThreadByPeer(jobject peer,
-                              bool request_suspension,
                               SuspendReason reason,
                               bool* timed_out)
       REQUIRES(!Locks::mutator_lock_,
@@ -104,15 +101,20 @@ class ThreadList {
   // Find an existing thread (or self) by its thread id (not tid).
   Thread* FindThreadByThreadId(uint32_t thread_id) REQUIRES(Locks::thread_list_lock_);
 
+  // Find an existing thread (or self) by its tid (not thread id).
+  Thread* FindThreadByTid(int tid) REQUIRES(Locks::thread_list_lock_);
+
   // Does the thread list still contain the given thread, or one at the same address?
   // Used by Monitor to provide (mostly accurate) debugging information.
   bool Contains(Thread* thread) REQUIRES(Locks::thread_list_lock_);
 
-  // Run a checkpoint on threads, running threads are not suspended but run the checkpoint inside
-  // of the suspend check. Returns how many checkpoints that are expected to run, including for
-  // already suspended threads for b/24191051. Run the callback, if non-null, inside the
-  // thread_list_lock critical section after determining the runnable/suspended states of the
-  // threads.
+  // Run a checkpoint on all threads. Return the total number of threads for which the checkpoint
+  // function has been or will be called.
+  // Running threads are not suspended but run the checkpoint inside of the suspend check. The
+  // return value includes already suspended threads for b/24191051. Runs or requests the
+  // callback, if non-null, inside the thread_list_lock critical section after determining the
+  // runnable/suspended states of the threads. Does not wait for completion of the callbacks in
+  // running threads.
   size_t RunCheckpoint(Closure* checkpoint_function, Closure* callback = nullptr)
       REQUIRES(!Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_);
 
@@ -189,7 +191,6 @@ class ThreadList {
   uint32_t AllocThreadId(Thread* self);
   void ReleaseThreadId(Thread* self, uint32_t id) REQUIRES(!Locks::allocated_thread_ids_lock_);
 
-  bool Contains(pid_t tid) REQUIRES(Locks::thread_list_lock_);
   size_t RunCheckpoint(Closure* checkpoint_function, bool includeSuspended)
       REQUIRES(!Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_);
 

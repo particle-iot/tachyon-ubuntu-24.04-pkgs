@@ -19,7 +19,7 @@
 #include "base/enums.h"
 #include "callee_save_frame.h"
 #include "common_throws.h"
-#include "class_root.h"
+#include "class_root-inl.h"
 #include "debug_print.h"
 #include "debugger.h"
 #include "dex/dex_file-inl.h"
@@ -32,7 +32,6 @@
 #include "gc/accounting/card_table-inl.h"
 #include "imt_conflict_table.h"
 #include "imtable-inl.h"
-#include "index_bss_mapping.h"
 #include "instrumentation.h"
 #include "interpreter/interpreter.h"
 #include "interpreter/interpreter_common.h"
@@ -136,90 +135,6 @@ class QuickArgumentVisitor {
   static constexpr size_t kNumQuickGprArgs = 7;  // 7 arguments passed in GPRs.
   static constexpr size_t kNumQuickFprArgs = 8;  // 8 arguments passed in FPRs.
   static constexpr bool kGprFprLockstep = false;
-  static size_t GprIndexToGprOffset(uint32_t gpr_index) {
-    return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
-  }
-#elif defined(__mips__) && !defined(__LP64__)
-  // The callee save frame is pointed to by SP.
-  // | argN       |  |
-  // | ...        |  |
-  // | arg4       |  |
-  // | arg3 spill |  |  Caller's frame
-  // | arg2 spill |  |
-  // | arg1 spill |  |
-  // | Method*    | ---
-  // | RA         |
-  // | ...        |    callee saves
-  // | T1         |    arg5
-  // | T0         |    arg4
-  // | A3         |    arg3
-  // | A2         |    arg2
-  // | A1         |    arg1
-  // | F19        |
-  // | F18        |    f_arg5
-  // | F17        |
-  // | F16        |    f_arg4
-  // | F15        |
-  // | F14        |    f_arg3
-  // | F13        |
-  // | F12        |    f_arg2
-  // | F11        |
-  // | F10        |    f_arg1
-  // | F9         |
-  // | F8         |    f_arg0
-  // |            |    padding
-  // | A0/Method* |  <- sp
-  static constexpr bool kSplitPairAcrossRegisterAndStack = false;
-  static constexpr bool kAlignPairRegister = true;
-  static constexpr bool kQuickSoftFloatAbi = false;
-  static constexpr bool kQuickDoubleRegAlignedFloatBackFilled = false;
-  static constexpr bool kQuickSkipOddFpRegisters = true;
-  static constexpr size_t kNumQuickGprArgs = 5;   // 5 arguments passed in GPRs.
-  static constexpr size_t kNumQuickFprArgs = 12;  // 6 arguments passed in FPRs. Floats can be
-                                                  // passed only in even numbered registers and each
-                                                  // double occupies two registers.
-  static constexpr bool kGprFprLockstep = false;
-  static size_t GprIndexToGprOffset(uint32_t gpr_index) {
-    return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
-  }
-#elif defined(__mips__) && defined(__LP64__)
-  // The callee save frame is pointed to by SP.
-  // | argN       |  |
-  // | ...        |  |
-  // | arg4       |  |
-  // | arg3 spill |  |  Caller's frame
-  // | arg2 spill |  |
-  // | arg1 spill |  |
-  // | Method*    | ---
-  // | RA         |
-  // | ...        |    callee saves
-  // | A7         |    arg7
-  // | A6         |    arg6
-  // | A5         |    arg5
-  // | A4         |    arg4
-  // | A3         |    arg3
-  // | A2         |    arg2
-  // | A1         |    arg1
-  // | F19        |    f_arg7
-  // | F18        |    f_arg6
-  // | F17        |    f_arg5
-  // | F16        |    f_arg4
-  // | F15        |    f_arg3
-  // | F14        |    f_arg2
-  // | F13        |    f_arg1
-  // | F12        |    f_arg0
-  // |            |    padding
-  // | A0/Method* |  <- sp
-  // NOTE: for Mip64, when A0 is skipped, F12 is also skipped.
-  static constexpr bool kSplitPairAcrossRegisterAndStack = false;
-  static constexpr bool kAlignPairRegister = false;
-  static constexpr bool kQuickSoftFloatAbi = false;
-  static constexpr bool kQuickDoubleRegAlignedFloatBackFilled = false;
-  static constexpr bool kQuickSkipOddFpRegisters = false;
-  static constexpr size_t kNumQuickGprArgs = 7;  // 7 arguments passed in GPRs.
-  static constexpr size_t kNumQuickFprArgs = 7;  // 7 arguments passed in FPRs.
-  static constexpr bool kGprFprLockstep = true;
-
   static size_t GprIndexToGprOffset(uint32_t gpr_index) {
     return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
   }
@@ -520,15 +435,10 @@ class QuickArgumentVisitor {
         case Primitive::kPrimLong:
           if (kQuickSoftFloatAbi || (cur_type_ == Primitive::kPrimLong)) {
             if (cur_type_ == Primitive::kPrimLong &&
-#if defined(__mips__) && !defined(__LP64__)
-                (gpr_index_ == 0 || gpr_index_ == 2) &&
-#else
                 gpr_index_ == 0 &&
-#endif
                 kAlignPairRegister) {
-              // Currently, this is only for ARM and MIPS, where we align long parameters with
-              // even-numbered registers by skipping R1 (on ARM) or A1(A3) (on MIPS) and using
-              // R2 (on ARM) or A2(T0) (on MIPS) instead.
+              // Currently, this is only for ARM, where we align long parameters with
+              // even-numbered registers by skipping R1 and using R2 instead.
               IncGprIndex();
             }
             is_split_long_or_double_ = (GetBytesPerGprSpillLocation(kRuntimeISA) == 4) &&
@@ -678,8 +588,8 @@ static void HandleDeoptimization(JValue* result,
   // Coming from partial-fragment deopt.
   Thread* self = Thread::Current();
   if (kIsDebugBuild) {
-    // Sanity-check: are the methods as expected? We check that the last shadow frame (the bottom
-    // of the call-stack) corresponds to the called method.
+    // Consistency-check: are the methods as expected? We check that the last shadow frame
+    // (the bottom of the call-stack) corresponds to the called method.
     ShadowFrame* linked = deopt_frame;
     while (linked->GetLink() != nullptr) {
       linked = linked->GetLink();
@@ -707,19 +617,19 @@ static void HandleDeoptimization(JValue* result,
 
   // Ensure that the stack is still in order.
   if (kIsDebugBuild) {
-    class DummyStackVisitor : public StackVisitor {
+    class EntireStackVisitor : public StackVisitor {
      public:
-      explicit DummyStackVisitor(Thread* self_in) REQUIRES_SHARED(Locks::mutator_lock_)
+      explicit EntireStackVisitor(Thread* self_in) REQUIRES_SHARED(Locks::mutator_lock_)
           : StackVisitor(self_in, nullptr, StackVisitor::StackWalkKind::kIncludeInlinedFrames) {}
 
       bool VisitFrame() override REQUIRES_SHARED(Locks::mutator_lock_) {
-        // Nothing to do here. In a debug build, SanityCheckFrame will do the work in the walking
+        // Nothing to do here. In a debug build, ValidateFrame will do the work in the walking
         // logic. Just always say we want to continue.
         return true;
       }
     };
-    DummyStackVisitor dsv(self);
-    dsv.WalkStack();
+    EntireStackVisitor esv(self);
+    esv.WalkStack();
   }
 
   // Restore the exception that was pending before deoptimization then interpret the
@@ -934,7 +844,7 @@ extern "C" uint64_t artQuickProxyInvokeHandler(
   DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), kRuntimePointerSize);
   DCHECK(!Runtime::Current()->IsActiveTransaction());
   ObjPtr<mirror::Method> interface_reflect_method =
-      mirror::Method::CreateFromArtMethod<kRuntimePointerSize, false>(soa.Self(), interface_method);
+      mirror::Method::CreateFromArtMethod<kRuntimePointerSize>(soa.Self(), interface_method);
   if (interface_reflect_method == nullptr) {
     soa.Self()->AssertPendingOOMException();
     return 0;
@@ -1184,7 +1094,7 @@ extern "C" TwoWordReturn artInstrumentationMethodExitFromCode(Thread* self,
   // Instrumentation exit stub must not be entered with a pending exception.
   CHECK(!self->IsExceptionPending()) << "Enter instrumentation exit stub with pending exception "
                                      << self->GetException()->Dump();
-  // Compute address of return PC and sanity check that it currently holds 0.
+  // Compute address of return PC and check that it currently holds 0.
   constexpr size_t return_pc_offset =
       RuntimeCalleeSaveFrame::GetReturnPcOffset(CalleeSaveType::kSaveEverything);
   uintptr_t* return_pc_addr = reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(sp) +
@@ -1401,34 +1311,12 @@ extern "C" const void* artQuickResolutionTrampoline(
   // Resolve method filling in dex cache.
   if (!called_method_known_on_entry) {
     StackHandleScope<1> hs(self);
-    mirror::Object* dummy = nullptr;
+    mirror::Object* fake_receiver = nullptr;
     HandleWrapper<mirror::Object> h_receiver(
-        hs.NewHandleWrapper(virtual_or_interface ? &receiver : &dummy));
+        hs.NewHandleWrapper(virtual_or_interface ? &receiver : &fake_receiver));
     DCHECK_EQ(caller->GetDexFile(), called_method.dex_file);
     called = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
         self, called_method.index, caller, invoke_type);
-
-    // Update .bss entry in oat file if any.
-    if (called != nullptr && called_method.dex_file->GetOatDexFile() != nullptr) {
-      size_t bss_offset = IndexBssMappingLookup::GetBssOffset(
-          called_method.dex_file->GetOatDexFile()->GetMethodBssMapping(),
-          called_method.index,
-          called_method.dex_file->NumMethodIds(),
-          static_cast<size_t>(kRuntimePointerSize));
-      if (bss_offset != IndexBssMappingLookup::npos) {
-        DCHECK_ALIGNED(bss_offset, static_cast<size_t>(kRuntimePointerSize));
-        const OatFile* oat_file = called_method.dex_file->GetOatDexFile()->GetOatFile();
-        ArtMethod** method_entry = reinterpret_cast<ArtMethod**>(const_cast<uint8_t*>(
-            oat_file->BssBegin() + bss_offset));
-        DCHECK_GE(method_entry, oat_file->GetBssMethods().data());
-        DCHECK_LT(method_entry,
-                  oat_file->GetBssMethods().data() + oat_file->GetBssMethods().size());
-        std::atomic<ArtMethod*>* atomic_entry =
-            reinterpret_cast<std::atomic<ArtMethod*>*>(method_entry);
-        static_assert(sizeof(*method_entry) == sizeof(*atomic_entry), "Size check.");
-        atomic_entry->store(called, std::memory_order_release);
-      }
-    }
   }
   const void* code = nullptr;
   if (LIKELY(!self->IsExceptionPending())) {
@@ -1462,36 +1350,48 @@ extern "C" const void* artQuickResolutionTrampoline(
                                << mirror::Object::PrettyTypeOf(receiver) << " "
                                << invoke_type << " " << orig_called->GetVtableIndex();
     }
+    // Now that we know the actual target, update .bss entry in oat file, if
+    // any.
+    if (!called_method_known_on_entry) {
+      // We only put non copied methods in the BSS. Putting a copy can lead to an
+      // odd situation where the ArtMethod being executed is unrelated to the
+      // receiver of the method.
+      called = called->GetCanonicalMethod();
+      if (invoke_type == kSuper || invoke_type == kInterface || invoke_type == kVirtual) {
+        if (called->GetDexFile() == called_method.dex_file) {
+          called_method.index = called->GetDexMethodIndex();
+        } else {
+          called_method.index = called->FindDexMethodIndexInOtherDexFile(
+              *called_method.dex_file, called_method.index);
+          DCHECK_NE(called_method.index, dex::kDexNoIndex);
+        }
+      }
+      MaybeUpdateBssMethodEntry(called, called_method);
+    }
 
+    // Static invokes need class initialization check but instance invokes can proceed even if
+    // the class is erroneous, i.e. in the edge case of escaping instances of erroneous classes.
+    bool success = true;
     ObjPtr<mirror::Class> called_class = called->GetDeclaringClass();
     if (NeedsClinitCheckBeforeCall(called) && !called_class->IsVisiblyInitialized()) {
       // Ensure that the called method's class is initialized.
       StackHandleScope<1> hs(soa.Self());
       HandleWrapperObjPtr<mirror::Class> h_called_class(hs.NewHandleWrapper(&called_class));
-      linker->EnsureInitialized(soa.Self(), h_called_class, true, true);
+      success = linker->EnsureInitialized(soa.Self(), h_called_class, true, true);
     }
-    bool force_interpreter = self->IsForceInterpreter() && !called->IsNative();
-    if (called_class->IsInitialized() || called_class->IsInitializing()) {
-      if (UNLIKELY(force_interpreter)) {
-        // If we are single-stepping or the called method is deoptimized (by a
-        // breakpoint, for example), then we have to execute the called method
-        // with the interpreter.
+    if (success) {
+      code = called->GetEntryPointFromQuickCompiledCode();
+      if (linker->IsQuickResolutionStub(code)) {
+        DCHECK_EQ(invoke_type, kStatic);
+        // Go to JIT or oat and grab code.
+        code = linker->GetQuickOatCodeFor(called);
+      }
+      if (linker->ShouldUseInterpreterEntrypoint(called, code)) {
         code = GetQuickToInterpreterBridge();
-      } else {
-        code = called->GetEntryPointFromQuickCompiledCode();
-        if (linker->IsQuickResolutionStub(code)) {
-          DCHECK_EQ(invoke_type, kStatic);
-          // Go to JIT or oat and grab code.
-          code = linker->GetQuickOatCodeFor(called);
-          if (called_class->IsInitialized()) {
-            // Only update the entrypoint once the class is initialized. Other
-            // threads still need to go through the resolution stub.
-            Runtime::Current()->GetInstrumentation()->UpdateMethodsCode(called, code);
-          }
-        }
       }
     } else {
       DCHECK(called_class->IsErroneous());
+      DCHECK(self->IsExceptionPending());
     }
   }
   CHECK_EQ(code == nullptr, self->IsExceptionPending());
@@ -1536,17 +1436,10 @@ extern "C" const void* artQuickResolutionTrampoline(
  *                            necessary.
  *
  * void PushStack(uintptr_t): Push a value to the stack.
- *
- * uintptr_t PushHandleScope(mirror::Object* ref): Add a reference to the HandleScope. This _will_ have nullptr,
- *                                          as this might be important for null initialization.
- *                                          Must return the jobject, that is, the reference to the
- *                                          entry in the HandleScope (nullptr if necessary).
- *
  */
 template<class T> class BuildNativeCallFrameStateMachine {
  public:
 #if defined(__arm__)
-  // TODO: These are all dummy values!
   static constexpr bool kNativeSoftFloatAbi = true;
   static constexpr size_t kNumNativeGprArgs = 4;  // 4 arguments passed in GPRs, r0-r3
   static constexpr size_t kNumNativeFprArgs = 0;  // 0 arguments passed in FPRs.
@@ -1560,7 +1453,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kAlignDoubleOnStack = true;
 #elif defined(__aarch64__)
   static constexpr bool kNativeSoftFloatAbi = false;  // This is a hard float ABI.
-  static constexpr size_t kNumNativeGprArgs = 8;  // 6 arguments passed in GPRs.
+  static constexpr size_t kNumNativeGprArgs = 8;  // 8 arguments passed in GPRs.
   static constexpr size_t kNumNativeFprArgs = 8;  // 8 arguments passed in FPRs.
 
   static constexpr size_t kRegistersNeededForLong = 1;
@@ -1570,36 +1463,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr bool kMultiGPRegistersWidened = false;
   static constexpr bool kAlignLongOnStack = false;
   static constexpr bool kAlignDoubleOnStack = false;
-#elif defined(__mips__) && !defined(__LP64__)
-  static constexpr bool kNativeSoftFloatAbi = true;  // This is a hard float ABI.
-  static constexpr size_t kNumNativeGprArgs = 4;  // 4 arguments passed in GPRs.
-  static constexpr size_t kNumNativeFprArgs = 0;  // 0 arguments passed in FPRs.
-
-  static constexpr size_t kRegistersNeededForLong = 2;
-  static constexpr size_t kRegistersNeededForDouble = 2;
-  static constexpr bool kMultiRegistersAligned = true;
-  static constexpr bool kMultiFPRegistersWidened = true;
-  static constexpr bool kMultiGPRegistersWidened = false;
-  static constexpr bool kAlignLongOnStack = true;
-  static constexpr bool kAlignDoubleOnStack = true;
-#elif defined(__mips__) && defined(__LP64__)
-  // Let the code prepare GPRs only and we will load the FPRs with same data.
-  static constexpr bool kNativeSoftFloatAbi = true;
-  static constexpr size_t kNumNativeGprArgs = 8;
-  static constexpr size_t kNumNativeFprArgs = 0;
-
-  static constexpr size_t kRegistersNeededForLong = 1;
-  static constexpr size_t kRegistersNeededForDouble = 1;
-  static constexpr bool kMultiRegistersAligned = false;
-  static constexpr bool kMultiFPRegistersWidened = false;
-  static constexpr bool kMultiGPRegistersWidened = true;
-  static constexpr bool kAlignLongOnStack = false;
-  static constexpr bool kAlignDoubleOnStack = false;
 #elif defined(__i386__)
-  // TODO: Check these!
   static constexpr bool kNativeSoftFloatAbi = false;  // Not using int registers for fp
-  static constexpr size_t kNumNativeGprArgs = 0;  // 6 arguments passed in GPRs.
-  static constexpr size_t kNumNativeFprArgs = 0;  // 8 arguments passed in FPRs.
+  static constexpr size_t kNumNativeGprArgs = 0;  // 0 arguments passed in GPRs.
+  static constexpr size_t kNumNativeFprArgs = 0;  // 0 arguments passed in FPRs.
 
   static constexpr size_t kRegistersNeededForLong = 2;
   static constexpr size_t kRegistersNeededForDouble = 2;
@@ -1649,22 +1516,6 @@ template<class T> class BuildNativeCallFrameStateMachine {
     } else {
       stack_entries_++;  // TODO: have a field for pointer length as multiple of 32b
       PushStack(reinterpret_cast<uintptr_t>(val));
-      gpr_index_ = 0;
-    }
-  }
-
-  bool HaveHandleScopeGpr() const {
-    return gpr_index_ > 0;
-  }
-
-  void AdvanceHandleScope(mirror::Object* ptr) REQUIRES_SHARED(Locks::mutator_lock_) {
-    uintptr_t handle = PushHandle(ptr);
-    if (HaveHandleScopeGpr()) {
-      gpr_index_--;
-      PushGpr(handle);
-    } else {
-      stack_entries_++;
-      PushStack(handle);
       gpr_index_ = 0;
     }
   }
@@ -1845,9 +1696,6 @@ template<class T> class BuildNativeCallFrameStateMachine {
   void PushStack(uintptr_t val) {
     delegate_->PushStack(val);
   }
-  uintptr_t PushHandle(mirror::Object* ref) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return delegate_->PushHandle(ref);
-  }
 
   uint32_t gpr_index_;      // Number of free GPRs
   uint32_t fpr_index_;      // Number of free FPRs
@@ -1871,35 +1719,10 @@ class ComputeNativeCallFrameSize {
     return num_stack_entries_ * sizeof(uintptr_t);
   }
 
-  uint8_t* LayoutCallStack(uint8_t* sp8) const {
+  uint8_t* LayoutStackArgs(uint8_t* sp8) const {
     sp8 -= GetStackSize();
-    // Align by kStackAlignment.
+    // Align by kStackAlignment; it is at least as strict as native stack alignment.
     sp8 = reinterpret_cast<uint8_t*>(RoundDown(reinterpret_cast<uintptr_t>(sp8), kStackAlignment));
-    return sp8;
-  }
-
-  uint8_t* LayoutCallRegisterStacks(uint8_t* sp8, uintptr_t** start_gpr, uint32_t** start_fpr)
-      const {
-    // Assumption is OK right now, as we have soft-float arm
-    size_t fregs = BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>::kNumNativeFprArgs;
-    sp8 -= fregs * sizeof(uintptr_t);
-    *start_fpr = reinterpret_cast<uint32_t*>(sp8);
-    size_t iregs = BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>::kNumNativeGprArgs;
-    sp8 -= iregs * sizeof(uintptr_t);
-    *start_gpr = reinterpret_cast<uintptr_t*>(sp8);
-    return sp8;
-  }
-
-  uint8_t* LayoutNativeCall(uint8_t* sp8, uintptr_t** start_stack, uintptr_t** start_gpr,
-                            uint32_t** start_fpr) const {
-    // Native call stack.
-    sp8 = LayoutCallStack(sp8);
-    *start_stack = reinterpret_cast<uintptr_t*>(sp8);
-
-    // Put fprs and gprs below.
-    sp8 = LayoutCallRegisterStacks(sp8, start_gpr, start_fpr);
-
-    // Return the new bottom.
     return sp8;
   }
 
@@ -1917,11 +1740,8 @@ class ComputeNativeCallFrameSize {
       Primitive::Type cur_type_ = Primitive::GetType(shorty[i]);
       switch (cur_type_) {
         case Primitive::kPrimNot:
-          // TODO: fix abuse of mirror types.
-          sm.AdvanceHandleScope(
-              reinterpret_cast<mirror::Object*>(0x12345678));
+          sm.AdvancePointer(nullptr);
           break;
-
         case Primitive::kPrimBoolean:
         case Primitive::kPrimByte:
         case Primitive::kPrimChar:
@@ -1963,10 +1783,6 @@ class ComputeNativeCallFrameSize {
     // counting is already done in the superclass
   }
 
-  virtual uintptr_t PushHandle(mirror::Object* /* ptr */) {
-    return reinterpret_cast<uintptr_t>(nullptr);
-  }
-
  protected:
   uint32_t num_stack_entries_;
 };
@@ -1974,99 +1790,56 @@ class ComputeNativeCallFrameSize {
 class ComputeGenericJniFrameSize final : public ComputeNativeCallFrameSize {
  public:
   explicit ComputeGenericJniFrameSize(bool critical_native)
-    : num_handle_scope_references_(0), critical_native_(critical_native) {}
+    : critical_native_(critical_native) {}
 
-  // Lays out the callee-save frame. Assumes that the incorrect frame corresponding to RefsAndArgs
-  // is at *m = sp. Will update to point to the bottom of the save frame.
-  //
-  // Note: assumes ComputeAll() has been run before.
-  void LayoutCalleeSaveFrame(Thread* self, ArtMethod*** m, void* sp, HandleScope** handle_scope)
+  uintptr_t* ComputeLayout(ArtMethod** managed_sp, const char* shorty, uint32_t shorty_len)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    ArtMethod* method = **m;
-
     DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), kRuntimePointerSize);
 
-    uint8_t* sp8 = reinterpret_cast<uint8_t*>(sp);
-
-    // First, fix up the layout of the callee-save frame.
-    // We have to squeeze in the HandleScope, and relocate the method pointer.
-
-    // "Free" the slot for the method.
-    sp8 += sizeof(void*);  // In the callee-save frame we use a full pointer.
-
-    // Under the callee saves put handle scope and new method stack reference.
-    size_t handle_scope_size = HandleScope::SizeOf(num_handle_scope_references_);
-    size_t scope_and_method = handle_scope_size + sizeof(ArtMethod*);
-
-    sp8 -= scope_and_method;
-    // Align by kStackAlignment.
-    sp8 = reinterpret_cast<uint8_t*>(RoundDown(reinterpret_cast<uintptr_t>(sp8), kStackAlignment));
-
-    uint8_t* sp8_table = sp8 + sizeof(ArtMethod*);
-    *handle_scope = HandleScope::Create(sp8_table, self->GetTopHandleScope(),
-                                        num_handle_scope_references_);
-
-    // Add a slot for the method pointer, and fill it. Fix the pointer-pointer given to us.
-    uint8_t* method_pointer = sp8;
-    auto** new_method_ref = reinterpret_cast<ArtMethod**>(method_pointer);
-    *new_method_ref = method;
-    *m = new_method_ref;
-  }
-
-  // Adds space for the cookie. Note: may leave stack unaligned.
-  void LayoutCookie(uint8_t** sp) const {
-    // Reference cookie and padding
-    *sp -= 8;
-  }
-
-  // Re-layout the callee-save frame (insert a handle-scope). Then add space for the cookie.
-  // Returns the new bottom. Note: this may be unaligned.
-  uint8_t* LayoutJNISaveFrame(Thread* self, ArtMethod*** m, void* sp, HandleScope** handle_scope)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    // First, fix up the layout of the callee-save frame.
-    // We have to squeeze in the HandleScope, and relocate the method pointer.
-    LayoutCalleeSaveFrame(self, m, sp, handle_scope);
-
-    // The bottom of the callee-save frame is now where the method is, *m.
-    uint8_t* sp8 = reinterpret_cast<uint8_t*>(*m);
-
-    // Add space for cookie.
-    LayoutCookie(&sp8);
-
-    return sp8;
-  }
-
-  // WARNING: After this, *sp won't be pointing to the method anymore!
-  uint8_t* ComputeLayout(Thread* self, ArtMethod*** m, const char* shorty, uint32_t shorty_len,
-                         HandleScope** handle_scope, uintptr_t** start_stack, uintptr_t** start_gpr,
-                         uint32_t** start_fpr)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
     Walk(shorty, shorty_len);
 
-    // JNI part.
-    uint8_t* sp8 = LayoutJNISaveFrame(self, m, reinterpret_cast<void*>(*m), handle_scope);
+    // Add space for cookie.
+    DCHECK_ALIGNED(managed_sp, sizeof(uintptr_t));
+    static_assert(sizeof(uintptr_t) >= sizeof(IRTSegmentState));
+    uint8_t* sp8 = reinterpret_cast<uint8_t*>(managed_sp) - sizeof(uintptr_t);
 
-    sp8 = LayoutNativeCall(sp8, start_stack, start_gpr, start_fpr);
+    // Layout stack arguments.
+    sp8 = LayoutStackArgs(sp8);
 
     // Return the new bottom.
-    return sp8;
+    DCHECK_ALIGNED(sp8, sizeof(uintptr_t));
+    return reinterpret_cast<uintptr_t*>(sp8);
   }
 
-  uintptr_t PushHandle(mirror::Object* /* ptr */) override;
+  static uintptr_t* GetStartGprRegs(uintptr_t* reserved_area) {
+    return reserved_area;
+  }
+
+  static uint32_t* GetStartFprRegs(uintptr_t* reserved_area) {
+    constexpr size_t num_gprs =
+        BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>::kNumNativeGprArgs;
+    return reinterpret_cast<uint32_t*>(GetStartGprRegs(reserved_area) + num_gprs);
+  }
+
+  static uintptr_t* GetHiddenArgSlot(uintptr_t* reserved_area) {
+    // Note: `num_fprs` is 0 on architectures where sizeof(uintptr_t) does not match the
+    // FP register size (it is actually 0 on all supported 32-bit architectures).
+    constexpr size_t num_fprs =
+        BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>::kNumNativeFprArgs;
+    return reinterpret_cast<uintptr_t*>(GetStartFprRegs(reserved_area)) + num_fprs;
+  }
+
+  static uintptr_t* GetOutArgsSpSlot(uintptr_t* reserved_area) {
+    return GetHiddenArgSlot(reserved_area) + 1;
+  }
 
   // Add JNIEnv* and jobj/jclass before the shorty-derived elements.
   void WalkHeader(BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>* sm) override
       REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  uint32_t num_handle_scope_references_;
   const bool critical_native_;
 };
-
-uintptr_t ComputeGenericJniFrameSize::PushHandle(mirror::Object* /* ptr */) {
-  num_handle_scope_references_++;
-  return reinterpret_cast<uintptr_t>(nullptr);
-}
 
 void ComputeGenericJniFrameSize::WalkHeader(
     BuildNativeCallFrameStateMachine<ComputeNativeCallFrameSize>* sm) {
@@ -2079,7 +1852,7 @@ void ComputeGenericJniFrameSize::WalkHeader(
   sm->AdvancePointer(nullptr);
 
   // Class object or this as first argument
-  sm->AdvanceHandleScope(reinterpret_cast<mirror::Object*>(0x12345678));
+  sm->AdvancePointer(nullptr);
 }
 
 // Class to push values to three separate regions. Used to fill the native call part. Adheres to
@@ -2118,11 +1891,6 @@ class FillNativeCall {
     cur_stack_arg_++;
   }
 
-  virtual uintptr_t PushHandle(mirror::Object*) REQUIRES_SHARED(Locks::mutator_lock_) {
-    LOG(FATAL) << "(Non-JNI) Native call does not use handles.";
-    UNREACHABLE();
-  }
-
  private:
   uintptr_t* cur_gpr_reg_;
   uint32_t* cur_fpr_reg_;
@@ -2138,20 +1906,38 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
                               bool critical_native,
                               const char* shorty,
                               uint32_t shorty_len,
-                              ArtMethod*** sp)
-     : QuickArgumentVisitor(*sp, is_static, shorty, shorty_len),
-       jni_call_(nullptr, nullptr, nullptr, nullptr, critical_native),
-       sm_(&jni_call_) {
-    ComputeGenericJniFrameSize fsc(critical_native);
-    uintptr_t* start_gpr_reg;
-    uint32_t* start_fpr_reg;
-    uintptr_t* start_stack_arg;
-    bottom_of_used_area_ = fsc.ComputeLayout(self, sp, shorty, shorty_len,
-                                             &handle_scope_,
-                                             &start_stack_arg,
-                                             &start_gpr_reg, &start_fpr_reg);
+                              ArtMethod** managed_sp,
+                              uintptr_t* reserved_area)
+     : QuickArgumentVisitor(managed_sp, is_static, shorty, shorty_len),
+       jni_call_(nullptr, nullptr, nullptr, critical_native),
+       sm_(&jni_call_),
+       current_vreg_(nullptr) {
+    DCHECK_ALIGNED(managed_sp, kStackAlignment);
+    DCHECK_ALIGNED(reserved_area, sizeof(uintptr_t));
 
-    jni_call_.Reset(start_gpr_reg, start_fpr_reg, start_stack_arg, handle_scope_);
+    ComputeGenericJniFrameSize fsc(critical_native);
+    uintptr_t* out_args_sp = fsc.ComputeLayout(managed_sp, shorty, shorty_len);
+
+    // Store hidden argument for @CriticalNative.
+    uintptr_t* hidden_arg_slot = fsc.GetHiddenArgSlot(reserved_area);
+    constexpr uintptr_t kGenericJniTag = 1u;
+    ArtMethod* method = *managed_sp;
+    *hidden_arg_slot = critical_native ? (reinterpret_cast<uintptr_t>(method) | kGenericJniTag)
+                                       : 0xebad6a89u;  // Bad value.
+
+    // Set out args SP.
+    uintptr_t* out_args_sp_slot = fsc.GetOutArgsSpSlot(reserved_area);
+    *out_args_sp_slot = reinterpret_cast<uintptr_t>(out_args_sp);
+
+    // Prepare vreg pointer for spilling references.
+    static constexpr size_t frame_size =
+        RuntimeCalleeSaveFrame::GetFrameSize(CalleeSaveType::kSaveRefsAndArgs);
+    current_vreg_ = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<uint8_t*>(managed_sp) + frame_size + sizeof(ArtMethod*));
+
+    jni_call_.Reset(fsc.GetStartGprRegs(reserved_area),
+                    fsc.GetStartFprRegs(reserved_area),
+                    out_args_sp);
 
     // First 2 parameters are always excluded for CriticalNative methods.
     if (LIKELY(!critical_native)) {
@@ -2159,57 +1945,35 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
       sm_.AdvancePointer(self->GetJniEnv());
 
       if (is_static) {
-        sm_.AdvanceHandleScope((**sp)->GetDeclaringClass().Ptr());
+        // The `jclass` is a pointer to the method's declaring class.
+        // The declaring class must be marked.
+        auto* declaring_class = reinterpret_cast<mirror::CompressedReference<mirror::Class>*>(
+            method->GetDeclaringClassAddressWithoutBarrier());
+        if (kUseReadBarrier) {
+          ReadBarrierJni(declaring_class, self);
+        }
+        sm_.AdvancePointer(declaring_class);
       }  // else "this" reference is already handled by QuickArgumentVisitor.
     }
   }
 
   void Visit() REQUIRES_SHARED(Locks::mutator_lock_) override;
 
-  void FinalizeHandleScope(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
-
-  StackReference<mirror::Object>* GetFirstHandleScopeEntry() {
-    return handle_scope_->GetHandle(0).GetReference();
-  }
-
-  jobject GetFirstHandleScopeJObject() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    return handle_scope_->GetHandle(0).ToJObject();
-  }
-
-  void* GetBottomOfUsedArea() const {
-    return bottom_of_used_area_;
-  }
-
  private:
   // A class to fill a JNI call. Adds reference/handle-scope management to FillNativeCall.
   class FillJniCall final : public FillNativeCall {
    public:
-    FillJniCall(uintptr_t* gpr_regs, uint32_t* fpr_regs, uintptr_t* stack_args,
-                HandleScope* handle_scope, bool critical_native)
-      : FillNativeCall(gpr_regs, fpr_regs, stack_args),
-                       handle_scope_(handle_scope),
-        cur_entry_(0),
-        critical_native_(critical_native) {}
+    FillJniCall(uintptr_t* gpr_regs,
+                uint32_t* fpr_regs,
+                uintptr_t* stack_args,
+                bool critical_native)
+        : FillNativeCall(gpr_regs, fpr_regs, stack_args),
+          cur_entry_(0),
+          critical_native_(critical_native) {}
 
-    uintptr_t PushHandle(mirror::Object* ref) override REQUIRES_SHARED(Locks::mutator_lock_);
-
-    void Reset(uintptr_t* gpr_regs, uint32_t* fpr_regs, uintptr_t* stack_args, HandleScope* scope) {
+    void Reset(uintptr_t* gpr_regs, uint32_t* fpr_regs, uintptr_t* stack_args) {
       FillNativeCall::Reset(gpr_regs, fpr_regs, stack_args);
-      handle_scope_ = scope;
       cur_entry_ = 0U;
-    }
-
-    void ResetRemainingScopeSlots() REQUIRES_SHARED(Locks::mutator_lock_) {
-      // Initialize padding entries.
-      size_t expected_slots = handle_scope_->NumberOfReferences();
-      while (cur_entry_ < expected_slots) {
-        handle_scope_->GetMutableHandle(cur_entry_++).Assign(nullptr);
-      }
-
-      if (!critical_native_) {
-        // Non-critical natives have at least the self class (jclass) or this (jobject).
-        DCHECK_NE(cur_entry_, 0U);
-      }
     }
 
     bool CriticalNative() const {
@@ -2217,28 +1981,19 @@ class BuildGenericJniFrameVisitor final : public QuickArgumentVisitor {
     }
 
    private:
-    HandleScope* handle_scope_;
     size_t cur_entry_;
     const bool critical_native_;
   };
 
-  HandleScope* handle_scope_;
   FillJniCall jni_call_;
-  void* bottom_of_used_area_;
-
   BuildNativeCallFrameStateMachine<FillJniCall> sm_;
+
+  // Pointer to the current vreg in caller's reserved out vreg area.
+  // Used for spilling reference arguments.
+  uint32_t* current_vreg_;
 
   DISALLOW_COPY_AND_ASSIGN(BuildGenericJniFrameVisitor);
 };
-
-uintptr_t BuildGenericJniFrameVisitor::FillJniCall::PushHandle(mirror::Object* ref) {
-  uintptr_t tmp;
-  MutableHandle<mirror::Object> h = handle_scope_->GetMutableHandle(cur_entry_);
-  h.Assign(ref);
-  tmp = reinterpret_cast<uintptr_t>(h.ToJObject());
-  cur_entry_++;
-  return tmp;
-}
 
 void BuildGenericJniFrameVisitor::Visit() {
   Primitive::Type type = GetParamPrimitiveType();
@@ -2251,6 +2006,7 @@ void BuildGenericJniFrameVisitor::Visit() {
         long_arg = *reinterpret_cast<jlong*>(GetParamAddress());
       }
       sm_.AdvanceLong(long_arg);
+      current_vreg_ += 2u;
       break;
     }
     case Primitive::kPrimDouble: {
@@ -2262,16 +2018,22 @@ void BuildGenericJniFrameVisitor::Visit() {
         double_arg = *reinterpret_cast<uint64_t*>(GetParamAddress());
       }
       sm_.AdvanceDouble(double_arg);
+      current_vreg_ += 2u;
       break;
     }
     case Primitive::kPrimNot: {
-      StackReference<mirror::Object>* stack_ref =
-          reinterpret_cast<StackReference<mirror::Object>*>(GetParamAddress());
-      sm_.AdvanceHandleScope(stack_ref->AsMirrorPtr());
+      mirror::Object* obj =
+          reinterpret_cast<StackReference<mirror::Object>*>(GetParamAddress())->AsMirrorPtr();
+      StackReference<mirror::Object>* spill_ref =
+          reinterpret_cast<StackReference<mirror::Object>*>(current_vreg_);
+      spill_ref->Assign(obj);
+      sm_.AdvancePointer(obj != nullptr ? spill_ref : nullptr);
+      current_vreg_ += 1u;
       break;
     }
     case Primitive::kPrimFloat:
       sm_.AdvanceFloat(*reinterpret_cast<float*>(GetParamAddress()));
+      current_vreg_ += 1u;
       break;
     case Primitive::kPrimBoolean:  // Fall-through.
     case Primitive::kPrimByte:     // Fall-through.
@@ -2279,6 +2041,7 @@ void BuildGenericJniFrameVisitor::Visit() {
     case Primitive::kPrimShort:    // Fall-through.
     case Primitive::kPrimInt:      // Fall-through.
       sm_.AdvanceInt(*reinterpret_cast<jint*>(GetParamAddress()));
+      current_vreg_ += 1u;
       break;
     case Primitive::kPrimVoid:
       LOG(FATAL) << "UNREACHABLE";
@@ -2286,31 +2049,28 @@ void BuildGenericJniFrameVisitor::Visit() {
   }
 }
 
-void BuildGenericJniFrameVisitor::FinalizeHandleScope(Thread* self) {
-  // Clear out rest of the scope.
-  jni_call_.ResetRemainingScopeSlots();
-  if (!jni_call_.CriticalNative()) {
-    // Install HandleScope.
-    self->PushHandleScope(handle_scope_);
-  }
-}
-
 /*
- * Initializes an alloca region assumed to be directly below sp for a native call:
- * Create a HandleScope and call stack and fill a mini stack with values to be pushed to registers.
- * The final element on the stack is a pointer to the native code.
+ * Initializes the reserved area assumed to be directly below `managed_sp` for a native call:
  *
- * On entry, the stack has a standard callee-save frame above sp, and an alloca below it.
- * We need to fix this, as the handle scope needs to go into the callee-save frame.
+ * On entry, the stack has a standard callee-save frame above `managed_sp`,
+ * and the reserved area below it. Starting below `managed_sp`, we reserve space
+ * for local reference cookie (not present for @CriticalNative), HandleScope
+ * (not present for @CriticalNative) and stack args (if args do not fit into
+ * registers). At the bottom of the reserved area, there is space for register
+ * arguments, hidden arg (for @CriticalNative) and the SP for the native call
+ * (i.e. pointer to the stack args area), which the calling stub shall load
+ * to perform the native call. We fill all these fields, perform class init
+ * check (for static methods) and/or locking (for synchronized methods) if
+ * needed and return to the stub.
  *
- * The return of this function denotes:
- * 1) How many bytes of the alloca can be released, if the value is non-negative.
- * 2) An error, if the value is negative.
+ * The return value is the pointer to the native code, null on failure.
  */
-extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** sp)
+extern "C" const void* artQuickGenericJniTrampoline(Thread* self,
+                                                    ArtMethod** managed_sp,
+                                                    uintptr_t* reserved_area)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Note: We cannot walk the stack properly until fixed up below.
-  ArtMethod* called = *sp;
+  ArtMethod* called = *managed_sp;
   DCHECK(called->IsNative()) << called->PrettyMethod(true);
   Runtime* runtime = Runtime::Current();
   uint32_t shorty_len = 0;
@@ -2325,16 +2085,15 @@ extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** 
                                       critical_native,
                                       shorty,
                                       shorty_len,
-                                      &sp);
+                                      managed_sp,
+                                      reserved_area);
   {
     ScopedAssertNoThreadSuspension sants(__FUNCTION__);
     visitor.VisitArguments();
-    // FinalizeHandleScope pushes the handle scope on the thread.
-    visitor.FinalizeHandleScope(self);
   }
 
   // Fix up managed-stack things in Thread. After this we can walk the stack.
-  self->SetTopOfStackTagged(sp);
+  self->SetTopOfStackTagged(managed_sp);
 
   self->VerifyStack();
 
@@ -2355,9 +2114,7 @@ extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** 
       Handle<mirror::Class> h_class(hs.NewHandle(declaring_class));
       if (!runtime->GetClassLinker()->EnsureInitialized(self, h_class, true, true)) {
         DCHECK(Thread::Current()->IsExceptionPending()) << called->PrettyMethod();
-        self->PopHandleScope();
-        // A negative value denotes an error.
-        return GetTwoWordFailureValue();
+        return nullptr;  // Report error.
       }
     }
   }
@@ -2369,11 +2126,10 @@ extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** 
     // Start JNI, save the cookie.
     if (called->IsSynchronized()) {
       DCHECK(normal_native) << " @FastNative and synchronize is not supported";
-      cookie = JniMethodStartSynchronized(visitor.GetFirstHandleScopeJObject(), self);
+      jobject lock = GetGenericJniSynchronizationObject(self, called);
+      cookie = JniMethodStartSynchronized(lock, self);
       if (self->IsExceptionPending()) {
-        self->PopHandleScope();
-        // A negative value denotes an error.
-        return GetTwoWordFailureValue();
+        return nullptr;  // Report error.
       }
     } else {
       if (fast_native) {
@@ -2383,7 +2139,7 @@ extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** 
         cookie = JniMethodStart(self);
       }
     }
-    sp32 = reinterpret_cast<uint32_t*>(sp);
+    sp32 = reinterpret_cast<uint32_t*>(managed_sp);
     *(sp32 - 1) = cookie;
   }
 
@@ -2393,55 +2149,22 @@ extern "C" TwoWordReturn artQuickGenericJniTrampoline(Thread* self, ArtMethod** 
   // does not handle that case. Calls from compiled stubs are also broken.
   void const* nativeCode = called->GetEntryPointFromJni();
 
-#if defined(__mips__) && !defined(__LP64__)
-  // On MIPS32 if the first two arguments are floating-point, we need to know their types
-  // so that art_quick_generic_jni_trampoline can correctly extract them from the stack
-  // and load into floating-point registers.
-  // Possible arrangements of first two floating-point arguments on the stack (32-bit FPU
-  // view):
-  // (1)
-  //  |     DOUBLE    |     DOUBLE    | other args, if any
-  //  |  F12  |  F13  |  F14  |  F15  |
-  //  |  SP+0 |  SP+4 |  SP+8 | SP+12 | SP+16
-  // (2)
-  //  |     DOUBLE    | FLOAT | (PAD) | other args, if any
-  //  |  F12  |  F13  |  F14  |       |
-  //  |  SP+0 |  SP+4 |  SP+8 | SP+12 | SP+16
-  // (3)
-  //  | FLOAT | (PAD) |     DOUBLE    | other args, if any
-  //  |  F12  |       |  F14  |  F15  |
-  //  |  SP+0 |  SP+4 |  SP+8 | SP+12 | SP+16
-  // (4)
-  //  | FLOAT | FLOAT | other args, if any
-  //  |  F12  |  F14  |
-  //  |  SP+0 |  SP+4 | SP+8
-  // As you can see, only the last case (4) is special. In all others we can just
-  // load F12/F13 and F14/F15 in the same manner.
-  // Set bit 0 of the native code address to 1 in this case (valid code addresses
-  // are always a multiple of 4 on MIPS32, so we have 2 spare bits available).
-  if (nativeCode != nullptr &&
-      shorty != nullptr &&
-      shorty_len >= 3 &&
-      shorty[1] == 'F' &&
-      shorty[2] == 'F') {
-    nativeCode = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(nativeCode) | 1);
-  }
-#endif
-
   VLOG(third_party_jni) << "GenericJNI: "
                         << called->PrettyMethod()
                         << " -> "
                         << std::hex << reinterpret_cast<uintptr_t>(nativeCode);
 
-  // Return native code addr(lo) and bottom of alloca address(hi).
-  return GetTwoWordSuccessValue(reinterpret_cast<uintptr_t>(visitor.GetBottomOfUsedArea()),
-                                reinterpret_cast<uintptr_t>(nativeCode));
+  // Return native code.
+  return nativeCode;
 }
 
 // Defined in quick_jni_entrypoints.cc.
-extern uint64_t GenericJniMethodEnd(Thread* self, uint32_t saved_local_ref_cookie,
-                                    jvalue result, uint64_t result_f, ArtMethod* called,
-                                    HandleScope* handle_scope);
+extern uint64_t GenericJniMethodEnd(Thread* self,
+                                    uint32_t saved_local_ref_cookie,
+                                    jvalue result,
+                                    uint64_t result_f,
+                                    ArtMethod* called);
+
 /*
  * Is called after the native JNI code. Responsible for cleanup (handle scope, saved state) and
  * unlocking.
@@ -2458,8 +2181,7 @@ extern "C" uint64_t artQuickGenericJniEndTrampoline(Thread* self,
   uint32_t* sp32 = reinterpret_cast<uint32_t*>(sp);
   ArtMethod* called = *sp;
   uint32_t cookie = *(sp32 - 1);
-  HandleScope* table = reinterpret_cast<HandleScope*>(reinterpret_cast<uint8_t*>(sp) + sizeof(*sp));
-  return GenericJniMethodEnd(self, cookie, result, result_f, called, table);
+  return GenericJniMethodEnd(self, cookie, result, result_f, called);
 }
 
 // We use TwoWordReturn to optimize scalar returns. We use the hi value for code, and the lo value
@@ -2563,21 +2285,6 @@ extern "C" TwoWordReturn artInvokeVirtualTrampolineWithAccessCheck(
   return artInvokeCommon<kVirtual, true>(method_idx, this_object, self, sp);
 }
 
-// Helper function for art_quick_imt_conflict_trampoline to look up the interface method.
-extern "C" ArtMethod* artLookupResolvedMethod(uint32_t method_index, ArtMethod* referrer)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  ScopedAssertNoThreadSuspension ants(__FUNCTION__);
-  DCHECK(!referrer->IsProxyMethod());
-  ArtMethod* result = Runtime::Current()->GetClassLinker()->LookupResolvedMethod(
-      method_index, referrer->GetDexCache(), referrer->GetClassLoader());
-  DCHECK(result == nullptr ||
-         result->GetDeclaringClass()->IsInterface() ||
-         result->GetDeclaringClass() ==
-             WellKnownClasses::ToClass(WellKnownClasses::java_lang_Object))
-      << result->PrettyMethod();
-  return result;
-}
-
 // Determine target of interface dispatch. The interface method and this object are known non-null.
 // The interface method is the method returned by the dex cache in the conflict trampoline.
 extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_method,
@@ -2586,17 +2293,15 @@ extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_metho
                                                       ArtMethod** sp)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   ScopedQuickEntrypointChecks sqec(self);
-  StackHandleScope<2> hs(self);
-  Handle<mirror::Object> this_object = hs.NewHandle(raw_this_object);
-  Handle<mirror::Class> cls = hs.NewHandle(this_object->GetClass());
 
-  ArtMethod* caller_method = QuickArgumentVisitor::GetCallingMethod(sp);
-  ArtMethod* method = nullptr;
-  ImTable* imt = cls->GetImt(kRuntimePointerSize);
-
-  if (UNLIKELY(interface_method == nullptr)) {
+  Runtime* runtime = Runtime::Current();
+  bool resolve_method = ((interface_method == nullptr) || interface_method->IsRuntimeMethod());
+  if (UNLIKELY(resolve_method)) {
     // The interface method is unresolved, so resolve it in the dex file of the caller.
     // Fetch the dex_method_idx of the target interface method from the caller.
+    StackHandleScope<1> hs(self);
+    Handle<mirror::Object> this_object = hs.NewHandle(raw_this_object);
+    ArtMethod* caller_method = QuickArgumentVisitor::GetCallingMethod(sp);
     uint32_t dex_method_idx;
     uint32_t dex_pc = QuickArgumentVisitor::GetCallingDexPc(sp);
     const Instruction& instr = caller_method->DexInstructions().InstructionAt(dex_pc);
@@ -2620,7 +2325,7 @@ extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_metho
       ScopedObjectAccessUnchecked soa(self->GetJniEnv());
       RememberForGcArgumentVisitor visitor(sp, false, shorty, shorty_len, &soa);
       visitor.VisitArguments();
-      ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
+      ClassLinker* class_linker = runtime->GetClassLinker();
       interface_method = class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
           self, dex_method_idx, caller_method, kInterface);
       visitor.FixupReferences();
@@ -2630,49 +2335,59 @@ extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_metho
       CHECK(self->IsExceptionPending());
       return GetTwoWordFailureValue();  // Failure.
     }
+    MaybeUpdateBssMethodEntry(interface_method, MethodReference(&dex_file, dex_method_idx));
+
+    // Refresh `raw_this_object` which may have changed after resolution.
+    raw_this_object = this_object.Get();
   }
 
+  // The compiler and interpreter make sure the conflict trampoline is never
+  // called on a method that resolves to j.l.Object.
+  DCHECK(!interface_method->GetDeclaringClass()->IsObjectClass());
+  DCHECK(interface_method->GetDeclaringClass()->IsInterface());
   DCHECK(!interface_method->IsRuntimeMethod());
-  // Look whether we have a match in the ImtConflictTable.
+  DCHECK(!interface_method->IsCopied());
+
+  ObjPtr<mirror::Object> obj_this = raw_this_object;
+  ObjPtr<mirror::Class> cls = obj_this->GetClass();
   uint32_t imt_index = interface_method->GetImtIndex();
+  ImTable* imt = cls->GetImt(kRuntimePointerSize);
   ArtMethod* conflict_method = imt->Get(imt_index, kRuntimePointerSize);
-  if (LIKELY(conflict_method->IsRuntimeMethod())) {
+  DCHECK(conflict_method->IsRuntimeMethod());
+
+  if (UNLIKELY(resolve_method)) {
+    // Now that we know the interface method, look it up in the conflict table.
     ImtConflictTable* current_table = conflict_method->GetImtConflictTable(kRuntimePointerSize);
     DCHECK(current_table != nullptr);
-    method = current_table->Lookup(interface_method, kRuntimePointerSize);
-  } else {
-    // It seems we aren't really a conflict method!
-    if (kIsDebugBuild) {
-      ArtMethod* m = cls->FindVirtualMethodForInterface(interface_method, kRuntimePointerSize);
-      CHECK_EQ(conflict_method, m)
-          << interface_method->PrettyMethod() << " / " << conflict_method->PrettyMethod() << " / "
-          << " / " << ArtMethod::PrettyMethod(m) << " / " << cls->PrettyClass();
+    ArtMethod* method = current_table->Lookup(interface_method, kRuntimePointerSize);
+    if (method != nullptr) {
+      return GetTwoWordSuccessValue(
+          reinterpret_cast<uintptr_t>(method->GetEntryPointFromQuickCompiledCode()),
+          reinterpret_cast<uintptr_t>(method));
     }
-    method = conflict_method;
-  }
-  if (method != nullptr) {
-    return GetTwoWordSuccessValue(
-        reinterpret_cast<uintptr_t>(method->GetEntryPointFromQuickCompiledCode()),
-        reinterpret_cast<uintptr_t>(method));
+    // Interface method is not in the conflict table. Continue looking up in the
+    // iftable.
   }
 
-  // No match, use the IfTable.
-  method = cls->FindVirtualMethodForInterface(interface_method, kRuntimePointerSize);
+  ArtMethod* method = cls->FindVirtualMethodForInterface(interface_method, kRuntimePointerSize);
   if (UNLIKELY(method == nullptr)) {
+    ArtMethod* caller_method = QuickArgumentVisitor::GetCallingMethod(sp);
     ThrowIncompatibleClassChangeErrorClassForInterfaceDispatch(
-        interface_method, this_object.Get(), caller_method);
-    return GetTwoWordFailureValue();  // Failure.
+        interface_method, obj_this.Ptr(), caller_method);
+    return GetTwoWordFailureValue();
   }
 
   // We arrive here if we have found an implementation, and it is not in the ImtConflictTable.
   // We create a new table with the new pair { interface_method, method }.
-  DCHECK(conflict_method->IsRuntimeMethod());
-  ArtMethod* new_conflict_method = Runtime::Current()->GetClassLinker()->AddMethodToConflictTable(
-      cls.Get(),
+
+  // Classes in the boot image should never need to update conflict methods in
+  // their IMT.
+  CHECK(!runtime->GetHeap()->ObjectIsInBootImageSpace(cls.Ptr())) << cls->PrettyClass();
+  ArtMethod* new_conflict_method = runtime->GetClassLinker()->AddMethodToConflictTable(
+      cls.Ptr(),
       conflict_method,
       interface_method,
-      method,
-      /*force_new_conflict_method=*/false);
+      method);
   if (new_conflict_method != conflict_method) {
     // Update the IMT if we create a new conflict method. No fence needed here, as the
     // data is consistent.

@@ -5,7 +5,6 @@ SOURCES = \
   chrono_utils.cpp \
   cmsg.cpp \
   file.cpp \
-  liblog_symbols.cpp \
   logging.cpp \
   mapped_file.cpp \
   parsebool.cpp \
@@ -19,19 +18,31 @@ SOURCES = \
   \
   errors_unix.cpp
 
-SOURCES := $(foreach source, $(SOURCES), system/core/base/$(source))
-OBJECTS = $(SOURCES:.cpp=.o)
+SOURCES_fmtlib = \
+  src/format.cc \
 
-CXXFLAGS += -std=gnu++2a
+SOURCES := \
+  $(foreach source, $(SOURCES), system/libbase/$(source)) \
+  $(foreach source, $(SOURCES_fmtlib), external/fmtlib/$(source))
+OBJECTS_CC = $(SOURCES:.cc=.o)
+SOURCES_CPP = $(filter %.cpp,$(SOURCES))
+OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
+
+CXXFLAGS += -std=gnu++2a -fno-exceptions
 CPPFLAGS += \
   -D_FILE_OFFSET_BITS=64 \
   -I/usr/include/android \
-  -Isystem/core/base/include \
+  -Iexternal/fmtlib/include \
   -Isystem/core/include \
+  -Isystem/libbase/include \
+  -Isystem/logging/liblog/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS)
+debian/out/system/core/$(NAME).a: $(OBJECTS_CC) $(OBJECTS_CPP)
 	mkdir --parents debian/out/system/core
 	ar -rcs $@ $^
 
-$(OBJECTS): %.o: %.cpp
+$(OBJECTS_CPP): %.o: %.cpp
+	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)
+
+$(OBJECTS_CC): %.o: %.cc
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

@@ -23,7 +23,9 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <android-base/threads.h>
 
 #include <cutils/android_filesystem_config.h>
@@ -37,12 +39,22 @@
 #endif
 
 using android::base::GetThreadId;
+using android::base::GetUintProperty;
 using android::base::StringPrintf;
+using android::base::StringReplace;
 using android::base::unique_fd;
 using android::base::WriteStringToFile;
 
-#define TASK_PROFILE_DB_FILE "/etc/task_profiles.json"
-#define TASK_PROFILE_DB_VENDOR_FILE "/vendor/etc/task_profiles.json"
+static constexpr const char* TASK_PROFILE_DB_FILE = "/etc/task_profiles.json";
+static constexpr const char* TASK_PROFILE_DB_VENDOR_FILE = "/vendor/etc/task_profiles.json";
+
+static constexpr const char* TEMPLATE_TASK_PROFILE_API_FILE =
+        "/etc/task_profiles/task_profiles_%u.json";
+
+void ProfileAttribute::Reset(const CgroupController& controller, const std::string& file_name) {
+    controller_ = controller;
+    file_name_ = file_name;
+}
 
 bool ProfileAttribute::GetPathForTask(int tid, std::string* path) const {
     std::string subgroup;
@@ -201,22 +213,6 @@ bool SetCgroupAction::AddTidToCgroup(int tid, int fd) {
 }
 
 bool SetCgroupAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
-    std::lock_guard<std::mutex> lock(fd_mutex_);
-    if (IsFdValid()) {
-        // fd is cached, reuse it
-        if (!AddTidToCgroup(pid, fd_)) {
-            LOG(ERROR) << "Failed to add task into cgroup";
-            return false;
-        }
-        return true;
-    }
-
-    if (fd_ == FDS_INACCESSIBLE) {
-        // no permissions to access the file, ignore
-        return true;
-    }
-
-    // this is app-dependent path and fd is not cached or cached fd can't be used
     std::string procs_path = controller()->GetProcsFilePath(path_, uid, pid);
     unique_fd tmp_fd(TEMP_FAILURE_RETRY(open(procs_path.c_str(), O_WRONLY | O_CLOEXEC)));
     if (tmp_fd < 0) {
@@ -268,9 +264,41 @@ bool SetCgroupAction::ExecuteForTask(int tid) const {
     return true;
 }
 
+bool WriteFileAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
+    std::string filepath(filepath_), value(value_);
+
+    filepath = StringReplace(filepath, "<uid>", std::to_string(uid), true);
+    filepath = StringReplace(filepath, "<pid>", std::to_string(pid), true);
+    value = StringReplace(value, "<uid>", std::to_string(uid), true);
+    value = StringReplace(value, "<pid>", std::to_string(pid), true);
+
+    if (!WriteStringToFile(value, filepath)) {
+        if (logfailures_) PLOG(ERROR) << "Failed to write '" << value << "' to " << filepath;
+        return false;
+    }
+
+    return true;
+}
+
+bool WriteFileAction::ExecuteForTask(int tid) const {
+    std::string filepath(filepath_), value(value_);
+    int uid = getuid();
+
+    filepath = StringReplace(filepath, "<uid>", std::to_string(uid), true);
+    filepath = StringReplace(filepath, "<pid>", std::to_string(tid), true);
+    value = StringReplace(value, "<uid>", std::to_string(uid), true);
+    value = StringReplace(value, "<pid>", std::to_string(tid), true);
+
+    if (!WriteStringToFile(value, filepath)) {
+        if (logfailures_) PLOG(ERROR) << "Failed to write '" << value << "' to " << filepath;
+        return false;
+    }
+
+    return true;
+}
+
 bool ApplyProfileAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
     for (const auto& profile : profiles_) {
-        profile->EnableResourceCaching();
         if (!profile->ExecuteForProcess(uid, pid)) {
             PLOG(WARNING) << "ExecuteForProcess failed for aggregate profile";
         }
@@ -280,12 +308,21 @@ bool ApplyProfileAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
 
 bool ApplyProfileAction::ExecuteForTask(int tid) const {
     for (const auto& profile : profiles_) {
-        profile->EnableResourceCaching();
-        if (!profile->ExecuteForTask(tid)) {
-            PLOG(WARNING) << "ExecuteForTask failed for aggregate profile";
-        }
+        profile->ExecuteForTask(tid);
     }
     return true;
+}
+
+void ApplyProfileAction::EnableResourceCaching() {
+    for (const auto& profile : profiles_) {
+        profile->EnableResourceCaching();
+    }
+}
+
+void ApplyProfileAction::DropResourceCaching() {
+    for (const auto& profile : profiles_) {
+        profile->DropResourceCaching();
+    }
 }
 
 void TaskProfile::MoveTo(TaskProfile* profile) {
@@ -357,6 +394,19 @@ TaskProfiles::TaskProfiles() {
         LOG(ERROR) << "Loading " << TASK_PROFILE_DB_FILE << " for [" << getpid() << "] failed";
     }
 
+    // load API-level specific system task profiles if available
+    unsigned int api_level = GetUintProperty<unsigned int>("ro.product.first_api_level", 0);
+    if (api_level > 0) {
+        std::string api_profiles_path =
+                android::base::StringPrintf(TEMPLATE_TASK_PROFILE_API_FILE, api_level);
+        if (!access(api_profiles_path.c_str(), F_OK) || errno != ENOENT) {
+            if (!Load(CgroupMap::GetInstance(), api_profiles_path)) {
+                LOG(ERROR) << "Loading " << api_profiles_path << " for [" << getpid()
+                           << "] failed";
+            }
+        }
+    }
+
     // load vendor task profiles if the file exists
     if (!access(TASK_PROFILE_DB_VENDOR_FILE, F_OK) &&
         !Load(CgroupMap::GetInstance(), TASK_PROFILE_DB_VENDOR_FILE)) {
@@ -373,10 +423,12 @@ bool TaskProfiles::Load(const CgroupMap& cg_map, const std::string& file_name) {
         return false;
     }
 
-    Json::Reader reader;
+    Json::CharReaderBuilder builder;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
     Json::Value root;
-    if (!reader.parse(json_doc, root)) {
-        LOG(ERROR) << "Failed to parse task profiles: " << reader.getFormattedErrorMessages();
+    std::string errorMessage;
+    if (!reader->parse(&*json_doc.begin(), &*json_doc.end(), &root, &errorMessage)) {
+        LOG(ERROR) << "Failed to parse task profiles: " << errorMessage;
         return false;
     }
 
@@ -386,15 +438,16 @@ bool TaskProfiles::Load(const CgroupMap& cg_map, const std::string& file_name) {
         std::string controller_name = attr[i]["Controller"].asString();
         std::string file_attr = attr[i]["File"].asString();
 
-        if (attributes_.find(name) == attributes_.end()) {
-            auto controller = cg_map.FindController(controller_name);
-            if (controller.HasValue()) {
+        auto controller = cg_map.FindController(controller_name);
+        if (controller.HasValue()) {
+            auto iter = attributes_.find(name);
+            if (iter == attributes_.end()) {
                 attributes_[name] = std::make_unique<ProfileAttribute>(controller, file_attr);
             } else {
-                LOG(WARNING) << "Controller " << controller_name << " is not found";
+                iter->second->Reset(controller, file_attr);
             }
         } else {
-            LOG(WARNING) << "Attribute " << name << " is already defined";
+            LOG(WARNING) << "Controller " << controller_name << " is not found";
         }
     }
 
@@ -458,6 +511,21 @@ bool TaskProfiles::Load(const CgroupMap& cg_map, const std::string& file_name) {
                     }
                 } else {
                     LOG(WARNING) << "SetClamps: invalid parameter: " << boost_value;
+                }
+            } else if (action_name == "WriteFile") {
+                std::string attr_filepath = params_val["FilePath"].asString();
+                std::string attr_value = params_val["Value"].asString();
+                if (!attr_filepath.empty() && !attr_value.empty()) {
+                    std::string attr_logfailures = params_val["LogFailures"].asString();
+                    bool logfailures = attr_logfailures.empty() || attr_logfailures == "true";
+                    profile->Add(std::make_unique<WriteFileAction>(attr_filepath, attr_value,
+                                                                   logfailures));
+                } else if (attr_filepath.empty()) {
+                    LOG(WARNING) << "WriteFile: invalid parameter: "
+                                 << "empty filepath";
+                } else if (attr_value.empty()) {
+                    LOG(WARNING) << "WriteFile: invalid parameter: "
+                                 << "empty value";
                 }
             } else {
                 LOG(WARNING) << "Unknown profile action: " << action_name;
@@ -527,13 +595,10 @@ const ProfileAttribute* TaskProfiles::GetAttribute(const std::string& name) cons
 }
 
 bool TaskProfiles::SetProcessProfiles(uid_t uid, pid_t pid,
-                                      const std::vector<std::string>& profiles, bool use_fd_cache) {
+                                      const std::vector<std::string>& profiles) {
     for (const auto& name : profiles) {
         TaskProfile* profile = GetProfile(name);
         if (profile != nullptr) {
-            if (use_fd_cache) {
-                profile->EnableResourceCaching();
-            }
             if (!profile->ExecuteForProcess(uid, pid)) {
                 PLOG(WARNING) << "Failed to apply " << name << " process profile";
             }

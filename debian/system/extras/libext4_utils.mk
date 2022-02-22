@@ -26,12 +26,12 @@ CPPFLAGS += \
   -DFEC_NO_KLOG \
   -DSQUASHFS_NO_KLOG \
   -I/usr/include/android \
-  -Isystem/core/base/include \
   -Isystem/core/libcutils/include \
   -Isystem/core/libsparse/include \
   -Isystem/extras/ext4_utils/include \
   -Isystem/extras/libfec/include \
   -Isystem/extras/squashfs_utils \
+  -Isystem/libbase/include \
 
 debian/out/system/extras/libext4_utils.a: $(OBJECTS_C) $(OBJECTS_CXX)
 	mkdir --parents debian/out/system/extras

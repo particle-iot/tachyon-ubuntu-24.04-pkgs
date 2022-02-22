@@ -29,7 +29,6 @@
 #include "base/mutex.h"
 #include "base/utils.h"
 #include "class_linker.h"
-#include "class_root.h"
 #include "deopt_manager.h"
 #include "dex/primitive.h"
 #include "events-inl.h"
@@ -416,8 +415,7 @@ class FieldVisitor {
         Visit(self, klass->GetSuperClass(), visitor);
       }
       for (uint32_t i = 0; i != klass->NumDirectInterfaces(); ++i) {
-        art::ObjPtr<art::mirror::Class> inf_klass =
-            art::mirror::Class::GetDirectInterface(self, klass, i);
+        art::ObjPtr<art::mirror::Class> inf_klass = klass->GetDirectInterface(i);
         DCHECK(inf_klass != nullptr);
         VisitInterface(self, inf_klass, visitor);
       }
@@ -437,8 +435,7 @@ class FieldVisitor {
 
       // Now visit the superinterfaces.
       for (uint32_t i = 0; i != inf_klass->NumDirectInterfaces(); ++i) {
-        art::ObjPtr<art::mirror::Class> super_inf_klass =
-            art::mirror::Class::GetDirectInterface(self, inf_klass, i);
+        art::ObjPtr<art::mirror::Class> super_inf_klass = inf_klass->GetDirectInterface(i);
         DCHECK(super_inf_klass != nullptr);
         VisitInterface(self, super_inf_klass, visitor);
       }
@@ -760,7 +757,8 @@ static jvmtiError DoIterateThroughHeap(T fn,
 
   bool stop_reports = false;
   const HeapFilter heap_filter(heap_filter_int);
-  art::ObjPtr<art::mirror::Class> filter_klass = soa.Decode<art::mirror::Class>(klass);
+  art::StackHandleScope<1> hs(self);
+  art::Handle<art::mirror::Class> filter_klass(hs.NewHandle(soa.Decode<art::mirror::Class>(klass)));
   auto visitor = [&](art::mirror::Object* obj) REQUIRES_SHARED(art::Locks::mutator_lock_) {
     // Early return, as we can't really stop visiting.
     if (stop_reports) {
@@ -782,7 +780,7 @@ static jvmtiError DoIterateThroughHeap(T fn,
     }
 
     if (filter_klass != nullptr) {
-      if (filter_klass != klass) {
+      if (filter_klass.Get() != klass) {
         return;
       }
     }

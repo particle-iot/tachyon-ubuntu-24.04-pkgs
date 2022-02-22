@@ -90,12 +90,18 @@ void SetMountProperty(const MountHandlerEntry& entry, bool add) {
     auto mount_prop = entry.mount_point;
     if (mount_prop == "/") mount_prop = "/root";
     std::replace(mount_prop.begin(), mount_prop.end(), '/', '.');
-    mount_prop = "dev.mnt.blk" + mount_prop;
+    auto blk_mount_prop = "dev.mnt.blk" + mount_prop;
+    auto dev_mount_prop = "dev.mnt.dev" + mount_prop;
     // Set property even if its value does not change to trigger 'on property:'
     // handling, except for clearing non-existent or already clear property.
     // Goal is reduction of empty properties and associated triggers.
-    if (value.empty() && android::base::GetProperty(mount_prop, "").empty()) return;
-    android::base::SetProperty(mount_prop, value);
+    if (value.empty() && android::base::GetProperty(blk_mount_prop, "").empty()) return;
+    android::base::SetProperty(blk_mount_prop, value);
+    if (!value.empty()) {
+        android::base::SetProperty(dev_mount_prop, entry.blk_device.substr(strlen(devblock)));
+    } else {
+        android::base::SetProperty(dev_mount_prop, "");
+    }
 }
 
 }  // namespace
@@ -130,7 +136,11 @@ void MountHandler::MountHandlerFunction() {
     char* buf = nullptr;
     size_t len = 0;
     while (getline(&buf, &len, fp_.get()) != -1) {
-        auto entry = ParseMount(std::string(buf));
+        auto buf_string = std::string(buf);
+        if (buf_string.find("/emulated") != std::string::npos) {
+            continue;
+        }
+        auto entry = ParseMount(buf_string);
         auto match = untouched.find(entry);
         if (match == untouched.end()) {
             touched.emplace_back(std::move(entry));

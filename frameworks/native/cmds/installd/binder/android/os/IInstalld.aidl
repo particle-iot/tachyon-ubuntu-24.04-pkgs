@@ -23,6 +23,9 @@ interface IInstalld {
 
     long createAppData(@nullable @utf8InCpp String uuid, in @utf8InCpp String packageName,
             int userId, int flags, int appId, in @utf8InCpp String seInfo, int targetSdkVersion);
+    long createAppDataBatched(in @nullable @utf8InCpp String[] uuids,
+        in @nullable @utf8InCpp String[] packageNames, in int userId, int flags, in int[] appIds,
+        in @utf8InCpp String[] seInfos, in int[] targetSdkVersions);
     void restoreconAppData(@nullable @utf8InCpp String uuid, @utf8InCpp String packageName,
             int userId, int flags, int appId, @utf8InCpp String seInfo);
     void migrateAppData(@nullable @utf8InCpp String uuid, @utf8InCpp String packageName,
@@ -40,11 +43,19 @@ interface IInstalld {
     long[] getUserSize(@nullable @utf8InCpp String uuid, int userId, int flags, in int[] appIds);
     long[] getExternalSize(@nullable @utf8InCpp String uuid, int userId, int flags, in int[] appIds);
 
+    @nullable
+    android.os.storage.CrateMetadata[] getAppCrates(
+            @nullable @utf8InCpp String uuid, in @utf8InCpp String[] packageNames,
+             int userId);
+    @nullable
+    android.os.storage.CrateMetadata[] getUserCrates(
+            @nullable @utf8InCpp String uuid, int userId);
+
     void setAppQuota(@nullable @utf8InCpp String uuid, int userId, int appId, long cacheQuota);
 
     void moveCompleteApp(@nullable @utf8InCpp String fromUuid, @nullable @utf8InCpp String toUuid,
-            @utf8InCpp String packageName, @utf8InCpp String dataAppName, int appId,
-            @utf8InCpp String seInfo, int targetSdkVersion);
+            @utf8InCpp String packageName, int appId,
+            @utf8InCpp String seInfo, int targetSdkVersion, @utf8InCpp String fromCodePath);
 
     void dexopt(@utf8InCpp String apkPath, int uid, @nullable @utf8InCpp String packageName,
             @utf8InCpp String instructionSet, int dexoptNeeded,
@@ -60,7 +71,7 @@ interface IInstalld {
 
     void rmdex(@utf8InCpp String codePath, @utf8InCpp String instructionSet);
 
-    boolean mergeProfiles(int uid, @utf8InCpp String packageName, @utf8InCpp String profileName);
+    int mergeProfiles(int uid, @utf8InCpp String packageName, @utf8InCpp String profileName);
     boolean dumpProfiles(int uid, @utf8InCpp String packageName, @utf8InCpp String  profileName,
             @utf8InCpp String codePath);
     boolean copySystemProfile(@utf8InCpp String systemProfile, int uid,
@@ -72,10 +83,7 @@ interface IInstalld {
             @utf8InCpp String profileName, @utf8InCpp String classpath);
     void destroyProfileSnapshot(@utf8InCpp String packageName, @utf8InCpp String profileName);
 
-    void idmap(@utf8InCpp String targetApkPath, @utf8InCpp String overlayApkPath, int uid);
-    void removeIdmap(@utf8InCpp String overlayApkPath);
     void rmPackageDir(@utf8InCpp String packageDir);
-    void markBootComplete(@utf8InCpp String instructionSet);
     void freeCache(@nullable @utf8InCpp String uuid, long targetFreeBytes,
             long cacheReservedBytes, int flags);
     void linkNativeLibraryDirectory(@nullable @utf8InCpp String uuid,
@@ -85,7 +93,7 @@ interface IInstalld {
             @utf8InCpp String toBase);
     void moveAb(@utf8InCpp String apkPath, @utf8InCpp String instructionSet,
             @utf8InCpp String outputPath);
-    void deleteOdex(@utf8InCpp String apkPath, @utf8InCpp String instructionSet,
+    long deleteOdex(@utf8InCpp String apkPath, @utf8InCpp String instructionSet,
             @nullable @utf8InCpp String outputPath);
     void installApkVerity(@utf8InCpp String filePath, in FileDescriptor verityInput,
             int contentSize);
@@ -109,8 +117,12 @@ interface IInstalld {
             int userId, int snapshotId, int storageFlags);
     void restoreAppDataSnapshot(@nullable @utf8InCpp String uuid, in @utf8InCpp String packageName,
             int appId, @utf8InCpp String seInfo, int user, int snapshotId, int storageflags);
+    void destroyCeSnapshotsNotSpecified(@nullable @utf8InCpp String uuid, int userId,
+            in int[] retainSnapshotIds);
     void destroyAppDataSnapshot(@nullable @utf8InCpp String uuid, @utf8InCpp String packageName,
             int userId, long ceSnapshotInode, int snapshotId, int storageFlags);
+    void tryMountDataMirror(@nullable @utf8InCpp String volumeUuid);
+    void onPrivateVolumeRemoved(@nullable @utf8InCpp String volumeUuid);
 
     void migrateLegacyObbData();
 

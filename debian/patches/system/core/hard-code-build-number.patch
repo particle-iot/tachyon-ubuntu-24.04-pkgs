@@ -1,17 +1,18 @@
 Description: just hard code rather than deal with circular deps
 Forwarded: not-needed
---- a/system/core/adb/adb.cpp
-+++ b/system/core/adb/adb.cpp
-@@ -44,8 +44,6 @@
- #include <android-base/parsenetaddress.h>
- #include <android-base/stringprintf.h>
+--- a/packages/modules/adb/adb.cpp
++++ b/packages/modules/adb/adb.cpp
+@@ -47,9 +47,6 @@
  #include <android-base/strings.h>
+ #include <diagnose_usb.h>
+ 
 -#include <build/version.h>
 -#include <platform_tools_version.h>
- 
+-
  #include "adb_auth.h"
  #include "adb_io.h"
-@@ -69,7 +67,7 @@
+ #include "adb_listeners.h"
+@@ -98,7 +95,7 @@
          "Version %s-%s\n"
          "Installed as %s\n",
          ADB_VERSION_MAJOR, ADB_VERSION_MINOR, ADB_SERVER_VERSION,
@@ -33,7 +34,7 @@ Forwarded: not-needed
  #include <sparse/sparse.h>
  #include <ziparchive/zip_archive.h>
  
-@@ -1680,7 +1678,7 @@
+@@ -1938,7 +1936,7 @@
                  setvbuf(stdout, nullptr, _IONBF, 0);
                  setvbuf(stderr, nullptr, _IONBF, 0);
              } else if (name == "version") {
@@ -41,4 +42,4 @@ Forwarded: not-needed
 +                fprintf(stdout, "fastboot version %s-%s\n", PLATFORM_TOOLS_VERSION, "debian");
                  fprintf(stdout, "Installed as %s\n", android::base::GetExecutablePath().c_str());
                  return 0;
- #if !defined(_WIN32)
+             } else {

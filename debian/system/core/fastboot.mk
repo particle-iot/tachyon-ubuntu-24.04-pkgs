@@ -11,6 +11,7 @@ fastboot_SOURCES = \
   udp.cpp \
   usb_linux.cpp \
   util.cpp \
+  vendor_boot_img_utils.cpp \
 
 fs_mgr_liblp_SOURCES := \
   builder.cpp \
@@ -31,31 +32,34 @@ CPPFLAGS += \
    -D_FILE_OFFSET_BITS=64 \
    -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
    -I/usr/include/android \
-   -Iexternal/boringssl/include \
    -Iexternal/avb \
-   -Isystem/core/adb \
-   -Isystem/core/base/include \
+   -Iexternal/boringssl/include \
+   -Iexternal/fmtlib/include \
+   -Ipackages/modules/adb \
    -Isystem/core/demangle/include \
    -Isystem/core/diagnose_usb/include \
    -Isystem/core/fs_mgr/include \
    -Isystem/core/fs_mgr/include_fstab \
    -Isystem/core/fs_mgr/liblp/include \
+   -Isystem/core/fs_mgr/libstorage_literals \
    -Isystem/core/include \
    -Isystem/core/libcutils/include \
    -Isystem/core/libsparse/include \
-   -Isystem/core/libziparchive/include \
    -Isystem/extras/ext4_utils/include \
+   -Isystem/libbase/include \
+   -Isystem/libziparchive/include \
    -Isystem/tools/mkbootimg/include/bootimg \
 
-LDFLAGS += -lpthread -lusb-1.0 -lz
+LDFLAGS += -lpthread -lusb-1.0 -lz -lprotobuf
 STATIC_LIBS = \
   debian/out/system/core/libadb.a \
-  debian/out/system/core/libcutils.a \
-  debian/out/system/extras/libext4_utils.a \
-  debian/out/system/core/libziparchive.a \
-  debian/out/system/core/libsparse.a \
   debian/out/system/core/libbase.a \
+  debian/out/system/core/libcutils.a \
   debian/out/system/core/liblog.a \
+  debian/out/system/core/libsparse.a \
+  debian/out/system/core/libziparchive.a \
+  debian/out/system/extras/libext4_utils.a \
+  debian/out/external/boringssl/libssl.a \
   debian/out/external/boringssl/libcrypto.a \
 
 # -latomic should be the last library specified

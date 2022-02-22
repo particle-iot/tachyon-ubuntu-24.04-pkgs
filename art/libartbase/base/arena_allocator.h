@@ -53,6 +53,7 @@ enum ArenaAllocKind {
   kArenaAllocBlockList,
   kArenaAllocReversePostOrder,
   kArenaAllocLinearOrder,
+  kArenaAllocReachabilityGraph,
   kArenaAllocConstantsMap,
   kArenaAllocPredecessors,
   kArenaAllocSuccessors,
@@ -104,6 +105,7 @@ enum ArenaAllocKind {
   kArenaAllocScheduler,
   kArenaAllocProfile,
   kArenaAllocSuperblockCloner,
+  kArenaAllocTransaction,
   kNumArenaAllocKinds
 };
 
@@ -146,7 +148,7 @@ class ArenaAllocatorStatsImpl {
   static const char* const kAllocNames[];
 };
 
-typedef ArenaAllocatorStatsImpl<kArenaAllocatorCountAllocations> ArenaAllocatorStats;
+using ArenaAllocatorStats = ArenaAllocatorStatsImpl<kArenaAllocatorCountAllocations>;
 
 class ArenaAllocatorMemoryTool {
  public:

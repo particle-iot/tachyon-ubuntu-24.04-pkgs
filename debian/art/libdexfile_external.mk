@@ -10,7 +10,7 @@ CPPFLAGS += \
   -Iart/libdexfile \
   -Iart/libdexfile/external/include \
   -Ilibnativehelper/include_jni \
-  -Isystem/core/base/include \
+  -Isystem/libbase/include \
   -Umips \
 
 debian/out/art/$(NAME).a: $(OBJECTS)

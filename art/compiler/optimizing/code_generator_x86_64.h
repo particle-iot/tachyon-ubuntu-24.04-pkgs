@@ -79,6 +79,31 @@ class InvokeDexCallingConvention : public CallingConvention<Register, FloatRegis
   DISALLOW_COPY_AND_ASSIGN(InvokeDexCallingConvention);
 };
 
+class CriticalNativeCallingConventionVisitorX86_64 : public InvokeDexCallingConventionVisitor {
+ public:
+  explicit CriticalNativeCallingConventionVisitorX86_64(bool for_register_allocation)
+      : for_register_allocation_(for_register_allocation) {}
+
+  virtual ~CriticalNativeCallingConventionVisitorX86_64() {}
+
+  Location GetNextLocation(DataType::Type type) override;
+  Location GetReturnLocation(DataType::Type type) const override;
+  Location GetMethodLocation() const override;
+
+  size_t GetStackOffset() const { return stack_offset_; }
+
+ private:
+  // Register allocator does not support adjusting frame size, so we cannot provide final locations
+  // of stack arguments for register allocation. We ask the register allocator for any location and
+  // move these arguments to the right place after adjusting the SP when generating the call.
+  const bool for_register_allocation_;
+  size_t gpr_index_ = 0u;
+  size_t fpr_index_ = 0u;
+  size_t stack_offset_ = 0u;
+
+  DISALLOW_COPY_AND_ASSIGN(CriticalNativeCallingConventionVisitorX86_64);
+};
+
 class FieldAccessCallingConventionX86_64 : public FieldAccessCallingConvention {
  public:
   FieldAccessCallingConventionX86_64() {}
@@ -206,6 +231,26 @@ class InstructionCodeGeneratorX86_64 : public InstructionCodeGenerator {
 
   X86_64Assembler* GetAssembler() const { return assembler_; }
 
+  // Generate a GC root reference load:
+  //
+  //   root <- *address
+  //
+  // while honoring read barriers based on read_barrier_option.
+  void GenerateGcRootFieldLoad(HInstruction* instruction,
+                               Location root,
+                               const Address& address,
+                               Label* fixup_label,
+                               ReadBarrierOption read_barrier_option);
+  void HandleFieldSet(HInstruction* instruction,
+                      uint32_t value_index,
+                      uint32_t extra_temp_index,
+                      DataType::Type field_type,
+                      Address field_addr,
+                      CpuRegister base,
+                      bool is_volatile,
+                      bool is_atomic,
+                      bool value_can_be_null);
+
  private:
   // Generate code for the given suspend check. If not null, `successor`
   // is the block to branch to if the suspend check is not needed, and after
@@ -261,16 +306,6 @@ class InstructionCodeGeneratorX86_64 : public InstructionCodeGenerator {
                                          Location obj,
                                          uint32_t offset,
                                          ReadBarrierOption read_barrier_option);
-  // Generate a GC root reference load:
-  //
-  //   root <- *address
-  //
-  // while honoring read barriers based on read_barrier_option.
-  void GenerateGcRootFieldLoad(HInstruction* instruction,
-                               Location root,
-                               const Address& address,
-                               Label* fixup_label,
-                               ReadBarrierOption read_barrier_option);
 
   void PushOntoFPStack(Location source, uint32_t temp_offset,
                        uint32_t stack_adjustment, bool is_float);
@@ -340,12 +375,16 @@ class CodeGeneratorX86_64 : public CodeGenerator {
 
   size_t GetSlowPathFPWidth() const override {
     return GetGraph()->HasSIMD()
-        ? 2 * kX86_64WordSize   // 16 bytes == 2 x86_64 words for each spill
+        ? GetSIMDRegisterWidth()
         : 1 * kX86_64WordSize;  //  8 bytes == 1 x86_64 words for each spill
   }
 
   size_t GetCalleePreservedFPWidth() const override {
     return 1 * kX86_64WordSize;
+  }
+
+  size_t GetSIMDRegisterWidth() const override {
+    return 2 * kX86_64WordSize;
   }
 
   HGraphVisitor* GetLocationBuilder() override {
@@ -394,6 +433,8 @@ class CodeGeneratorX86_64 : public CodeGenerator {
 
   // Helper method to move a value between two locations.
   void Move(Location destination, Location source);
+  // Helper method to load a value of non-reference type from memory.
+  void LoadFromMemoryNoReference(DataType::Type type, Location dst, Address src);
 
   Label* GetLabelOf(HBasicBlock* block) const {
     return CommonGetLabelOf<Label>(block_labels_, block);
@@ -423,6 +464,7 @@ class CodeGeneratorX86_64 : public CodeGenerator {
       const HInvokeStaticOrDirect::DispatchInfo& desired_dispatch_info,
       ArtMethod* method) override;
 
+  void LoadMethod(MethodLoadKind load_kind, Location temp, HInvoke* invoke);
   void GenerateStaticOrDirectCall(
       HInvokeStaticOrDirect* invoke, Location temp, SlowPathCode* slow_path = nullptr) override;
   void GenerateVirtualCall(
@@ -430,12 +472,13 @@ class CodeGeneratorX86_64 : public CodeGenerator {
 
   void RecordBootImageIntrinsicPatch(uint32_t intrinsic_data);
   void RecordBootImageRelRoPatch(uint32_t boot_image_offset);
-  void RecordBootImageMethodPatch(HInvokeStaticOrDirect* invoke);
-  void RecordMethodBssEntryPatch(HInvokeStaticOrDirect* invoke);
+  void RecordBootImageMethodPatch(HInvoke* invoke);
+  void RecordMethodBssEntryPatch(HInvoke* invoke);
   void RecordBootImageTypePatch(HLoadClass* load_class);
   Label* NewTypeBssEntryPatch(HLoadClass* load_class);
   void RecordBootImageStringPatch(HLoadString* load_string);
   Label* NewStringBssEntryPatch(HLoadString* load_string);
+  void RecordBootImageJniEntrypointPatch(HInvokeStaticOrDirect* invoke);
   Label* NewJitRootStringPatch(const DexFile& dex_file,
                                dex::StringIndex string_index,
                                Handle<mirror::String> handle);
@@ -444,7 +487,7 @@ class CodeGeneratorX86_64 : public CodeGenerator {
                               Handle<mirror::Class> handle);
 
   void LoadBootImageAddress(CpuRegister reg, uint32_t boot_image_reference);
-  void AllocateInstanceForIntrinsic(HInvokeStaticOrDirect* invoke, uint32_t boot_image_offset);
+  void LoadIntrinsicDeclaringClass(CpuRegister reg, HInvoke* invoke);
 
   void EmitLinkerPatches(ArenaVector<linker::LinkerPatch>* linker_patches) override;
 
@@ -597,6 +640,9 @@ class CodeGeneratorX86_64 : public CodeGenerator {
     }
   }
 
+  void IncreaseFrame(size_t adjustment) override;
+  void DecreaseFrame(size_t adjustment) override;
+
   void GenerateNop() override;
   void GenerateImplicitNullCheck(HNullCheck* instruction) override;
   void GenerateExplicitNullCheck(HNullCheck* instruction) override;
@@ -605,9 +651,11 @@ class CodeGeneratorX86_64 : public CodeGenerator {
 
   void MaybeIncrementHotness(bool is_frame_entry);
 
-  // When we don't know the proper offset for the value, we use kDummy32BitOffset.
+  static void BlockNonVolatileXmmRegisters(LocationSummary* locations);
+
+  // When we don't know the proper offset for the value, we use kPlaceholder32BitOffset.
   // We will fix this up in the linker later to have the right value.
-  static constexpr int32_t kDummy32BitOffset = 256;
+  static constexpr int32_t kPlaceholder32BitOffset = 256;
 
  private:
   template <linker::LinkerPatch (*Factory)(size_t, const DexFile*, uint32_t, uint32_t)>
@@ -634,10 +682,16 @@ class CodeGeneratorX86_64 : public CodeGenerator {
   ArenaDeque<PatchInfo<Label>> boot_image_type_patches_;
   // PC-relative type patch info for kBssEntry.
   ArenaDeque<PatchInfo<Label>> type_bss_entry_patches_;
+  // PC-relative public type patch info for kBssEntryPublic.
+  ArenaDeque<PatchInfo<Label>> public_type_bss_entry_patches_;
+  // PC-relative package type patch info for kBssEntryPackage.
+  ArenaDeque<PatchInfo<Label>> package_type_bss_entry_patches_;
   // PC-relative String patch info for kBootImageLinkTimePcRelative.
   ArenaDeque<PatchInfo<Label>> boot_image_string_patches_;
   // PC-relative String patch info for kBssEntry.
   ArenaDeque<PatchInfo<Label>> string_bss_entry_patches_;
+  // PC-relative method patch info for kBootImageLinkTimePcRelative+kCallCriticalNative.
+  ArenaDeque<PatchInfo<Label>> boot_image_jni_entrypoint_patches_;
   // PC-relative patch info for IntrinsicObjects for the boot image,
   // and for method/type/string patches for kBootImageRelRo otherwise.
   ArenaDeque<PatchInfo<Label>> boot_image_other_patches_;

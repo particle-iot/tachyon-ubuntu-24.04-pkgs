@@ -11,7 +11,6 @@ SOURCES = \
   NativeHandle.cpp \
   Printer.cpp \
   ProcessCallStack.cpp \
-  PropertyMap.cpp \
   RefBase.cpp \
   SharedBuffer.cpp \
   StopWatch.cpp \
@@ -32,13 +31,13 @@ CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -DLIBUTILS_NATIVE=1 \
   -I/usr/include/android \
-  -Isystem/core/base/include \
   -Isystem/core/cutils/include \
   -Isystem/core/include \
-  -Isystem/core/libbacktrace/include \
   -Isystem/core/libcutils/include \
-  -Isystem/core/liblog/include \
   -Isystem/core/libprocessgroup/include \
+  -Isystem/libbase/include \
+  -Isystem/logging/liblog/include \
+  -Isystem/unwinding/libbacktrace/include \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/system/core

@@ -55,6 +55,7 @@ using HealthInfo_2_1 = android::hardware::health::V2_1::HealthInfo;
 using android::hardware::health::V1_0::BatteryHealth;
 using android::hardware::health::V1_0::BatteryStatus;
 using android::hardware::health::V2_1::BatteryCapacityLevel;
+using android::hardware::health::V2_1::Constants;
 
 namespace android {
 
@@ -78,7 +79,9 @@ static void initHealthInfo(HealthInfo_2_1* health_info_2_1) {
 
     // HIDL enum values are zero initialized, so they need to be initialized
     // properly.
-    health_info_2_1->batteryCapacityLevel = BatteryCapacityLevel::UNKNOWN;
+    health_info_2_1->batteryCapacityLevel = BatteryCapacityLevel::UNSUPPORTED;
+    health_info_2_1->batteryChargeTimeToFullNowSeconds =
+            (int64_t)Constants::BATTERY_CHARGE_TIME_TO_FULL_NOW_SECONDS_UNSUPPORTED;
     auto* props = &health_info_2_1->legacy.legacy;
     props->batteryStatus = BatteryStatus::UNKNOWN;
     props->batteryHealth = BatteryHealth::UNKNOWN;
@@ -134,13 +137,13 @@ BatteryCapacityLevel getBatteryCapacityLevel(const char* capacityLevel) {
             {"Normal", BatteryCapacityLevel::NORMAL},
             {"High", BatteryCapacityLevel::HIGH},
             {"Full", BatteryCapacityLevel::FULL},
-            {NULL, BatteryCapacityLevel::UNKNOWN},
+            {NULL, BatteryCapacityLevel::UNSUPPORTED},
     };
 
     auto ret = mapSysfsString(capacityLevel, batteryCapacityLevelMap);
     if (!ret) {
-        KLOG_WARNING(LOG_TAG, "Unknown battery capacity level '%s'\n", capacityLevel);
-        *ret = BatteryCapacityLevel::UNKNOWN;
+        KLOG_WARNING(LOG_TAG, "Unsupported battery capacity level '%s'\n", capacityLevel);
+        *ret = BatteryCapacityLevel::UNSUPPORTED;
     }
 
     return *ret;
@@ -230,6 +233,15 @@ int BatteryMonitor::getIntField(const String8& path) {
     return value;
 }
 
+bool BatteryMonitor::isScopedPowerSupply(const char* name) {
+    constexpr char kScopeDevice[] = "Device";
+
+    String8 path;
+    path.appendFormat("%s/%s/scope", POWER_SUPPLY_SYSFS_PATH, name);
+    std::string scope;
+    return (readFromFile(path, &scope) > 0 && scope == kScopeDevice);
+}
+
 void BatteryMonitor::updateValues(void) {
     initHealthInfo(mHealthInfo.get());
 
@@ -246,7 +258,7 @@ void BatteryMonitor::updateValues(void) {
     props.batteryVoltage = getIntField(mHealthdConfig->batteryVoltagePath) / 1000;
 
     if (!mHealthdConfig->batteryCurrentNowPath.isEmpty())
-        props.batteryCurrent = getIntField(mHealthdConfig->batteryCurrentNowPath) / 1000;
+        props.batteryCurrent = getIntField(mHealthdConfig->batteryCurrentNowPath);
 
     if (!mHealthdConfig->batteryFullChargePath.isEmpty())
         props.batteryFullCharge = getIntField(mHealthdConfig->batteryFullChargePath);
@@ -265,7 +277,9 @@ void BatteryMonitor::updateValues(void) {
         mHealthInfo->batteryChargeTimeToFullNowSeconds =
                 getIntField(mHealthdConfig->batteryChargeTimeToFullNowPath);
 
-    mHealthInfo->batteryFullCapacityUah = props.batteryFullCharge;
+    if (!mHealthdConfig->batteryFullChargeDesignCapacityUahPath.isEmpty())
+        mHealthInfo->batteryFullChargeDesignCapacityUah =
+                getIntField(mHealthdConfig->batteryFullChargeDesignCapacityUahPath);
 
     props.batteryTemperature = mBatteryFixedTemperature ?
         mBatteryFixedTemperature :
@@ -335,9 +349,14 @@ void BatteryMonitor::updateValues(void) {
 }
 
 void BatteryMonitor::logValues(void) {
+    logValues(*mHealthInfo, *mHealthdConfig);
+}
+
+void BatteryMonitor::logValues(const android::hardware::health::V2_1::HealthInfo& health_info,
+                               const struct healthd_config& healthd_config) {
     char dmesgline[256];
     size_t len;
-    const HealthInfo_1_0& props = mHealthInfo->legacy.legacy;
+    const HealthInfo_1_0& props = health_info.legacy.legacy;
     if (props.batteryPresent) {
         snprintf(dmesgline, sizeof(dmesgline), "battery l=%d v=%d t=%s%d.%d h=%d st=%d",
                  props.batteryLevel, props.batteryVoltage, props.batteryTemperature < 0 ? "-" : "",
@@ -345,17 +364,17 @@ void BatteryMonitor::logValues(void) {
                  props.batteryHealth, props.batteryStatus);
 
         len = strlen(dmesgline);
-        if (!mHealthdConfig->batteryCurrentNowPath.isEmpty()) {
+        if (!healthd_config.batteryCurrentNowPath.isEmpty()) {
             len += snprintf(dmesgline + len, sizeof(dmesgline) - len, " c=%d",
                             props.batteryCurrent);
         }
 
-        if (!mHealthdConfig->batteryFullChargePath.isEmpty()) {
+        if (!healthd_config.batteryFullChargePath.isEmpty()) {
             len += snprintf(dmesgline + len, sizeof(dmesgline) - len, " fc=%d",
                             props.batteryFullCharge);
         }
 
-        if (!mHealthdConfig->batteryCycleCountPath.isEmpty()) {
+        if (!healthd_config.batteryCycleCountPath.isEmpty()) {
             len += snprintf(dmesgline + len, sizeof(dmesgline) - len, " cc=%d",
                             props.batteryCycleCount);
         }
@@ -542,6 +561,11 @@ void BatteryMonitor::init(struct healthd_config *hc) {
                 break;
 
             case ANDROID_POWER_SUPPLY_TYPE_BATTERY:
+                // Some devices expose the battery status of sub-component like
+                // stylus. Such a device-scoped battery info needs to be skipped
+                // in BatteryMonitor, which is intended to report the status of
+                // the battery supplying the power to the whole system.
+                if (isScopedPowerSupply(name)) continue;
                 mBatteryDevicePresent = true;
 
                 if (mHealthdConfig->batteryStatusPath.isEmpty()) {
@@ -622,6 +646,13 @@ void BatteryMonitor::init(struct healthd_config *hc) {
                         mHealthdConfig->batteryChargeTimeToFullNowPath = path;
                 }
 
+                if (mHealthdConfig->batteryFullChargeDesignCapacityUahPath.isEmpty()) {
+                    path.clear();
+                    path.appendFormat("%s/%s/charge_full_design", POWER_SUPPLY_SYSFS_PATH, name);
+                    if (access(path, R_OK) == 0)
+                        mHealthdConfig->batteryFullChargeDesignCapacityUahPath = path;
+                }
+
                 if (mHealthdConfig->batteryCurrentAvgPath.isEmpty()) {
                     path.clear();
                     path.appendFormat("%s/%s/current_avg",
@@ -694,6 +725,8 @@ void BatteryMonitor::init(struct healthd_config *hc) {
             KLOG_WARNING(LOG_TAG, "batteryCapacityLevelPath not found\n");
         if (mHealthdConfig->batteryChargeTimeToFullNowPath.isEmpty())
             KLOG_WARNING(LOG_TAG, "batteryChargeTimeToFullNowPath. not found\n");
+        if (mHealthdConfig->batteryFullChargeDesignCapacityUahPath.isEmpty())
+            KLOG_WARNING(LOG_TAG, "batteryFullChargeDesignCapacityUahPath. not found\n");
     }
 
     if (property_get("ro.boot.fake_battery", pval, NULL) > 0

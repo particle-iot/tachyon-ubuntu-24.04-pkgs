@@ -17,7 +17,8 @@ OBJECTS_C = $(SOURCES_C:.c=.o)
 SOURCES_ASSEMBLY = $(filter %.S,$(SOURCES))
 OBJECTS_ASSEMBLY = $(SOURCES_ASSEMBLY:.S=.o)
 
-CFLAGS += \
+CFLAGS += -std=gnu99 \
+  -fno-common \
   -fvisibility=hidden \
   -Wa,--noexecstack # Fixes `shlib-with-executable-stack`, see `src/util/BUILD.toplevel`
 
@@ -25,7 +26,6 @@ CPPFLAGS += \
   -D_XOPEN_SOURCE=700 \
   -DBORINGSSL_ANDROID_SYSTEM \
   -DBORINGSSL_IMPLEMENTATION \
-  -DBORINGSSL_SHARED_LIBRARY \
   -DOPENSSL_SMALL \
   -Iexternal/boringssl/src/crypto \
   -Iexternal/boringssl/src/include \

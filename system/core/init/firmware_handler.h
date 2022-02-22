@@ -16,8 +16,10 @@
 
 #pragma once
 
+#include <grp.h>
 #include <pwd.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -29,11 +31,15 @@ namespace android {
 namespace init {
 
 struct ExternalFirmwareHandler {
-    ExternalFirmwareHandler(std::string devpath, uid_t uid, std::string handler_path)
-        : devpath(std::move(devpath)), uid(uid), handler_path(std::move(handler_path)) {}
+    ExternalFirmwareHandler(std::string devpath, uid_t uid, std::string handler_path);
+    ExternalFirmwareHandler(std::string devpath, uid_t uid, gid_t gid, std::string handler_path);
+
     std::string devpath;
     uid_t uid;
+    gid_t gid;
     std::string handler_path;
+
+    std::function<bool(const std::string&)> match;
 };
 
 class FirmwareHandler : public UeventHandler {
@@ -48,10 +54,11 @@ class FirmwareHandler : public UeventHandler {
     friend void FirmwareTestWithExternalHandler(const std::string& test_name,
                                                 bool expect_new_firmware);
 
-    Result<std::string> RunExternalHandler(const std::string& handler, uid_t uid,
+    Result<std::string> RunExternalHandler(const std::string& handler, uid_t uid, gid_t gid,
                                            const Uevent& uevent) const;
     std::string GetFirmwarePath(const Uevent& uevent) const;
     void ProcessFirmwareEvent(const std::string& root, const std::string& firmware) const;
+    bool ForEachFirmwareDirectory(std::function<bool(const std::string&)> handler) const;
 
     std::vector<std::string> firmware_directories_;
     std::vector<ExternalFirmwareHandler> external_firmware_handlers_;

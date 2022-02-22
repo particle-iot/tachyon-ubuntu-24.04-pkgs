@@ -59,7 +59,6 @@ static ResultT GetThreadStack(const ScopedFastNativeObjectAccess& soa,
     ThreadList* thread_list = Runtime::Current()->GetThreadList();
     bool timed_out;
     Thread* thread = thread_list->SuspendThreadByPeer(peer,
-                                                      /* request_suspension= */ true,
                                                       SuspendReason::kInternal,
                                                       &timed_out);
     if (thread != nullptr) {
@@ -84,7 +83,7 @@ static jint VMStack_fillStackTraceElements(JNIEnv* env, jclass, jobject javaThre
   ScopedFastNativeObjectAccess soa(env);
   auto fn = [](Thread* thread, const ScopedFastNativeObjectAccess& soaa)
       REQUIRES_SHARED(Locks::mutator_lock_) -> jobject {
-    return thread->CreateInternalStackTrace<false>(soaa);
+    return thread->CreateInternalStackTrace(soaa);
   };
   jobject trace = GetThreadStack(soa, javaThread, fn);
   if (trace == nullptr) {
@@ -151,7 +150,7 @@ static jobjectArray VMStack_getThreadStackTrace(JNIEnv* env, jclass, jobject jav
   ScopedFastNativeObjectAccess soa(env);
   auto fn = [](Thread* thread, const ScopedFastNativeObjectAccess& soaa)
      REQUIRES_SHARED(Locks::mutator_lock_) -> jobject {
-    return thread->CreateInternalStackTrace<false>(soaa);
+    return thread->CreateInternalStackTrace(soaa);
   };
   jobject trace = GetThreadStack(soa, javaThread, fn);
   if (trace == nullptr) {

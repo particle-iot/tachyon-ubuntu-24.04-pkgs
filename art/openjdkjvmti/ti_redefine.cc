@@ -61,7 +61,7 @@
 #include "base/utils.h"
 #include "class_linker-inl.h"
 #include "class_linker.h"
-#include "class_root.h"
+#include "class_root-inl.h"
 #include "class_status.h"
 #include "debugger.h"
 #include "dex/art_dex_file_loader.h"
@@ -186,7 +186,7 @@ class ObsoleteMap {
       DCHECK(obsolete_dex_caches_->Get(next_free_slot_) != nullptr);
       next_free_slot_++;
     }
-    // Sanity check that the same slot in obsolete_dex_caches_ is free.
+    // Check that the same slot in obsolete_dex_caches_ is free.
     DCHECK(obsolete_dex_caches_->Get(next_free_slot_) == nullptr);
   }
 
@@ -260,7 +260,7 @@ class ObsoleteMap {
 };
 
 // This visitor walks thread stacks and allocates and sets up the obsolete methods. It also does
-// some basic sanity checks that the obsolete method is sane.
+// some basic soundness checks that the obsolete method is valid.
 class ObsoleteMethodStackVisitor : public art::StackVisitor {
  protected:
   ObsoleteMethodStackVisitor(
@@ -758,13 +758,10 @@ art::mirror::DexCache* Redefiner::ClassRedefinition::CreateNewDexCache(
     return nullptr;
   }
   art::WriterMutexLock mu(driver_->self_, *art::Locks::dex_lock_);
-  art::mirror::DexCache::InitializeDexCache(driver_->self_,
-                                            cache.Get(),
-                                            location.Get(),
-                                            dex_file_.get(),
-                                            loader.IsNull() ? driver_->runtime_->GetLinearAlloc()
-                                                            : loader->GetAllocator(),
-                                            art::kRuntimePointerSize);
+  cache->SetLocation(location.Get());
+  cache->InitializeNativeFields(dex_file_.get(),
+                                loader.IsNull() ? driver_->runtime_->GetLinearAlloc()
+                                                : loader->GetAllocator());
   return cache.Get();
 }
 
@@ -1173,7 +1170,7 @@ bool Redefiner::ClassRedefinition::CheckRedefinitionIsValid() {
 class RedefinitionDataIter;
 
 // A wrapper that lets us hold onto the arbitrary sized data needed for redefinitions in a
-// reasonably sane way. This adds no fields to the normal ObjectArray. By doing this we can avoid
+// reasonable way. This adds no fields to the normal ObjectArray. By doing this we can avoid
 // having to deal with the fact that we need to hold an arbitrary number of references live.
 class RedefinitionDataHolder {
  public:
@@ -1611,12 +1608,16 @@ RedefinitionDataIter RedefinitionDataHolder::end() {
 
 bool Redefiner::ClassRedefinition::CheckVerification(const RedefinitionDataIter& iter) {
   DCHECK_EQ(dex_file_->NumClassDefs(), 1u);
-  art::StackHandleScope<2> hs(driver_->self_);
+  art::StackHandleScope<3> hs(driver_->self_);
   std::string error;
   // TODO Make verification log level lower
   art::verifier::FailureKind failure =
       art::verifier::ClassVerifier::VerifyClass(driver_->self_,
+                                                /*verifier_deps=*/nullptr,
                                                 dex_file_.get(),
+                                                hs.NewHandle(iter.GetNewClassObject() != nullptr
+                                                                ? iter.GetNewClassObject()
+                                                                : iter.GetMirrorClass()),
                                                 hs.NewHandle(iter.GetNewDexCache()),
                                                 hs.NewHandle(GetClassLoader()),
                                                 /*class_def=*/ dex_file_->GetClassDef(0),
@@ -1626,22 +1627,11 @@ bool Redefiner::ClassRedefinition::CheckVerification(const RedefinitionDataIter&
                                                 art::verifier::HardFailLogMode::kLogWarning,
                                                 art::Runtime::Current()->GetTargetSdkVersion(),
                                                 &error);
-  switch (failure) {
-    case art::verifier::FailureKind::kNoFailure:
-      // TODO It is possible that by doing redefinition previous NO_COMPILE verification failures
-      // were fixed. It would be nice to reflect this in the new implementations.
-      return true;
-    case art::verifier::FailureKind::kSoftFailure:
-      // Soft failures might require interpreter on some methods. It won't prevent redefinition but
-      // it does mean we need to run the verifier again and potentially update method flags after
-      // performing the swap.
-      needs_reverify_ = true;
-      return true;
-    case art::verifier::FailureKind::kHardFailure: {
-      RecordFailure(ERR(FAILS_VERIFICATION), "Failed to verify class. Error was: " + error);
-      return false;
-    }
+  if (failure == art::verifier::FailureKind::kHardFailure) {
+    RecordFailure(ERR(FAILS_VERIFICATION), "Failed to verify class. Error was: " + error);
+    return false;
   }
+  return true;
 }
 
 // Looks through the previously allocated cookies to see if we need to update them with another new
@@ -1873,11 +1863,6 @@ bool Redefiner::ClassRedefinition::FinishNewClassAllocations(RedefinitionDataHol
     }
 
     data->SetNewClassObject(nc.Get());
-    // We really want to be able to resolve to the new class-object using this dex-cache for
-    // verification work. Since we haven't put it in the class-table yet we wll just manually add it
-    // to the dex-cache.
-    // TODO: We should maybe do this in a better spot.
-    data->GetNewDexCache()->SetResolvedType(nc->GetDexTypeIndex(), nc.Get());
     data->SetInitialized();
     return nc.Get();
   };
@@ -2099,10 +2084,6 @@ art::ObjPtr<art::mirror::Class> Redefiner::ClassRedefinition::AllocateNewClassOb
       << "Attempting to redefine an unresolved class " << old_class->PrettyClass()
       << " status=" << old_class->GetStatus();
   CHECK(linked_class->IsResolved());
-  if (old_class->WasVerificationAttempted()) {
-    // Match verification-attempted flag
-    linked_class->SetVerificationAttempted();
-  }
   if (old_class->ShouldSkipHiddenApiChecks()) {
     // Match skip hiddenapi flag
     linked_class->SetSkipHiddenApiChecks();
@@ -2488,9 +2469,11 @@ jvmtiError Redefiner::Run() {
   // At this point we can no longer fail without corrupting the runtime state.
   for (RedefinitionDataIter data = holder.begin(); data != holder.end(); ++data) {
     art::ClassLinker* cl = runtime_->GetClassLinker();
-    cl->RegisterExistingDexCache(data.GetNewDexCache(), data.GetSourceClassLoader());
     if (data.GetSourceClassLoader() == nullptr) {
+      // AppendToBootClassPath includes dex file registration.
       cl->AppendToBootClassPath(self_, &data.GetRedefinition().GetDexFile());
+    } else {
+      cl->RegisterExistingDexCache(data.GetNewDexCache(), data.GetSourceClassLoader());
     }
   }
   UnregisterAllBreakpoints();
@@ -2522,34 +2505,7 @@ jvmtiError Redefiner::Run() {
     // owns the DexFile and when ownership is transferred.
     ReleaseAllDexFiles();
   }
-  // By now the class-linker knows about all the classes so we can safetly retry verification and
-  // update method flags.
-  ReverifyClasses(holder);
   return OK;
-}
-
-void Redefiner::ReverifyClasses(RedefinitionDataHolder& holder) {
-  for (RedefinitionDataIter data = holder.begin(); data != holder.end(); ++data) {
-    data.GetRedefinition().ReverifyClass(data);
-  }
-}
-
-void Redefiner::ClassRedefinition::ReverifyClass(const RedefinitionDataIter &cur_data) {
-  if (!needs_reverify_) {
-    return;
-  }
-  VLOG(plugin) << "Reverifying " << class_sig_ << " due to soft failures";
-  std::string error;
-  // TODO Make verification log level lower
-  art::verifier::FailureKind failure =
-      art::verifier::ClassVerifier::ReverifyClass(driver_->self_,
-                                                  cur_data.GetMirrorClass(),
-                                                  /*log_level=*/
-                                                  art::verifier::HardFailLogMode::kLogWarning,
-                                                  /*api_level=*/
-                                                  art::Runtime::Current()->GetTargetSdkVersion(),
-                                                  &error);
-  CHECK_NE(failure, art::verifier::FailureKind::kHardFailure);
 }
 
 void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class> mclass,
@@ -2582,14 +2538,16 @@ void Redefiner::ClassRedefinition::UpdateMethods(art::ObjPtr<art::mirror::Class>
     uint32_t dex_method_idx = dex_file_->GetIndexForMethodId(*method_id);
     method.SetDexMethodIndex(dex_method_idx);
     linker->SetEntryPointsToInterpreter(&method);
-    method.SetCodeItemOffset(dex_file_->FindCodeItemOffset(class_def, dex_method_idx));
+    if (method.HasCodeItem()) {
+      method.SetCodeItem(
+          dex_file_->GetCodeItem(dex_file_->FindCodeItemOffset(class_def, dex_method_idx)));
+    }
     // Clear all the intrinsics related flags.
     method.SetNotIntrinsic();
   }
 }
 
 void Redefiner::ClassRedefinition::UpdateFields(art::ObjPtr<art::mirror::Class> mclass) {
-  std::unordered_map<uint32_t, uint32_t> dex_field_index_map;
   // TODO The IFields & SFields pointers should be combined like the methods_ arrays were.
   for (auto fields_iter : {mclass->GetIFields(), mclass->GetSFields()}) {
     for (art::ArtField& field : fields_iter) {
@@ -2603,32 +2561,10 @@ void Redefiner::ClassRedefinition::UpdateFields(art::ObjPtr<art::mirror::Class> 
           dex_file_->FindFieldId(*new_declaring_id, *new_name_id, *new_type_id);
       CHECK(new_field_id != nullptr);
       uint32_t new_field_index = dex_file_->GetIndexForFieldId(*new_field_id);
-      // We need to keep track of the changes to the index so we can update any
-      // java.lang.reflect.Field objects that happen to be on the heap.
-      dex_field_index_map[field.GetDexFieldIndex()] = new_field_index;
       // We only need to update the index since the other data in the ArtField cannot be updated.
       field.SetDexFieldIndex(new_field_index);
     }
   }
-  // walk the heap to update any java/lang/reflect/Field objects that refer to any of these fields.
-  // TODO We could combine this and do one heap-walk for all redefined classes.
-  art::ObjPtr<art::mirror::Class> reflect_field(art::GetClassRoot<art::mirror::Field>());
-  auto vis = [&](art::ObjPtr<art::mirror::Object> obj) REQUIRES_SHARED(art::Locks::mutator_lock_) {
-    // j.l.r.Field is a final class.
-    if (obj->GetClass() != reflect_field) {
-      return;
-    }
-    art::ObjPtr<art::mirror::Field> fld(art::down_cast<art::mirror::Field*>(obj.Ptr()));
-    // Only this class is getting new indexs.
-    if (fld->GetDeclaringClass() != mclass) {
-      return;
-    }
-    auto it = dex_field_index_map.find(fld->GetDexFieldIndex());
-    if (it != dex_field_index_map.end()) {
-      fld->SetDexFieldIndex</*kTransactionActive=*/false>(it->second);
-    }
-  };
-  driver_->runtime_->GetHeap()->VisitObjectsPaused(vis);
 }
 
 void Redefiner::ClassRedefinition::CollectNewFieldAndMethodMappings(
@@ -2781,9 +2717,8 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
   // Instead we need to update everything else.
   // Just replace the class and be done with it.
   art::Locks::mutator_lock_->AssertExclusiveHeld(driver_->self_);
+  art::ClassLinker* cl = driver_->runtime_->GetClassLinker();
   art::ScopedAssertNoThreadSuspension sants(__FUNCTION__);
-  art::ObjPtr<art::mirror::Class> orig(holder.GetMirrorClass());
-  art::ObjPtr<art::mirror::Class> replacement(holder.GetNewClassObject());
   art::ObjPtr<art::mirror::ObjectArray<art::mirror::Class>> new_classes(holder.GetNewClasses());
   art::ObjPtr<art::mirror::ObjectArray<art::mirror::Class>> old_classes(holder.GetOldClasses());
   // Collect mappings from old to new fields/methods
@@ -2794,8 +2729,6 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
       holder.GetNewInstanceObjects());
   art::ObjPtr<art::mirror::ObjectArray<art::mirror::Object>> old_instances(
       holder.GetOldInstanceObjects());
-  CHECK(!orig.IsNull());
-  CHECK(!replacement.IsNull());
   // Once we do the ReplaceReferences old_classes will have the new_classes in it. We want to keep
   // ahold of the old classes so copy them now.
   std::vector<art::ObjPtr<art::mirror::Class>> old_classes_vec(old_classes->Iterate().begin(),
@@ -2822,12 +2755,24 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
                        old_instance,
                        old_instance->GetClass());
   }
-  // Mark old class obsolete.
-  for (auto old_class : old_classes->Iterate()) {
+  // Mark old class and methods obsolete. Copy over any native implementation as well.
+  for (auto [old_class, new_class] : art::ZipLeft(old_classes->Iterate(), new_classes->Iterate())) {
     old_class->SetObsoleteObject();
-    // Mark methods obsolete. We need to wait until later to actually clear the jit data.
+    // Mark methods obsolete and copy native implementation. We need to wait
+    // until later to actually clear the jit data. We copy the native
+    // implementation here since we don't want to race with any threads doing
+    // RegisterNatives.
     for (art::ArtMethod& m : old_class->GetMethods(art::kRuntimePointerSize)) {
+      if (m.IsNative()) {
+        art::ArtMethod* new_method =
+            new_class->FindClassMethod(m.GetNameView(), m.GetSignature(), art::kRuntimePointerSize);
+        DCHECK(new_class->GetMethodsSlice(art::kRuntimePointerSize).Contains(new_method))
+            << "Could not find method " << m.PrettyMethod() << " declared in new class!";
+        DCHECK(new_method->IsNative());
+        new_method->SetEntryPointFromJni(m.GetEntryPointFromJni());
+      }
       m.SetIsObsolete();
+      cl->SetEntryPointsForObsoleteMethod(&m);
       if (m.IsInvokable()) {
         m.SetDontCompile();
       }
@@ -2857,16 +2802,26 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
       }
     }
     // We can only shadow things from our superclasses
-    if (LIKELY(!field_or_method->GetDeclaringClass()->IsAssignableFrom(orig))) {
+    auto orig_classes_iter = old_classes->Iterate();
+    auto replacement_classes_iter = new_classes->Iterate();
+    art::ObjPtr<art::mirror::Class> f_or_m_class = field_or_method->GetDeclaringClass();
+    if (LIKELY(!f_or_m_class->IsAssignableFrom(holder.GetMirrorClass()) &&
+               std::find(orig_classes_iter.begin(), orig_classes_iter.end(), f_or_m_class) ==
+                   orig_classes_iter.end())) {
       return false;
     }
     if constexpr (is_method) {
-      auto direct_methods = replacement->GetDirectMethods(art::kRuntimePointerSize);
-      return std::find_if(direct_methods.begin(),
-                          direct_methods.end(),
-                          [&](art::ArtMethod& m) REQUIRES(art::Locks::mutator_lock_) {
-                            return UNLIKELY(m.HasSameNameAndSignature(field_or_method));
-                          }) != direct_methods.end();
+      return std::any_of(
+          replacement_classes_iter.begin(),
+          replacement_classes_iter.end(),
+          [&](art::ObjPtr<art::mirror::Class> cand) REQUIRES(art::Locks::mutator_lock_) {
+            auto direct_methods = cand->GetDirectMethods(art::kRuntimePointerSize);
+            return std::find_if(direct_methods.begin(),
+                                direct_methods.end(),
+                                [&](art::ArtMethod& m) REQUIRES(art::Locks::mutator_lock_) {
+                                  return UNLIKELY(m.HasSameNameAndSignature(field_or_method));
+                                }) != direct_methods.end();
+          });
     } else {
       auto pred = [&](art::ArtField& f) REQUIRES(art::Locks::mutator_lock_) {
         return std::string_view(f.GetName()) == std::string_view(field_or_method->GetName()) &&
@@ -2874,11 +2829,21 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
                    std::string_view(field_or_method->GetTypeDescriptor());
       };
       if (field_or_method->IsStatic()) {
-        auto sfields = replacement->GetSFields();
-        return std::find_if(sfields.begin(), sfields.end(), pred) != sfields.end();
+        return std::any_of(
+            replacement_classes_iter.begin(),
+            replacement_classes_iter.end(),
+            [&](art::ObjPtr<art::mirror::Class> cand) REQUIRES(art::Locks::mutator_lock_) {
+              auto sfields = cand->GetSFields();
+              return std::find_if(sfields.begin(), sfields.end(), pred) != sfields.end();
+            });
       } else {
-        auto ifields = replacement->GetIFields();
-        return std::find_if(ifields.begin(), ifields.end(), pred) != ifields.end();
+        return std::any_of(
+            replacement_classes_iter.begin(),
+            replacement_classes_iter.end(),
+            [&](art::ObjPtr<art::mirror::Class> cand) REQUIRES(art::Locks::mutator_lock_) {
+              auto ifields = cand->GetIFields();
+              return std::find_if(ifields.begin(), ifields.end(), pred) != ifields.end();
+            });
       }
     }
   };
@@ -2888,28 +2853,28 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
       [&](art::ArtField* f, const auto& info) REQUIRES(art::Locks::mutator_lock_) {
         DCHECK(f != nullptr) << info;
         auto it = field_map.find(f);
-        if (it != field_map.end()) {
+        if (UNLIKELY(could_change_resolution_of(f, info))) {
+          // Dex-cache Resolution might change. Just clear the resolved value.
+          VLOG(plugin) << "Clearing resolution " << info << " for (field) " << f->PrettyField();
+          return static_cast<art::ArtField*>(nullptr);
+        } else if (it != field_map.end()) {
           VLOG(plugin) << "Updating " << info << " object for (field) "
                        << it->second->PrettyField();
           return it->second;
-        } else if (UNLIKELY(could_change_resolution_of(f, info))) {
-          // Resolution might change. Just clear the resolved value.
-          VLOG(plugin) << "Clearing resolution " << info << " for (field) " << f->PrettyField();
-          return static_cast<art::ArtField*>(nullptr);
         }
         return f;
       },
       [&](art::ArtMethod* m, const auto& info) REQUIRES(art::Locks::mutator_lock_) {
         DCHECK(m != nullptr) << info;
         auto it = method_map.find(m);
-        if (it != method_map.end()) {
+        if (UNLIKELY(could_change_resolution_of(m, info))) {
+          // Dex-cache Resolution might change. Just clear the resolved value.
+          VLOG(plugin) << "Clearing resolution " << info << " for (method) " << m->PrettyMethod();
+          return static_cast<art::ArtMethod*>(nullptr);
+        } else if (it != method_map.end()) {
           VLOG(plugin) << "Updating " << info << " object for (method) "
                       << it->second->PrettyMethod();
           return it->second;
-        } else if (UNLIKELY(could_change_resolution_of(m, info))) {
-          // Resolution might change. Just clear the resolved value.
-          VLOG(plugin) << "Clearing resolution " << info << " for (method) " << m->PrettyMethod();
-          return static_cast<art::ArtMethod*>(nullptr);
         }
         return m;
       });
@@ -2964,18 +2929,25 @@ void Redefiner::ClassRedefinition::UpdateClassStructurally(const RedefinitionDat
   if (art::kIsDebugBuild) {
     // Just make sure we didn't screw up any of the now obsolete methods or fields. We need their
     // declaring-class to still be the obolete class
-    orig->VisitMethods([&](art::ArtMethod* method) REQUIRES_SHARED(art::Locks::mutator_lock_) {
-      if (method->IsCopied()) {
-        // Copied methods have interfaces as their declaring class.
-        return;
-      }
-      DCHECK_EQ(method->GetDeclaringClass(), orig) << method->GetDeclaringClass()->PrettyClass()
-                                                   << " vs " << orig->PrettyClass();
-    }, art::kRuntimePointerSize);
-    orig->VisitFields([&](art::ArtField* field) REQUIRES_SHARED(art::Locks::mutator_lock_) {
-      DCHECK_EQ(field->GetDeclaringClass(), orig) << field->GetDeclaringClass()->PrettyClass()
-                                                  << " vs " << orig->PrettyClass();
-    });
+    std::for_each(
+        old_classes_vec.cbegin(),
+        old_classes_vec.cend(),
+        [](art::ObjPtr<art::mirror::Class> orig) REQUIRES_SHARED(art::Locks::mutator_lock_) {
+          orig->VisitMethods(
+              [&](art::ArtMethod* method) REQUIRES_SHARED(art::Locks::mutator_lock_) {
+                if (method->IsCopied()) {
+                  // Copied methods have interfaces as their declaring class.
+                  return;
+                }
+                DCHECK_EQ(method->GetDeclaringClass(), orig)
+                    << method->GetDeclaringClass()->PrettyClass() << " vs " << orig->PrettyClass();
+              },
+              art::kRuntimePointerSize);
+          orig->VisitFields([&](art::ArtField* field) REQUIRES_SHARED(art::Locks::mutator_lock_) {
+            DCHECK_EQ(field->GetDeclaringClass(), orig)
+                << field->GetDeclaringClass()->PrettyClass() << " vs " << orig->PrettyClass();
+          });
+        });
   }
 }
 
@@ -3037,25 +3009,6 @@ void Redefiner::ClassRedefinition::UpdateClass(const RedefinitionDataIter& holde
   } else if (!holder.IsActuallyStructural()) {
     UpdateClassInPlace(holder);
   }
-  UpdateClassCommon(holder);
-}
-
-void Redefiner::ClassRedefinition::UpdateClassCommon(const RedefinitionDataIter &cur_data) {
-  // NB This is after we've already replaced all old-refs with new-refs in the structural case.
-  art::ObjPtr<art::mirror::Class> klass(cur_data.GetMirrorClass());
-  DCHECK(!IsStructuralRedefinition() || klass == cur_data.GetNewClassObject());
-  if (!needs_reverify_) {
-    return;
-  }
-  // Force the most restrictive interpreter environment. We don't know what the final verification
-  // will allow. We will clear these after retrying verification once we drop the mutator-lock.
-  klass->VisitMethods([](art::ArtMethod* m) REQUIRES_SHARED(art::Locks::mutator_lock_) {
-    if (!m->IsNative() && m->IsInvokable() && !m->IsObsolete()) {
-      m->ClearSkipAccessChecks();
-      m->SetDontCompile();
-      m->SetMustCountLocks();
-    }
-  }, art::kRuntimePointerSize);
 }
 
 // Restores the old obsolete methods maps if it turns out they weren't needed (ie there were no new

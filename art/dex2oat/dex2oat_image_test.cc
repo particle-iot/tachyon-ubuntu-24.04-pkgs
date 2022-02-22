@@ -41,8 +41,8 @@
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_loader.h"
 #include "dex/method_reference.h"
+#include "dex/type_reference.h"
 #include "gc/space/image_space.h"
-#include "profile/profile_compilation_info.h"
 #include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
@@ -73,87 +73,9 @@ class Dex2oatImageTest : public CommonRuntimeTest {
     options->emplace_back("-Xnoimage-dex2oat", nullptr);
   }
 
-  // Visitors take method and type references
-  template <typename MethodVisitor, typename ClassVisitor>
-  void VisitLibcoreDexes(const MethodVisitor& method_visitor,
-                         const ClassVisitor& class_visitor,
-                         size_t method_frequency = 1,
-                         size_t class_frequency = 1) {
-    std::vector<std::string> dexes = GetLibCoreDexFileNames();
-    ArrayRef<const std::string> dexes_array(dexes);
-    VisitDexes(dexes_array, method_visitor, class_visitor, method_frequency, class_frequency);
-  }
-
-  // Visitors take method and type references
-  template <typename MethodVisitor, typename ClassVisitor>
-  void VisitDexes(ArrayRef<const std::string> dexes,
-                  const MethodVisitor& method_visitor,
-                  const ClassVisitor& class_visitor,
-                  size_t method_frequency = 1,
-                  size_t class_frequency = 1) {
-    size_t method_counter = 0;
-    size_t class_counter = 0;
-    for (const std::string& dex : dexes) {
-      std::vector<std::unique_ptr<const DexFile>> dex_files;
-      std::string error_msg;
-      const ArtDexFileLoader dex_file_loader;
-      CHECK(dex_file_loader.Open(dex.c_str(),
-                                 dex,
-                                 /*verify*/ true,
-                                 /*verify_checksum*/ false,
-                                 &error_msg,
-                                 &dex_files))
-          << error_msg;
-      for (const std::unique_ptr<const DexFile>& dex_file : dex_files) {
-        for (size_t i = 0; i < dex_file->NumMethodIds(); ++i) {
-          if (++method_counter % method_frequency == 0) {
-            method_visitor(MethodReference(dex_file.get(), i));
-          }
-        }
-        for (size_t i = 0; i < dex_file->NumTypeIds(); ++i) {
-          if (++class_counter % class_frequency == 0) {
-            class_visitor(TypeReference(dex_file.get(), dex::TypeIndex(i)));
-          }
-        }
-      }
-    }
-  }
-
   static void WriteLine(File* file, std::string line) {
     line += '\n';
     EXPECT_TRUE(file->WriteFully(&line[0], line.length()));
-  }
-
-  void GenerateProfile(ArrayRef<const std::string> dexes,
-                       File* out_file,
-                       size_t method_frequency,
-                       size_t type_frequency) {
-    ProfileCompilationInfo profile;
-    VisitDexes(
-        dexes,
-        [&profile](MethodReference ref) {
-          uint32_t flags = ProfileCompilationInfo::MethodHotness::kFlagHot |
-              ProfileCompilationInfo::MethodHotness::kFlagStartup;
-          EXPECT_TRUE(profile.AddMethod(
-              ProfileMethodInfo(ref),
-              static_cast<ProfileCompilationInfo::MethodHotness::Flag>(flags)));
-        },
-        [&profile](TypeReference ref) {
-          std::set<dex::TypeIndex> classes;
-          classes.insert(ref.TypeIndex());
-          EXPECT_TRUE(profile.AddClassesForDex(ref.dex_file, classes.begin(), classes.end()));
-        },
-        method_frequency,
-        type_frequency);
-    profile.Save(out_file->Fd());
-    EXPECT_EQ(out_file->Flush(), 0);
-  }
-
-  void GenerateMethods(File* out_file, size_t frequency = 1) {
-    VisitLibcoreDexes([out_file](MethodReference ref) {
-      WriteLine(out_file, ref.PrettyMethod());
-    }, VoidFunctor(), frequency, frequency);
-    EXPECT_EQ(out_file->Flush(), 0);
   }
 
   void AddRuntimeArg(std::vector<std::string>& args, const std::string& arg) {
@@ -262,13 +184,11 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
   }
   // Compile only a subset of the libcore dex files to make this test shorter.
   std::vector<std::string> libcore_dex_files = GetLibCoreDexFileNames();
-  // The primary image must contain at least core-oj and core-libart to initialize the runtime
-  // and we also need the core-icu4j if we want to compile these with full profile.
+  // The primary image must contain at least core-oj and core-libart to initialize the runtime.
   ASSERT_NE(std::string::npos, libcore_dex_files[0].find("core-oj"));
   ASSERT_NE(std::string::npos, libcore_dex_files[1].find("core-libart"));
-  ASSERT_NE(std::string::npos, libcore_dex_files[2].find("core-icu4j"));
   ArrayRef<const std::string> dex_files =
-      ArrayRef<const std::string>(libcore_dex_files).SubArray(/*pos=*/ 0u, /*length=*/ 3u);
+      ArrayRef<const std::string>(libcore_dex_files).SubArray(/*pos=*/ 0u, /*length=*/ 2u);
 
   ImageSizes base_sizes = CompileImageAndGetSizes(dex_files, {});
   ImageSizes everything_sizes;
@@ -279,10 +199,10 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
   ArrayRef<const std::string> libcore_dexes_array(libcore_dexes);
   {
     ScratchFile profile_file;
-    GenerateProfile(libcore_dexes_array,
-                    profile_file.GetFile(),
-                    /*method_frequency=*/ 1u,
-                    /*type_frequency=*/ 1u);
+    GenerateBootProfile(libcore_dexes_array,
+                        profile_file.GetFile(),
+                        /*method_frequency=*/ 1u,
+                        /*type_frequency=*/ 1u);
     everything_sizes = CompileImageAndGetSizes(
         dex_files,
         {"--profile-file=" + profile_file.GetFilename(),
@@ -291,7 +211,7 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
     std::cout << "All methods and classes sizes " << everything_sizes << std::endl;
     // Putting all classes as image classes should increase art size
     EXPECT_GE(everything_sizes.art_size, base_sizes.art_size);
-    // Sanity check that dex is the same size.
+    // Check that dex is the same size.
     EXPECT_EQ(everything_sizes.vdex_size, base_sizes.vdex_size);
   }
   static size_t kMethodFrequency = 3;
@@ -299,10 +219,10 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
   // Test compiling fewer methods and classes.
   {
     ScratchFile profile_file;
-    GenerateProfile(libcore_dexes_array,
-                    profile_file.GetFile(),
-                    kMethodFrequency,
-                    kTypeFrequency);
+    GenerateBootProfile(libcore_dexes_array,
+                        profile_file.GetFile(),
+                        kMethodFrequency,
+                        kTypeFrequency);
     filter_sizes = CompileImageAndGetSizes(
         dex_files,
         {"--profile-file=" + profile_file.GetFilename(),
@@ -316,8 +236,9 @@ TEST_F(Dex2oatImageTest, TestModesAndFilters) {
   // Test dirty image objects.
   {
     ScratchFile classes;
-    VisitLibcoreDexes(VoidFunctor(),
-                      [&](TypeReference ref) {
+    VisitDexes(libcore_dexes_array,
+               VoidFunctor(),
+               [&](TypeReference ref) {
       WriteLine(classes.GetFile(), ref.dex_file->PrettyType(ref.TypeIndex()));
     }, /*method_frequency=*/ 1u, /*class_frequency=*/ 1u);
     ImageSizes image_classes_sizes = CompileImageAndGetSizes(
@@ -338,7 +259,7 @@ TEST_F(Dex2oatImageTest, TestExtension) {
   std::string image_dir = scratch_dir + GetInstructionSetString(kRuntimeISA);
   int mkdir_result = mkdir(image_dir.c_str(), 0700);
   ASSERT_EQ(0, mkdir_result);
-  std::string filename_prefix = image_dir + "/core";
+  std::string filename_prefix = image_dir + "/boot";
 
   // Copy the libcore dex files to a custom dir inside `scratch_dir` so that we do not
   // accidentally load pre-compiled core images from their original directory based on BCP paths.
@@ -351,25 +272,23 @@ TEST_F(Dex2oatImageTest, TestExtension) {
 
   ArrayRef<const std::string> full_bcp(libcore_dex_files);
   size_t total_dex_files = full_bcp.size();
-  ASSERT_GE(total_dex_files, 5u);  // 3 for "head", 1 for "tail", at least one for "mid", see below.
+  ASSERT_GE(total_dex_files, 4u);  // 2 for "head", 1 for "tail", at least one for "mid", see below.
 
-  // The primary image must contain at least core-oj and core-libart to initialize the runtime
-  // and we also need the core-icu4j if we want to compile these with full profile.
+  // The primary image must contain at least core-oj and core-libart to initialize the runtime.
   ASSERT_NE(std::string::npos, full_bcp[0].find("core-oj"));
   ASSERT_NE(std::string::npos, full_bcp[1].find("core-libart"));
-  ASSERT_NE(std::string::npos, full_bcp[2].find("core-icu4j"));
-  ArrayRef<const std::string> head_dex_files = full_bcp.SubArray(/*pos=*/ 0u, /*length=*/ 3u);
+  ArrayRef<const std::string> head_dex_files = full_bcp.SubArray(/*pos=*/ 0u, /*length=*/ 2u);
   // Middle part is everything else except for conscrypt.
   ASSERT_NE(std::string::npos, full_bcp[full_bcp.size() - 1u].find("conscrypt"));
   ArrayRef<const std::string> mid_bcp =
       full_bcp.SubArray(/*pos=*/ 0u, /*length=*/ total_dex_files - 1u);
-  ArrayRef<const std::string> mid_dex_files = mid_bcp.SubArray(/*pos=*/ 3u);
+  ArrayRef<const std::string> mid_dex_files = mid_bcp.SubArray(/*pos=*/ 2u);
   // Tail is just the conscrypt.
   ArrayRef<const std::string> tail_dex_files =
       full_bcp.SubArray(/*pos=*/ total_dex_files - 1u, /*length=*/ 1u);
 
   // Prepare the "head", "mid" and "tail" names and locations.
-  std::string base_name = "core.art";
+  std::string base_name = "boot.art";
   std::string base_location = scratch_dir + base_name;
   std::vector<std::string> expanded_mid = gc::space::ImageSpace::ExpandMultiImageLocations(
       mid_dex_files.SubArray(/*pos=*/ 0u, /*length=*/ 1u),
@@ -391,22 +310,22 @@ TEST_F(Dex2oatImageTest, TestExtension) {
 
   // Create profiles.
   ScratchFile head_profile_file;
-  GenerateProfile(head_dex_files,
-                  head_profile_file.GetFile(),
-                  /*method_frequency=*/ 1u,
-                  /*type_frequency=*/ 1u);
+  GenerateBootProfile(head_dex_files,
+                      head_profile_file.GetFile(),
+                      /*method_frequency=*/ 1u,
+                      /*type_frequency=*/ 1u);
   const std::string& head_profile_filename = head_profile_file.GetFilename();
   ScratchFile mid_profile_file;
-  GenerateProfile(mid_dex_files,
-                  mid_profile_file.GetFile(),
-                  /*method_frequency=*/ 5u,
-                  /*type_frequency=*/ 4u);
+  GenerateBootProfile(mid_dex_files,
+                      mid_profile_file.GetFile(),
+                      /*method_frequency=*/ 5u,
+                      /*type_frequency=*/ 4u);
   const std::string& mid_profile_filename = mid_profile_file.GetFilename();
   ScratchFile tail_profile_file;
-  GenerateProfile(tail_dex_files,
-                  tail_profile_file.GetFile(),
-                  /*method_frequency=*/ 5u,
-                  /*type_frequency=*/ 4u);
+  GenerateBootProfile(tail_dex_files,
+                      tail_profile_file.GetFile(),
+                      /*method_frequency=*/ 5u,
+                      /*type_frequency=*/ 4u);
   const std::string& tail_profile_filename = tail_profile_file.GetFilename();
 
   // Compile the "head", i.e. the primary boot image.
@@ -450,17 +369,17 @@ TEST_F(Dex2oatImageTest, TestExtension) {
   std::string single_image_dir = single_dir + GetInstructionSetString(kRuntimeISA);
   mkdir_result = mkdir(single_image_dir.c_str(), 0700);
   ASSERT_EQ(0, mkdir_result);
-  std::string single_filename_prefix = single_image_dir + "/core";
+  std::string single_filename_prefix = single_image_dir + "/boot";
 
   // The dex files for the single-image are everything not in the "head".
   ArrayRef<const std::string> single_dex_files = full_bcp.SubArray(/*pos=*/ head_dex_files.size());
 
   // Create a smaller profile for the single-image test that squashes the "mid" and "tail".
   ScratchFile single_profile_file;
-  GenerateProfile(single_dex_files,
-                  single_profile_file.GetFile(),
-                  /*method_frequency=*/ 5u,
-                  /*type_frequency=*/ 4u);
+  GenerateBootProfile(single_dex_files,
+                      single_profile_file.GetFile(),
+                      /*method_frequency=*/ 5u,
+                      /*type_frequency=*/ 4u);
   const std::string& single_profile_filename = single_profile_file.GetFilename();
 
   // Prepare the single image name and location.
@@ -503,12 +422,11 @@ TEST_F(Dex2oatImageTest, TestExtension) {
     ScopedObjectAccess soa(Thread::Current());
     return gc::space::ImageSpace::LoadBootImage(/*boot_class_path=*/ boot_class_path,
                                                 /*boot_class_path_locations=*/ libcore_dex_files,
-                                                image_location,
+                                                /*boot_class_path_fds=*/ std::vector<int>(),
+                                                android::base::Split(image_location, ":"),
                                                 kRuntimeISA,
-                                                gc::space::ImageSpaceLoadingOrder::kSystemFirst,
                                                 relocate,
                                                 /*executable=*/ true,
-                                                /*is_zygote=*/ false,
                                                 /*extra_reservation_size=*/ 0u,
                                                 &boot_image_spaces,
                                                 &extra_reservation);

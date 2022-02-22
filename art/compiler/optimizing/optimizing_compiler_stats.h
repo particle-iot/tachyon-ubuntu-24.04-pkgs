@@ -58,8 +58,6 @@ enum class MethodCompilationStat {
   kNotCompiledSpaceFilter,
   kNotCompiledUnhandledInstruction,
   kNotCompiledUnsupportedIsa,
-  kNotCompiledVerificationError,
-  kNotCompiledVerifyAtRuntime,
   kNotCompiledIrreducibleLoopAndStringInit,
   kNotCompiledPhiEquivalentInOsr,
   kInlinedMonomorphicCall,
@@ -97,6 +95,10 @@ enum class MethodCompilationStat {
   kNotInlinedWont,
   kNotInlinedRecursiveBudget,
   kNotInlinedProxy,
+  kNotInlinedUnresolved,
+  kNotInlinedPolymorphic,
+  kNotInlinedCustom,
+  kTryInline,
   kConstructorFenceGeneratedNew,
   kConstructorFenceGeneratedFinal,
   kConstructorFenceRemovedLSE,
@@ -104,9 +106,18 @@ enum class MethodCompilationStat {
   kConstructorFenceRemovedCFRE,
   kBitstringTypeCheck,
   kJitOutOfMemoryForCommit,
+  kFullLSEAllocationRemoved,
+  kFullLSEPossible,
+  kNonPartialLoadRemoved,
+  kPartialLSEPossible,
+  kPartialStoreRemoved,
+  kPartialAllocationMoved,
+  kPredicatedLoadAdded,
+  kPredicatedStoreAdded,
+  kDevirtualized,
   kLastStat
 };
-std::ostream& operator<<(std::ostream& os, const MethodCompilationStat& rhs);
+std::ostream& operator<<(std::ostream& os, MethodCompilationStat rhs);
 
 class OptimizingCompilerStats {
  public:

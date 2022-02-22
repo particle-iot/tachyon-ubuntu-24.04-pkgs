@@ -32,7 +32,7 @@
 // system/core/zip_archive definitions.
 struct ZipArchive;
 struct ZipEntry;
-typedef ZipArchive* ZipArchiveHandle;
+using ZipArchiveHandle = ZipArchive*;
 
 namespace art {
 
@@ -41,12 +41,17 @@ class MemMap;
 
 class ZipEntry {
  public:
-  bool ExtractToFile(File& file, std::string* error_msg);
+  // Extracts this entry to file.
+  // Returns true on success, false on failure.
+  bool ExtractToFile(File& file, /*out*/std::string* error_msg);
   // Extract this entry to anonymous memory (R/W).
   // Returns null on failure and sets error_msg.
   MemMap ExtractToMemMap(const char* zip_filename,
                          const char* entry_filename,
-                         std::string* error_msg);
+                         /*out*/std::string* error_msg);
+  // Extracts this entry to memory. Stores `GetUncompressedSize()` bytes on success.
+  // Returns true on success, false on failure.
+  bool ExtractToMemory(/*out*/uint8_t* buffer, /*out*/std::string* error_msg);
   // Create a file-backed private (clean, R/W) memory mapping to this entry.
   // 'zip_filename' is used for diagnostics only,
   //   the original file that the ZipArchive was open with is used
@@ -87,12 +92,18 @@ class ZipArchive {
   // return new ZipArchive instance on success, null on error.
   static ZipArchive* Open(const char* filename, std::string* error_msg);
   static ZipArchive* OpenFromFd(int fd, const char* filename, std::string* error_msg);
+  static ZipArchive* OpenFromOwnedFd(int fd, const char* filename, std::string* error_msg);
 
   ZipEntry* Find(const char* name, std::string* error_msg) const;
 
   ~ZipArchive();
 
  private:
+  static ZipArchive* OpenFromFdInternal(int fd,
+                                        bool assume_ownership,
+                                        const char* filename,
+                                        std::string* error_msg);
+
   explicit ZipArchive(ZipArchiveHandle handle) : handle_(handle) {}
 
   friend class ZipEntry;

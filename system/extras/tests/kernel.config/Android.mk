@@ -31,6 +31,9 @@ test_src_files := \
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := kernel-config-unit-tests
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../NOTICE
 LOCAL_MODULE_TAGS := tests
 LOCAL_CFLAGS := $(test_c_flags)
 LOCAL_CFLAGS += -DHAS_KCMP
@@ -40,6 +43,9 @@ include $(BUILD_NATIVE_TEST)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := CtsKernelConfigTestCases
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../NOTICE
 LOCAL_MODULE_TAGS := optional
 LOCAL_CFLAGS := $(test_c_flags)
 LOCAL_CFLAGS += -DHAS_KCMP
@@ -51,7 +57,7 @@ LOCAL_MODULE_STEM_64 := $(LOCAL_MODULE)64
 LOCAL_SHARED_LIBRARIES := libbase
 LOCAL_STATIC_LIBRARIES := libgtest libgtest_main
 
-LOCAL_COMPATIBILITY_SUITE := cts vts
+LOCAL_COMPATIBILITY_SUITE := cts vts10
 LOCAL_CTS_TEST_PACKAGE := android.kernel.config
 include $(BUILD_CTS_EXECUTABLE)
 
@@ -60,5 +66,8 @@ LOCAL_SRC_FILES := \
     scrape_mmap_addr.cpp
 
 LOCAL_MODULE := scrape_mmap_addr
+LOCAL_LICENSE_KINDS := SPDX-license-identifier-Apache-2.0
+LOCAL_LICENSE_CONDITIONS := notice
+LOCAL_NOTICE_FILE := $(LOCAL_PATH)/../NOTICE
 LOCAL_CFLAGS := -Wall -Werror
 include $(BUILD_NATIVE_TEST)

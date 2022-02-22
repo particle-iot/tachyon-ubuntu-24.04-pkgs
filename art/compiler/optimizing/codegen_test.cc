@@ -29,8 +29,6 @@
 #include "register_allocator_linear_scan.h"
 #include "utils/arm/assembler_arm_vixl.h"
 #include "utils/arm/managed_register_arm.h"
-#include "utils/mips/managed_register_mips.h"
-#include "utils/mips64/managed_register_mips64.h"
 #include "utils/x86/managed_register_x86.h"
 
 #include "gtest/gtest.h"
@@ -54,12 +52,6 @@ static ::std::vector<CodegenTargetConfig> GetTargetConfigs() {
 #endif
 #ifdef ART_ENABLE_CODEGEN_x86_64
     CodegenTargetConfig(InstructionSet::kX86_64, create_codegen_x86_64),
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips
-    CodegenTargetConfig(InstructionSet::kMips, create_codegen_mips),
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips64
-    CodegenTargetConfig(InstructionSet::kMips64, create_codegen_mips64)
 #endif
   };
 
@@ -89,8 +81,9 @@ void CodegenTest::TestCode(const std::vector<uint16_t>& data, bool has_result, i
     HGraph* graph = CreateCFG(data);
     // Remove suspend checks, they cannot be executed in this context.
     RemoveSuspendChecks(graph);
-    OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-    RunCode(target_config, *compiler_options_, graph, [](HGraph*) {}, has_result, expected);
+    std::unique_ptr<CompilerOptions> compiler_options =
+        CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+    RunCode(target_config, *compiler_options, graph, [](HGraph*) {}, has_result, expected);
   }
 }
 
@@ -101,8 +94,9 @@ void CodegenTest::TestCodeLong(const std::vector<uint16_t>& data,
     HGraph* graph = CreateCFG(data, DataType::Type::kInt64);
     // Remove suspend checks, they cannot be executed in this context.
     RemoveSuspendChecks(graph);
-    OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-    RunCode(target_config, *compiler_options_, graph, [](HGraph*) {}, has_result, expected);
+    std::unique_ptr<CompilerOptions> compiler_options =
+        CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+    RunCode(target_config, *compiler_options, graph, [](HGraph*) {}, has_result, expected);
   }
 }
 
@@ -453,7 +447,9 @@ TEST_F(CodegenTest, NonMaterializedCondition) {
 
     ASSERT_FALSE(equal->IsEmittedAtUseSite());
     graph->BuildDominatorTree();
-    PrepareForRegisterAllocation(graph, *compiler_options_).Run();
+    std::unique_ptr<CompilerOptions> compiler_options =
+        CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+    PrepareForRegisterAllocation(graph, *compiler_options).Run();
     ASSERT_TRUE(equal->IsEmittedAtUseSite());
 
     auto hook_before_codegen = [](HGraph* graph_in) {
@@ -462,8 +458,7 @@ TEST_F(CodegenTest, NonMaterializedCondition) {
       block->InsertInstructionBefore(move, block->GetLastInstruction());
     };
 
-    OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-    RunCode(target_config, *compiler_options_, graph, hook_before_codegen, true, 0);
+    RunCode(target_config, *compiler_options, graph, hook_before_codegen, true, 0);
   }
 }
 
@@ -509,8 +504,9 @@ TEST_F(CodegenTest, MaterializedCondition1) {
             new (graph_in->GetAllocator()) HParallelMove(graph_in->GetAllocator());
         block->InsertInstructionBefore(move, block->GetLastInstruction());
       };
-      OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-      RunCode(target_config, *compiler_options_, graph, hook_before_codegen, true, lhs[i] < rhs[i]);
+      std::unique_ptr<CompilerOptions> compiler_options =
+          CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+      RunCode(target_config, *compiler_options, graph, hook_before_codegen, true, lhs[i] < rhs[i]);
     }
   }
 }
@@ -556,7 +552,7 @@ TEST_F(CodegenTest, MaterializedCondition2) {
       HIntConstant* cst_rhs = graph->GetIntConstant(rhs[i]);
       HLessThan cmp_lt(cst_lhs, cst_rhs);
       if_block->AddInstruction(&cmp_lt);
-      // We insert a dummy instruction to separate the HIf from the HLessThan
+      // We insert a fake instruction to separate the HIf from the HLessThan
       // and force the materialization of the condition.
       HMemoryBarrier force_materialization(MemBarrierKind::kAnyAny, 0);
       if_block->AddInstruction(&force_materialization);
@@ -577,8 +573,9 @@ TEST_F(CodegenTest, MaterializedCondition2) {
             new (graph_in->GetAllocator()) HParallelMove(graph_in->GetAllocator());
         block->InsertInstructionBefore(move, block->GetLastInstruction());
       };
-      OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-      RunCode(target_config, *compiler_options_, graph, hook_before_codegen, true, lhs[i] < rhs[i]);
+      std::unique_ptr<CompilerOptions> compiler_options =
+          CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+      RunCode(target_config, *compiler_options, graph, hook_before_codegen, true, lhs[i] < rhs[i]);
     }
   }
 }
@@ -687,8 +684,9 @@ void CodegenTest::TestComparison(IfCondition condition,
   block->AddInstruction(new (GetAllocator()) HReturn(comparison));
 
   graph->BuildDominatorTree();
-  OverrideInstructionSetFeatures(target_config.GetInstructionSet(), "default");
-  RunCode(target_config, *compiler_options_, graph, [](HGraph*) {}, true, expected_result);
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(target_config.GetInstructionSet(), "default");
+  RunCode(target_config, *compiler_options, graph, [](HGraph*) {}, true, expected_result);
 }
 
 TEST_F(CodegenTest, ComparisonsInt) {
@@ -719,9 +717,10 @@ TEST_F(CodegenTest, ComparisonsLong) {
 
 #ifdef ART_ENABLE_CODEGEN_arm
 TEST_F(CodegenTest, ARMVIXLParallelMoveResolver) {
-  OverrideInstructionSetFeatures(InstructionSet::kThumb2, "default");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kThumb2, "default");
   HGraph* graph = CreateGraph();
-  arm::CodeGeneratorARMVIXL codegen(graph, *compiler_options_);
+  arm::CodeGeneratorARMVIXL codegen(graph, *compiler_options);
 
   codegen.Initialize();
 
@@ -742,9 +741,10 @@ TEST_F(CodegenTest, ARMVIXLParallelMoveResolver) {
 #ifdef ART_ENABLE_CODEGEN_arm64
 // Regression test for b/34760542.
 TEST_F(CodegenTest, ARM64ParallelMoveResolverB34760542) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "default");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
 
   codegen.Initialize();
 
@@ -791,9 +791,10 @@ TEST_F(CodegenTest, ARM64ParallelMoveResolverB34760542) {
 
 // Check that ParallelMoveResolver works fine for ARM64 for both cases when SIMD is on and off.
 TEST_F(CodegenTest, ARM64ParallelMoveResolverSIMD) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "default");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
 
   codegen.Initialize();
 
@@ -826,9 +827,10 @@ TEST_F(CodegenTest, ARM64ParallelMoveResolverSIMD) {
 
 // Check that ART ISA Features are propagated to VIXL for arm64 (using cortex-a75 as example).
 TEST_F(CodegenTest, ARM64IsaVIXLFeaturesA75) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "cortex-a75");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "cortex-a75");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
   vixl::CPUFeatures* features = codegen.GetVIXLAssembler()->GetCPUFeatures();
 
   EXPECT_TRUE(features->Has(vixl::CPUFeatures::kCRC32));
@@ -840,9 +842,10 @@ TEST_F(CodegenTest, ARM64IsaVIXLFeaturesA75) {
 
 // Check that ART ISA Features are propagated to VIXL for arm64 (using cortex-a53 as example).
 TEST_F(CodegenTest, ARM64IsaVIXLFeaturesA53) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "cortex-a53");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "cortex-a53");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
   vixl::CPUFeatures* features = codegen.GetVIXLAssembler()->GetCPUFeatures();
 
   EXPECT_TRUE(features->Has(vixl::CPUFeatures::kCRC32));
@@ -858,9 +861,10 @@ constexpr static size_t kExpectedFPSpillSize = 8 * vixl::aarch64::kDRegSizeInByt
 // allocated on stack per callee-saved FP register to be preserved in the frame entry as
 // ABI states.
 TEST_F(CodegenTest, ARM64FrameSizeSIMD) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "default");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
 
   codegen.Initialize();
   graph->SetHasSIMD(true);
@@ -877,9 +881,10 @@ TEST_F(CodegenTest, ARM64FrameSizeSIMD) {
 }
 
 TEST_F(CodegenTest, ARM64FrameSizeNoSIMD) {
-  OverrideInstructionSetFeatures(InstructionSet::kArm64, "default");
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default");
   HGraph* graph = CreateGraph();
-  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options_);
+  arm64::CodeGeneratorARM64 codegen(graph, *compiler_options);
 
   codegen.Initialize();
   graph->SetHasSIMD(false);
@@ -895,67 +900,6 @@ TEST_F(CodegenTest, ARM64FrameSizeNoSIMD) {
   EXPECT_EQ(codegen.GetFpuSpillSize(), kExpectedFPSpillSize);
 }
 
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips
-TEST_F(CodegenTest, MipsClobberRA) {
-  OverrideInstructionSetFeatures(InstructionSet::kMips, "mips32r");
-  CHECK(!instruction_set_features_->AsMipsInstructionSetFeatures()->IsR6());
-  if (!CanExecute(InstructionSet::kMips)) {
-    // HMipsComputeBaseMethodAddress and the NAL instruction behind it
-    // should only be generated on non-R6.
-    return;
-  }
-
-  HGraph* graph = CreateGraph();
-
-  HBasicBlock* entry_block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(entry_block);
-  graph->SetEntryBlock(entry_block);
-  entry_block->AddInstruction(new (GetAllocator()) HGoto());
-
-  HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(block);
-
-  HBasicBlock* exit_block = new (GetAllocator()) HBasicBlock(graph);
-  graph->AddBlock(exit_block);
-  graph->SetExitBlock(exit_block);
-  exit_block->AddInstruction(new (GetAllocator()) HExit());
-
-  entry_block->AddSuccessor(block);
-  block->AddSuccessor(exit_block);
-
-  // To simplify matters, don't create PC-relative HLoadClass or HLoadString.
-  // Instead, generate HMipsComputeBaseMethodAddress directly.
-  HMipsComputeBaseMethodAddress* base = new (GetAllocator()) HMipsComputeBaseMethodAddress();
-  block->AddInstruction(base);
-  // HMipsComputeBaseMethodAddress is defined as int, so just make the
-  // compiled method return it.
-  block->AddInstruction(new (GetAllocator()) HReturn(base));
-
-  graph->BuildDominatorTree();
-
-  mips::CodeGeneratorMIPS codegenMIPS(graph, *compiler_options_);
-  // Since there isn't HLoadClass or HLoadString, we need to manually indicate
-  // that RA is clobbered and the method entry code should generate a stack frame
-  // and preserve RA in it. And this is what we're testing here.
-  codegenMIPS.ClobberRA();
-  // Without ClobberRA() the code would be:
-  //   nal              # Sets RA to point to the jr instruction below
-  //   move  v0, ra     # and the CPU falls into an infinite loop.
-  //   jr    ra
-  //   nop
-  // The expected code is:
-  //   addiu sp, sp, -16
-  //   sw    ra, 12(sp)
-  //   sw    a0, 0(sp)
-  //   nal              # Sets RA to point to the lw instruction below.
-  //   move  v0, ra
-  //   lw    ra, 12(sp)
-  //   jr    ra
-  //   addiu sp, sp, 16
-  RunCode(&codegenMIPS, graph, [](HGraph*) {}, false, 0);
-}
 #endif
 
 }  // namespace art

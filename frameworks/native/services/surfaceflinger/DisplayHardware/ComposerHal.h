@@ -23,28 +23,33 @@
 #include <utility>
 #include <vector>
 
-#include <android/frameworks/vr/composer/1.0/IVrComposerClient.h>
+// TODO(b/129481165): remove the #pragma below and fix conversion issues
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wconversion"
+
 #include <android/hardware/graphics/common/1.1/types.h>
-#include <android/hardware/graphics/composer/2.3/IComposer.h>
-#include <android/hardware/graphics/composer/2.3/IComposerClient.h>
-#include <composer-command-buffer/2.3/ComposerCommandBuffer.h>
+#include <android/hardware/graphics/composer/2.4/IComposer.h>
+#include <android/hardware/graphics/composer/2.4/IComposerClient.h>
+#include <composer-command-buffer/2.4/ComposerCommandBuffer.h>
 #include <gui/HdrMetadata.h>
 #include <math/mat4.h>
 #include <ui/DisplayedFrameStats.h>
 #include <ui/GraphicBuffer.h>
 #include <utils/StrongPointer.h>
 
+// TODO(b/129481165): remove the #pragma below and fix conversion issues
+#pragma clang diagnostic pop // ignored "-Wconversion"
+
 namespace android {
 
 namespace Hwc2 {
-
-using frameworks::vr::composer::V1_0::IVrComposerClient;
 
 namespace types = hardware::graphics::common;
 
 namespace V2_1 = hardware::graphics::composer::V2_1;
 namespace V2_2 = hardware::graphics::composer::V2_2;
 namespace V2_3 = hardware::graphics::composer::V2_3;
+namespace V2_4 = hardware::graphics::composer::V2_4;
 
 using types::V1_0::ColorTransform;
 using types::V1_0::Transform;
@@ -57,12 +62,14 @@ using types::V1_2::PixelFormat;
 using V2_1::Config;
 using V2_1::Display;
 using V2_1::Error;
-using V2_1::IComposerCallback;
 using V2_1::Layer;
-using V2_3::CommandReaderBase;
-using V2_3::CommandWriterBase;
-using V2_3::IComposer;
-using V2_3::IComposerClient;
+using V2_4::CommandReaderBase;
+using V2_4::CommandWriterBase;
+using V2_4::IComposer;
+using V2_4::IComposerCallback;
+using V2_4::IComposerClient;
+using V2_4::VsyncPeriodChangeTimeline;
+using V2_4::VsyncPeriodNanos;
 using DisplayCapability = IComposerClient::DisplayCapability;
 using PerFrameMetadata = IComposerClient::PerFrameMetadata;
 using PerFrameMetadataKey = IComposerClient::PerFrameMetadataKey;
@@ -77,11 +84,6 @@ public:
 
     virtual void registerCallback(const sp<IComposerCallback>& callback) = 0;
 
-    // Returns true if the connected composer service is running in a remote
-    // process, false otherwise. This will return false if the service is
-    // configured in passthrough mode, for example.
-    virtual bool isRemote() = 0;
-
     // Reset all pending commands in the command buffer. Useful if you want to
     // skip a frame but have already queued some commands.
     virtual void resetCommands() = 0;
@@ -90,7 +92,6 @@ public:
     virtual Error executeCommands() = 0;
 
     virtual uint32_t getMaxVirtualDisplayCount() = 0;
-    virtual bool isUsingVrComposer() const = 0;
     virtual Error createVirtualDisplay(uint32_t width, uint32_t height, PixelFormat* format,
                                        Display* outDisplay) = 0;
     virtual Error destroyVirtualDisplay(Display display) = 0;
@@ -114,7 +115,6 @@ public:
                                      std::vector<Layer>* outLayers,
                                      std::vector<uint32_t>* outLayerRequestMasks) = 0;
 
-    virtual Error getDisplayType(Display display, IComposerClient::DisplayType* outType) = 0;
     virtual Error getDozeSupport(Display display, bool* outSupport) = 0;
     virtual Error getHdrCapabilities(Display display, std::vector<Hdr>* outTypes,
                                      float* outMaxLuminance, float* outMaxAverageLuminance,
@@ -175,7 +175,6 @@ public:
     virtual Error setLayerVisibleRegion(Display display, Layer layer,
                                         const std::vector<IComposerClient::Rect>& visible) = 0;
     virtual Error setLayerZOrder(Display display, Layer layer, uint32_t z) = 0;
-    virtual Error setLayerInfo(Display display, Layer layer, uint32_t type, uint32_t appId) = 0;
 
     // Composer HAL 2.2
     virtual Error setLayerPerFrameMetadata(
@@ -199,11 +198,36 @@ public:
                                                    uint8_t componentMask, uint64_t maxFrames) = 0;
     virtual Error getDisplayedContentSample(Display display, uint64_t maxFrames, uint64_t timestamp,
                                             DisplayedFrameStats* outStats) = 0;
-    virtual Error getDisplayCapabilities(Display display,
-                                         std::vector<DisplayCapability>* outCapabilities) = 0;
     virtual Error setLayerPerFrameMetadataBlobs(
             Display display, Layer layer, const std::vector<PerFrameMetadataBlob>& metadata) = 0;
     virtual Error setDisplayBrightness(Display display, float brightness) = 0;
+
+    // Composer HAL 2.4
+    virtual bool isVsyncPeriodSwitchSupported() = 0;
+    virtual Error getDisplayCapabilities(Display display,
+                                         std::vector<DisplayCapability>* outCapabilities) = 0;
+    virtual V2_4::Error getDisplayConnectionType(
+            Display display, IComposerClient::DisplayConnectionType* outType) = 0;
+    virtual V2_4::Error getDisplayVsyncPeriod(Display display,
+                                              VsyncPeriodNanos* outVsyncPeriod) = 0;
+    virtual V2_4::Error setActiveConfigWithConstraints(
+            Display display, Config config,
+            const IComposerClient::VsyncPeriodChangeConstraints& vsyncPeriodChangeConstraints,
+            VsyncPeriodChangeTimeline* outTimeline) = 0;
+
+    virtual V2_4::Error setAutoLowLatencyMode(Display displayId, bool on) = 0;
+    virtual V2_4::Error getSupportedContentTypes(
+            Display displayId,
+            std::vector<IComposerClient::ContentType>* outSupportedContentTypes) = 0;
+    virtual V2_4::Error setContentType(Display displayId,
+                                       IComposerClient::ContentType contentType) = 0;
+    virtual V2_4::Error setLayerGenericMetadata(Display display, Layer layer,
+                                                const std::string& key, bool mandatory,
+                                                const std::vector<uint8_t>& value) = 0;
+    virtual V2_4::Error getLayerGenericMetadataKeys(
+            std::vector<IComposerClient::LayerGenericMetadataKey>* outKeys) = 0;
+    virtual Error getClientTargetProperty(
+            Display display, IComposerClient::ClientTargetProperty* outClientTargetProperty) = 0;
 };
 
 namespace impl {
@@ -246,6 +270,10 @@ public:
     // Get what stage succeeded during PresentOrValidate: Present or Validate
     void takePresentOrValidateStage(Display display, uint32_t * state);
 
+    // Get the client target properties requested by hardware composer.
+    void takeClientTargetProperty(Display display,
+                                  IComposerClient::ClientTargetProperty* outClientTargetProperty);
+
 private:
     void resetData();
 
@@ -256,6 +284,7 @@ private:
     bool parseSetPresentFence(uint16_t length);
     bool parseSetReleaseFences(uint16_t length);
     bool parseSetPresentOrValidateDisplayResult(uint16_t length);
+    bool parseSetClientTargetProperty(uint16_t length);
 
     struct ReturnData {
         uint32_t displayRequests = 0;
@@ -272,6 +301,13 @@ private:
         std::vector<int> releaseFences;
 
         uint32_t presentOrValidateState;
+
+        // Composer 2.4 implementation can return a client target property
+        // structure to indicate the client target properties that hardware
+        // composer requests. The composer client must change the client target
+        // properties to match this request.
+        IComposerClient::ClientTargetProperty clientTargetProperty{PixelFormat::RGBA_8888,
+                                                                   Dataspace::UNKNOWN};
     };
 
     std::vector<CommandError> mErrors;
@@ -294,11 +330,6 @@ public:
 
     void registerCallback(const sp<IComposerCallback>& callback) override;
 
-    // Returns true if the connected composer service is running in a remote
-    // process, false otherwise. This will return false if the service is
-    // configured in passthrough mode, for example.
-    bool isRemote() override;
-
     // Reset all pending commands in the command buffer. Useful if you want to
     // skip a frame but have already queued some commands.
     void resetCommands() override;
@@ -307,7 +338,6 @@ public:
     Error executeCommands() override;
 
     uint32_t getMaxVirtualDisplayCount() override;
-    bool isUsingVrComposer() const override { return mIsUsingVrComposer; }
     Error createVirtualDisplay(uint32_t width, uint32_t height, PixelFormat* format,
                                Display* outDisplay) override;
     Error destroyVirtualDisplay(Display display) override;
@@ -330,7 +360,6 @@ public:
                              std::vector<Layer>* outLayers,
                              std::vector<uint32_t>* outLayerRequestMasks) override;
 
-    Error getDisplayType(Display display, IComposerClient::DisplayType* outType) override;
     Error getDozeSupport(Display display, bool* outSupport) override;
     Error getHdrCapabilities(Display display, std::vector<Hdr>* outTypes, float* outMaxLuminance,
                              float* outMaxAverageLuminance, float* outMinLuminance) override;
@@ -387,7 +416,6 @@ public:
     Error setLayerVisibleRegion(Display display, Layer layer,
                                 const std::vector<IComposerClient::Rect>& visible) override;
     Error setLayerZOrder(Display display, Layer layer, uint32_t z) override;
-    Error setLayerInfo(Display display, Layer layer, uint32_t type, uint32_t appId) override;
 
     // Composer HAL 2.2
     Error setLayerPerFrameMetadata(
@@ -410,28 +438,41 @@ public:
                                            uint64_t maxFrames) override;
     Error getDisplayedContentSample(Display display, uint64_t maxFrames, uint64_t timestamp,
                                     DisplayedFrameStats* outStats) override;
-    Error getDisplayCapabilities(Display display,
-                                 std::vector<DisplayCapability>* outCapabilities) override;
     Error setLayerPerFrameMetadataBlobs(
             Display display, Layer layer,
             const std::vector<IComposerClient::PerFrameMetadataBlob>& metadata) override;
     Error setDisplayBrightness(Display display, float brightness) override;
 
+    // Composer HAL 2.4
+    bool isVsyncPeriodSwitchSupported() override { return mClient_2_4 != nullptr; }
+    Error getDisplayCapabilities(Display display,
+                                 std::vector<DisplayCapability>* outCapabilities) override;
+    V2_4::Error getDisplayConnectionType(Display display,
+                                         IComposerClient::DisplayConnectionType* outType) override;
+    V2_4::Error getDisplayVsyncPeriod(Display display, VsyncPeriodNanos* outVsyncPeriod) override;
+    V2_4::Error setActiveConfigWithConstraints(
+            Display display, Config config,
+            const IComposerClient::VsyncPeriodChangeConstraints& vsyncPeriodChangeConstraints,
+            VsyncPeriodChangeTimeline* outTimeline) override;
+    V2_4::Error setAutoLowLatencyMode(Display displayId, bool on) override;
+    V2_4::Error getSupportedContentTypes(
+            Display displayId,
+            std::vector<IComposerClient::ContentType>* outSupportedContentTypes) override;
+    V2_4::Error setContentType(Display displayId,
+                               IComposerClient::ContentType contentType) override;
+    V2_4::Error setLayerGenericMetadata(Display display, Layer layer, const std::string& key,
+                                        bool mandatory, const std::vector<uint8_t>& value) override;
+    V2_4::Error getLayerGenericMetadataKeys(
+            std::vector<IComposerClient::LayerGenericMetadataKey>* outKeys) override;
+    Error getClientTargetProperty(
+            Display display,
+            IComposerClient::ClientTargetProperty* outClientTargetProperty) override;
+
 private:
     class CommandWriter : public CommandWriterBase {
     public:
-        explicit CommandWriter(uint32_t initialMaxSize);
-        ~CommandWriter() override;
-
-        void setLayerInfo(uint32_t type, uint32_t appId);
-        void setClientTargetMetadata(
-                const IVrComposerClient::BufferMetadata& metadata);
-        void setLayerBufferMetadata(
-                const IVrComposerClient::BufferMetadata& metadata);
-
-    private:
-        void writeBufferMetadata(
-                const IVrComposerClient::BufferMetadata& metadata);
+        explicit CommandWriter(uint32_t initialMaxSize) : CommandWriterBase(initialMaxSize) {}
+        ~CommandWriter() override {}
     };
 
     // Many public functions above simply write a command into the command
@@ -443,17 +484,14 @@ private:
 
     sp<V2_1::IComposerClient> mClient;
     sp<V2_2::IComposerClient> mClient_2_2;
-    sp<IComposerClient> mClient_2_3;
+    sp<V2_3::IComposerClient> mClient_2_3;
+    sp<IComposerClient> mClient_2_4;
 
     // 64KiB minus a small space for metadata such as read/write pointers
     static constexpr size_t kWriterInitialSize =
         64 * 1024 / sizeof(uint32_t) - 16;
     CommandWriter mWriter;
     CommandReader mReader;
-
-    // When true, the we attach to the vr_hwcomposer service instead of the
-    // hwcomposer. This allows us to redirect surfaces to 3d surfaces in vr.
-    const bool mIsUsingVrComposer;
 };
 
 } // namespace impl

@@ -22,11 +22,11 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_filter.h"
 #include "base/globals.h"
 #include "base/hash_set.h"
 #include "base/macros.h"
 #include "base/utils.h"
-#include "compiler_filter.h"
 #include "optimizing/register_allocator.h"
 
 namespace art {
@@ -48,7 +48,6 @@ enum class InstructionSet;
 class InstructionSetFeatures;
 class ProfileCompilationInfo;
 class VerificationResults;
-class VerifiedMethod;
 
 // Enum for CheckProfileMethodsCompiled. Outside CompilerOptions so it can be forward-declared.
 enum class ProfileMethodsCheck : uint8_t {
@@ -65,9 +64,16 @@ class CompilerOptions final {
   static const size_t kDefaultNumDexMethodsThreshold = 900;
   static constexpr double kDefaultTopKProfileThreshold = 90.0;
   static const bool kDefaultGenerateDebugInfo = false;
-  static const bool kDefaultGenerateMiniDebugInfo = false;
+  static const bool kDefaultGenerateMiniDebugInfo = true;
   static const size_t kDefaultInlineMaxCodeUnits = 32;
   static constexpr size_t kUnsetInlineMaxCodeUnits = -1;
+
+  enum class CompilerType : uint8_t {
+    kAotCompiler,             // AOT compiler.
+    kJitCompiler,             // Normal JIT compiler.
+    kSharedCodeJitCompiler,   // Zygote JIT producing code in the shared region area, putting
+                              // restrictions on, for example, how literals are being generated.
+  };
 
   enum class ImageType : uint8_t {
     kNone,                    // JIT or AOT app compilation producing only an oat file but no image.
@@ -95,12 +101,12 @@ class CompilerOptions final {
     return CompilerFilter::IsJniCompilationEnabled(compiler_filter_);
   }
 
-  bool IsQuickeningCompilationEnabled() const {
-    return CompilerFilter::IsQuickeningCompilationEnabled(compiler_filter_);
-  }
-
   bool IsVerificationEnabled() const {
     return CompilerFilter::IsVerificationEnabled(compiler_filter_);
+  }
+
+  bool AssumeDexFilesAreVerified() const {
+    return compiler_filter_ == CompilerFilter::kAssumeVerified;
   }
 
   bool AssumeClassesAreVerified() const {
@@ -187,8 +193,25 @@ class CompilerOptions final {
     return implicit_so_checks_;
   }
 
+  bool IsAotCompiler() const {
+    return compiler_type_ == CompilerType::kAotCompiler;
+  }
+
+  bool IsJitCompiler() const {
+    return compiler_type_ == CompilerType::kJitCompiler ||
+           compiler_type_ == CompilerType::kSharedCodeJitCompiler;
+  }
+
+  bool IsJitCompilerForSharedCode() const {
+    return compiler_type_ == CompilerType::kSharedCodeJitCompiler;
+  }
+
   bool GetImplicitSuspendChecks() const {
     return implicit_suspend_checks_;
+  }
+
+  bool IsGeneratingImage() const {
+    return IsBootImage() || IsBootImageExtension() || IsAppImage();
   }
 
   // Are we compiling a boot image?
@@ -210,11 +233,10 @@ class CompilerOptions final {
     return image_type_ == ImageType::kAppImage;
   }
 
-  // Returns whether we are compiling against a "core" image, which
-  // is an indicative we are running tests. The compiler will use that
-  // information for checking invariants.
-  bool CompilingWithCoreImage() const {
-    return compiling_with_core_image_;
+  // Returns whether we are running ART tests.
+  // The compiler will use that information for checking invariants.
+  bool CompileArtTest() const {
+    return compile_art_test_;
   }
 
   // Should the code be compiled as position independent?
@@ -275,14 +297,6 @@ class CompilerOptions final {
 
   const VerificationResults* GetVerificationResults() const;
 
-  const VerifiedMethod* GetVerifiedMethod(const DexFile* dex_file, uint32_t method_idx) const;
-
-  // Checks if the specified method has been verified without failures. Returns
-  // false if the method is not in the verification results (GetVerificationResults).
-  bool IsMethodVerifiedWithoutFailures(uint32_t method_idx,
-                                       uint16_t class_def_idx,
-                                       const DexFile& dex_file) const;
-
   bool ParseCompilerOptions(const std::vector<std::string>& options,
                             bool ignore_unrecognized,
                             std::string* error_msg);
@@ -301,6 +315,14 @@ class CompilerOptions final {
 
   bool IsForceDeterminism() const {
     return force_determinism_;
+  }
+
+  bool IsCheckLinkageConditions() const {
+    return check_linkage_conditions_;
+  }
+
+  bool IsCrashOnLinkageViolation() const {
+    return crash_on_linkage_violation_;
   }
 
   bool DeduplicateCode() const {
@@ -351,10 +373,6 @@ class CompilerOptions final {
     return initialize_app_image_classes_;
   }
 
-  // Is `boot_image_filename` the name of a core image (small boot
-  // image used for ART testing only)?
-  static bool IsCoreImageFilename(const std::string& boot_image_filename);
-
  private:
   bool ParseDumpInitFailures(const std::string& option, std::string* error_msg);
   bool ParseRegisterAllocationStrategy(const std::string& option, std::string* error_msg);
@@ -383,8 +401,9 @@ class CompilerOptions final {
   // Results of AOT verification.
   const VerificationResults* verification_results_;
 
+  CompilerType compiler_type_;
   ImageType image_type_;
-  bool compiling_with_core_image_;
+  bool compile_art_test_;
   bool baseline_;
   bool debuggable_;
   bool generate_debug_info_;
@@ -423,6 +442,13 @@ class CompilerOptions final {
   // outcomes.
   bool force_determinism_;
 
+  // Whether the compiler should check for violation of the conditions required to perform AOT
+  // "linkage".
+  bool check_linkage_conditions_;
+  // Whether the compiler should crash when encountering a violation of one of
+  // the conditions required to perform AOT "linkage".
+  bool crash_on_linkage_violation_;
+
   // Whether code should be deduplicated.
   bool deduplicate_code_;
 
@@ -457,7 +483,7 @@ class CompilerOptions final {
   friend class Dex2Oat;
   friend class DexToDexDecompilerTest;
   friend class CommonCompilerDriverTest;
-  friend class CommonCompilerTest;
+  friend class CommonCompilerTestImpl;
   friend class jit::JitCompiler;
   friend class verifier::VerifierDepsTest;
   friend class linker::Arm64RelativePatcherTest;

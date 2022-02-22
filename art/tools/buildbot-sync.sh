@@ -16,6 +16,8 @@
 
 # Push ART artifacts and its dependencies to a chroot directory for on-device testing.
 
+set -e
+
 if [ -t 1 ]; then
   # Color sequences if terminal is a tty.
   red='\033[0;31m'
@@ -25,6 +27,8 @@ if [ -t 1 ]; then
   nc='\033[0m'
 fi
 
+# Setup as root, as some actions performed here require it.
+adb root
 adb wait-for-device
 
 if [[ -z "$ANDROID_BUILD_TOP" ]]; then
@@ -42,114 +46,57 @@ if [[ -z "$ART_TEST_CHROOT" ]]; then
   exit 1
 fi
 
-if [[ "$(build/soong/soong_ui.bash --dumpvar-mode TARGET_FLATTEN_APEX)" != "true" ]]; then
-  echo -e "${red}This script only works when  APEX packages are flattened, but the build" \
-    "configuration is set up to use non-flattened APEX packages.${nc}"
-  echo -e "${magenta}You can force APEX flattening by setting the environment variable" \
-    "\`OVERRIDE_TARGET_FLATTEN_APEX\` to \"true\" before starting the build and running this" \
-    "script.${nc}"
-  exit 1
-fi
 
+# Sync relevant product directories
+# ---------------------------------
 
-# `/system` "partition" synchronization.
-# --------------------------------------
+(
+  cd $ANDROID_PRODUCT_OUT
+  for dir in system/* linkerconfig data; do
+    [ -d $dir ] || continue
+    if [ $dir == system/apex ]; then
+      # We sync the APEXes later.
+      continue
+    fi
+    echo -e "${green}Syncing $dir directory...${nc}"
+    adb shell mkdir -p "$ART_TEST_CHROOT/$dir"
+    adb push $dir "$ART_TEST_CHROOT/$(dirname $dir)"
+  done
+)
 
-# Sync the system directory to the chroot.
-echo -e "${green}Syncing system directory...${nc}"
-adb shell mkdir -p "$ART_TEST_CHROOT/system"
-adb push "$ANDROID_PRODUCT_OUT/system" "$ART_TEST_CHROOT/"
 # Overwrite the default public.libraries.txt file with a smaller one that
 # contains only the public libraries pushed to the chroot directory.
 adb push "$ANDROID_BUILD_TOP/art/tools/public.libraries.buildbot.txt" \
   "$ART_TEST_CHROOT/system/etc/public.libraries.txt"
 
-
-# Linker configuration.
-# ---------------------
-
-# Statically linked `linkerconfig` binary.
-linkerconfig_binary="/system/bin/linkerconfig"
-# Generated linker configuration file path (since Android R).
-ld_generated_config_file_path="/linkerconfig/ld.config.txt"
-# Location of the generated linker configuration file.
-ld_generated_config_file_location=$(dirname "$ld_generated_config_file_path")
-
-# Return the file name passed as argument with the VNDK version of the "host
-# system" inserted before the file name's extension, if applicable. This mimics
-# the logic used in Bionic linker's `Config::get_vndk_version_string`.
-insert_vndk_version_string() {
-  local file_path="$1"
-  local vndk_version=$(adb shell getprop "ro.vndk.version")
-  if [[ -n "$vndk_version" ]] && [[ "$vndk_version" != current ]]; then
-    # Insert the VNDK version after the last period (and add another period).
-    file_path=$(echo "$file_path" \
-      | sed -e "s/^\\(.*\\)\\.\\([^.]\\)/\\1.${vndk_version}.\\2/")
-  fi
-  echo "$file_path"
-}
-
-# Adjust the names of the following files (sync'd to the device with the
-# previous `adb push` command) depending on the VNDK version of the "host
-# system":
-#
-#   /system/etc/llndk.libraries.R.txt
-#   /system/etc/vndkcore.libraries.R.txt
-#   /system/etc/vndkprivate.libraries.R.txt
-#   /system/etc/vndksp.libraries.R.txt
-#
-# Note that `/system/etc/vndkcorevariant.libraries.txt` does not have a version
-# number.
-#
-# See `build/soong/cc/vndk.go` and `packages/modules/vndk/Android.bp` for more
-# information.
-vndk_libraries_txt_file_names="llndk.libraries.txt \
-  vndkcore.libraries.txt \
-  vndkprivate.libraries.txt \
-  vndksp.libraries.txt"
-for file_name in $vndk_libraries_txt_file_names; do
-  pattern="$(basename $file_name .txt)\*.txt"
-  adb shell find "$ART_TEST_CHROOT/system/etc" -maxdepth 1 -name "$pattern" | \
-    while read src_file_name; do
-      dst_file_name="$ART_TEST_CHROOT/system/etc/$(insert_vndk_version_string "$file_name")"
-      if [[ "$src_file_name" != "$dst_file_name" ]]; then
-        echo -e "${green}Renaming VNDK libraries file in chroot environment:" \
-          "\`$src_file_name\` -> \`$dst_file_name\`${nc}"
-        adb shell mv -f "$src_file_name" "$dst_file_name"
-      fi
-  done
-done
-
-echo -e "${green}Generating the linker configuration file on device:" \
-  "\`$ld_generated_config_file_path\`${nc}"
-# Generate the linker configuration file on device.
-adb shell chroot "$ART_TEST_CHROOT" \
-  "$linkerconfig_binary" --target "$ld_generated_config_file_location" || exit 1
-
+# Create the framework directory if it doesn't exist. Some gtests need it.
+adb shell mkdir -p "$ART_TEST_CHROOT/system/framework"
 
 # APEX packages activation.
 # -------------------------
 
+adb shell mkdir -p "$ART_TEST_CHROOT/apex"
+
 # Manually "activate" the flattened APEX $1 by syncing it to /apex/$2 in the
 # chroot. $2 defaults to $1.
-#
-# TODO: Handle the case of build targets using non-flatted APEX packages.
-# As a workaround, one can run `export OVERRIDE_TARGET_FLATTEN_APEX=true` before building
-# a target to have its APEX packages flattened.
 activate_apex() {
   local src_apex=${1}
   local dst_apex=${2:-${src_apex}}
+
+  # Unpack the .apex file in the product directory, but if we already see a
+  # directory we assume buildbot-build.sh has already done it for us and just
+  # use it.
+  src_apex_path=$ANDROID_PRODUCT_OUT/system/apex/${src_apex}
+  if [ ! -d $src_apex_path ]; then
+    echo -e "${green}Extracting APEX ${src_apex}.apex...${nc}"
+    mkdir -p $src_apex_path
+    $ANDROID_HOST_OUT/bin/deapexer --debugfs_path $ANDROID_HOST_OUT/bin/debugfs_static \
+      extract ${src_apex_path}.apex $src_apex_path
+  fi
+
   echo -e "${green}Activating APEX ${src_apex} as ${dst_apex}...${nc}"
-  # We move the files from `/system/apex/${src_apex}` to `/apex/${dst_apex}` in
-  # the chroot directory, instead of simply using a symlink, as Bionic's linker
-  # relies on the real path name of a binary (e.g.
-  # `/apex/com.android.art/bin/dex2oat`) to select the linker configuration.
-  adb shell mkdir -p "$ART_TEST_CHROOT/apex"
   adb shell rm -rf "$ART_TEST_CHROOT/apex/${dst_apex}"
-  # Use use mv instead of cp, as cp has a bug on fugu NRD90R where symbolic
-  # links get copied with odd names, eg: libcrypto.so -> /system/lib/libcrypto.soe.sort.so
-  adb shell mv "$ART_TEST_CHROOT/system/apex/${src_apex}" "$ART_TEST_CHROOT/apex/${dst_apex}" \
-    || exit 1
+  adb push $src_apex_path "$ART_TEST_CHROOT/apex/${dst_apex}"
 }
 
 # "Activate" the required APEX modules.
@@ -158,12 +105,4 @@ activate_apex com.android.i18n
 activate_apex com.android.runtime
 activate_apex com.android.tzdata
 activate_apex com.android.conscrypt
-
-
-# `/data` "partition" synchronization.
-# ------------------------------------
-
-# Sync the data directory to the chroot.
-echo -e "${green}Syncing data directory...${nc}"
-adb shell mkdir -p "$ART_TEST_CHROOT/data"
-adb push "$ANDROID_PRODUCT_OUT/data" "$ART_TEST_CHROOT/"
+activate_apex com.android.os.statsd

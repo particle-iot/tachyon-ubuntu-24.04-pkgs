@@ -12,10 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["frameworks_native_libs_nativebase_license"],
+}
+
+// Added automatically by a large-scale-change
+// See: http://go/android-license-faq
+license {
+    name: "frameworks_native_libs_nativebase_license",
+    visibility: [":__subpackages__"],
+    license_kinds: [
+        "SPDX-license-identifier-Apache-2.0",
+    ],
+    license_text: [
+        "NOTICE",
+    ],
+}
+
 cc_library_headers {
     name: "libnativebase_headers",
     vendor_available: true,
     host_supported: true,
+    // TODO(b/153609531): remove when no longer needed.
+    native_bridge_supported: true,
     export_include_dirs: ["include"],
 
     target: {
@@ -25,5 +44,6 @@ cc_library_headers {
         windows: {
             enabled: true,
         },
-    }
+    },
+    min_sdk_version: "29",
 }

@@ -30,8 +30,7 @@ bool CgroupGetAttributePath(const std::string& attr_name, std::string* path);
 bool CgroupGetAttributePathForTask(const std::string& attr_name, int tid, std::string* path);
 
 bool SetTaskProfiles(int tid, const std::vector<std::string>& profiles, bool use_fd_cache = false);
-bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles,
-                        bool use_fd_cache = false);
+bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles);
 
 #ifndef __ANDROID_VNDK__
 
@@ -65,6 +64,10 @@ bool setProcessGroupSoftLimit(uid_t uid, int initialPid, int64_t softLimitInByte
 bool setProcessGroupLimit(uid_t uid, int initialPid, int64_t limitInBytes);
 
 void removeAllProcessGroups(void);
+
+// Provides the path for an attribute in a specific process group
+// Returns false in case of error, true in case of success
+bool getAttributePathForTask(const std::string& attr_name, int tid, std::string* path);
 
 #endif // __ANDROID_VNDK__
 

@@ -19,6 +19,7 @@
 #include <android-base/logging.h>
 
 #include "arch/instruction_set.h"
+#include "indirect_reference_table.h"
 
 #ifdef ART_ENABLE_CODEGEN_arm
 #include "jni/quick/arm/calling_convention_arm.h"
@@ -26,14 +27,6 @@
 
 #ifdef ART_ENABLE_CODEGEN_arm64
 #include "jni/quick/arm64/calling_convention_arm64.h"
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips
-#include "jni/quick/mips/calling_convention_mips.h"
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips64
-#include "jni/quick/mips64/calling_convention_mips64.h"
 #endif
 
 #ifdef ART_ENABLE_CODEGEN_x86
@@ -66,18 +59,6 @@ std::unique_ptr<ManagedRuntimeCallingConvention> ManagedRuntimeCallingConvention
     case InstructionSet::kArm64:
       return std::unique_ptr<ManagedRuntimeCallingConvention>(
           new (allocator) arm64::Arm64ManagedRuntimeCallingConvention(
-              is_static, is_synchronized, shorty));
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips
-    case InstructionSet::kMips:
-      return std::unique_ptr<ManagedRuntimeCallingConvention>(
-          new (allocator) mips::MipsManagedRuntimeCallingConvention(
-              is_static, is_synchronized, shorty));
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips64
-    case InstructionSet::kMips64:
-      return std::unique_ptr<ManagedRuntimeCallingConvention>(
-          new (allocator) mips64::Mips64ManagedRuntimeCallingConvention(
               is_static, is_synchronized, shorty));
 #endif
 #ifdef ART_ENABLE_CODEGEN_x86
@@ -170,18 +151,6 @@ std::unique_ptr<JniCallingConvention> JniCallingConvention::Create(ArenaAllocato
           new (allocator) arm64::Arm64JniCallingConvention(
               is_static, is_synchronized, is_critical_native, shorty));
 #endif
-#ifdef ART_ENABLE_CODEGEN_mips
-    case InstructionSet::kMips:
-      return std::unique_ptr<JniCallingConvention>(
-          new (allocator) mips::MipsJniCallingConvention(
-              is_static, is_synchronized, is_critical_native, shorty));
-#endif
-#ifdef ART_ENABLE_CODEGEN_mips64
-    case InstructionSet::kMips64:
-      return std::unique_ptr<JniCallingConvention>(
-          new (allocator) mips64::Mips64JniCallingConvention(
-              is_static, is_synchronized, is_critical_native, shorty));
-#endif
 #ifdef ART_ENABLE_CODEGEN_x86
     case InstructionSet::kX86:
       return std::unique_ptr<JniCallingConvention>(
@@ -204,26 +173,17 @@ size_t JniCallingConvention::ReferenceCount() const {
   return NumReferenceArgs() + (IsStatic() ? 1 : 0);
 }
 
-FrameOffset JniCallingConvention::SavedLocalReferenceCookieOffset() const {
-  size_t references_size = handle_scope_pointer_size_ * ReferenceCount();  // size excluding header
-  return FrameOffset(HandleReferencesOffset().Int32Value() + references_size);
-}
-
 FrameOffset JniCallingConvention::ReturnValueSaveLocation() const {
-  if (LIKELY(HasHandleScope())) {
-    // Initial offset already includes the displacement.
-    // -- Remove the additional local reference cookie offset if we don't have a handle scope.
-    const size_t saved_local_reference_cookie_offset =
-        SavedLocalReferenceCookieOffset().Int32Value();
-    // Segment state is 4 bytes long
-    const size_t segment_state_size = 4;
-    return FrameOffset(saved_local_reference_cookie_offset + segment_state_size);
-  } else {
-    // Include only the initial Method* as part of the offset.
-    CHECK_LT(displacement_.SizeValue(),
-             static_cast<size_t>(std::numeric_limits<int32_t>::max()));
-    return FrameOffset(displacement_.Int32Value() + static_cast<size_t>(frame_pointer_size_));
+  // The saved return value goes at a properly aligned slot after the method pointer.
+  DCHECK(SpillsReturnValue());
+  size_t return_value_offset = static_cast<size_t>(frame_pointer_size_);
+  const size_t return_value_size = SizeOfReturnValue();
+  DCHECK(return_value_size == 4u || return_value_size == 8u) << return_value_size;
+  DCHECK_ALIGNED(return_value_offset, 4u);
+  if (return_value_size == 8u) {
+    return_value_offset = RoundUp(return_value_offset, 8u);
   }
+  return FrameOffset(displacement_.SizeValue() + return_value_offset);
 }
 
 bool JniCallingConvention::HasNext() {
@@ -315,16 +275,6 @@ bool JniCallingConvention::IsCurrentParamALong() {
     int arg_pos = GetIteratorPositionWithinShorty();
     return IsParamALong(arg_pos);
   }
-}
-
-// Return position of handle scope entry holding reference at the current iterator
-// position
-FrameOffset JniCallingConvention::CurrentParamHandleScopeEntryOffset() {
-  CHECK(IsCurrentParamAReference());
-  CHECK_LT(HandleScopeLinkOffset(), HandleScopeNumRefsOffset());
-  int result = HandleReferencesOffset().Int32Value() + itr_refs_ * handle_scope_pointer_size_;
-  CHECK_GT(result, HandleScopeNumRefsOffset().Int32Value());
-  return FrameOffset(result);
 }
 
 size_t JniCallingConvention::CurrentParamSize() const {

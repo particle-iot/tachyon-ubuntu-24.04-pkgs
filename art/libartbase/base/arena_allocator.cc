@@ -44,6 +44,7 @@ const char* const ArenaAllocatorStatsImpl<kCount>::kAllocNames[] = {
   "BlockList    ",
   "RevPostOrder ",
   "LinearOrder  ",
+  "Reachability ",
   "ConstantsMap ",
   "Predecessors ",
   "Successors   ",
@@ -95,6 +96,7 @@ const char* const ArenaAllocatorStatsImpl<kCount>::kAllocNames[] = {
   "Scheduler    ",
   "Profile      ",
   "SBCloner     ",
+  "Transaction  ",
 };
 
 template <bool kCount>

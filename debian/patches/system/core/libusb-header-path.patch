@@ -3,8 +3,8 @@ Author: Umang Parmar <umangjparmar@gmail.com>
 Forwarded: not-needed
 Last-Update: 2018-05-26
 
---- a/system/core/adb/client/usb_libusb.cpp
-+++ b/system/core/adb/client/usb_libusb.cpp
+--- a/packages/modules/adb/client/usb_libusb.cpp
++++ b/packages/modules/adb/client/usb_libusb.cpp
 @@ -30,7 +30,7 @@
  #include <thread>
  #include <unordered_map>

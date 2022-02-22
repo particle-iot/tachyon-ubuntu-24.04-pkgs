@@ -49,6 +49,7 @@
 #include <android-base/chrono_utils.h>
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/parsedouble.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
@@ -87,6 +88,7 @@ using namespace std::literals::string_literals;
 
 using android::base::Basename;
 using android::base::SetProperty;
+using android::base::Split;
 using android::base::StartsWith;
 using android::base::StringPrintf;
 using android::base::unique_fd;
@@ -287,6 +289,38 @@ static Result<void> do_export(const BuiltinArguments& args) {
     if (setenv(args[1].c_str(), args[2].c_str(), 1) == -1) {
         return ErrnoError() << "setenv() failed";
     }
+    return {};
+}
+
+static Result<void> do_load_exports(const BuiltinArguments& args) {
+    auto file_contents = ReadFile(args[1]);
+    if (!file_contents.ok()) {
+        return Error() << "Could not read input file '" << args[1]
+                       << "': " << file_contents.error();
+    }
+
+    auto lines = Split(*file_contents, "\n");
+    for (const auto& line : lines) {
+        if (line.empty()) {
+            continue;
+        }
+
+        auto env = Split(line, " ");
+
+        if (env.size() != 3) {
+            return ErrnoError() << "Expected a line as `export <name> <value>`, found: `" << line
+                                << "`";
+        }
+
+        if (env[0] != "export") {
+            return ErrnoError() << "Unknown action: '" << env[0] << "', expected 'export'";
+        }
+
+        if (setenv(env[1].c_str(), env[2].c_str(), 1) == -1) {
+            return ErrnoError() << "Failed to export '" << line << "' from " << args[1];
+        }
+    }
+
     return {};
 }
 
@@ -517,21 +551,21 @@ static Result<void> do_mount(const BuiltinArguments& args) {
 
 /* Imports .rc files from the specified paths. Default ones are applied if none is given.
  *
- * start_index: index of the first path in the args list
+ * rc_paths: list of paths to rc files to import
  */
-static void import_late(const std::vector<std::string>& args, size_t start_index, size_t end_index) {
+static void import_late(const std::vector<std::string>& rc_paths) {
     auto& action_manager = ActionManager::GetInstance();
     auto& service_list = ServiceList::GetInstance();
     Parser parser = CreateParser(action_manager, service_list);
-    if (end_index <= start_index) {
+    if (rc_paths.empty()) {
         // Fallbacks for partitions on which early mount isn't enabled.
         for (const auto& path : late_import_paths) {
             parser.ParseConfig(path);
         }
         late_import_paths.clear();
     } else {
-        for (size_t i = start_index; i < end_index; ++i) {
-            parser.ParseConfig(args[i]);
+        for (const auto& rc_path : rc_paths) {
+            parser.ParseConfig(rc_path);
         }
     }
 
@@ -569,7 +603,6 @@ static Result<void> queue_fs_event(int code, bool userdata_remount) {
             trigger_shutdown("reboot,requested-userdata-remount-on-fde-device");
         }
         SetProperty("ro.crypto.state", "encrypted");
-        SetProperty("ro.crypto.type", "block");
         ActionManager::GetInstance().QueueEventTrigger("defaultcrypto");
         return {};
     } else if (code == FS_MGR_MNTALL_DEV_NOT_ENCRYPTED) {
@@ -594,7 +627,6 @@ static Result<void> queue_fs_event(int code, bool userdata_remount) {
             return Error() << "FscryptInstallKeyring() failed";
         }
         SetProperty("ro.crypto.state", "encrypted");
-        SetProperty("ro.crypto.type", "file");
 
         // Although encrypted, we have device key, so we do not need to
         // do anything different from the nonencrypted case.
@@ -605,7 +637,6 @@ static Result<void> queue_fs_event(int code, bool userdata_remount) {
             return Error() << "FscryptInstallKeyring() failed";
         }
         SetProperty("ro.crypto.state", "encrypted");
-        SetProperty("ro.crypto.type", "file");
 
         // Although encrypted, vold has already set the device up, so we do not need to
         // do anything different from the nonencrypted case.
@@ -616,7 +647,6 @@ static Result<void> queue_fs_event(int code, bool userdata_remount) {
             return Error() << "FscryptInstallKeyring() failed";
         }
         SetProperty("ro.crypto.state", "encrypted");
-        SetProperty("ro.crypto.type", "file");
 
         // Although encrypted, vold has already set the device up, so we do not need to
         // do anything different from the nonencrypted case.
@@ -632,55 +662,59 @@ static Result<void> queue_fs_event(int code, bool userdata_remount) {
 
 static int initial_mount_fstab_return_code = -1;
 
-/* mount_all <fstab> [ <path> ]* [--<options>]*
+/* <= Q: mount_all <fstab> [ <path> ]* [--<options>]*
+ * >= R: mount_all [ <fstab> ] [--<options>]*
  *
  * This function might request a reboot, in which case it will
  * not return.
  */
 static Result<void> do_mount_all(const BuiltinArguments& args) {
-    std::size_t na = 0;
-    bool import_rc = true;
-    bool queue_event = true;
-    int mount_mode = MOUNT_MODE_DEFAULT;
-    const auto& fstab_file = args[1];
-    std::size_t path_arg_end = args.size();
-    const char* prop_post_fix = "default";
+    auto mount_all = ParseMountAll(args.args);
+    if (!mount_all.ok()) return mount_all.error();
 
-    for (na = args.size() - 1; na > 1; --na) {
-        if (args[na] == "--early") {
-            path_arg_end = na;
-            queue_event = false;
-            mount_mode = MOUNT_MODE_EARLY;
-            prop_post_fix = "early";
-        } else if (args[na] == "--late") {
-            path_arg_end = na;
-            import_rc = false;
-            mount_mode = MOUNT_MODE_LATE;
-            prop_post_fix = "late";
-        }
+    const char* prop_post_fix = "default";
+    bool queue_event = true;
+    if (mount_all->mode == MOUNT_MODE_EARLY) {
+        prop_post_fix = "early";
+        queue_event = false;
+    } else if (mount_all->mode == MOUNT_MODE_LATE) {
+        prop_post_fix = "late";
     }
 
     std::string prop_name = "ro.boottime.init.mount_all."s + prop_post_fix;
     android::base::Timer t;
 
     Fstab fstab;
-    if (!ReadFstabFromFile(fstab_file, &fstab)) {
-        return Error() << "Could not read fstab";
+    if (mount_all->fstab_path.empty()) {
+        if (!ReadDefaultFstab(&fstab)) {
+            return Error() << "Could not read default fstab";
+        }
+    } else {
+        if (!ReadFstabFromFile(mount_all->fstab_path, &fstab)) {
+            return Error() << "Could not read fstab";
+        }
     }
 
-    auto mount_fstab_return_code = fs_mgr_mount_all(&fstab, mount_mode);
+    auto mount_fstab_result = fs_mgr_mount_all(&fstab, mount_all->mode);
     SetProperty(prop_name, std::to_string(t.duration().count()));
 
-    if (import_rc && SelinuxGetVendorAndroidVersion() <= __ANDROID_API_Q__) {
-        /* Paths of .rc files are specified at the 2nd argument and beyond */
-        import_late(args.args, 2, path_arg_end);
+    if (mount_all->import_rc) {
+        import_late(mount_all->rc_paths);
+    }
+
+    if (mount_fstab_result.userdata_mounted) {
+        // This call to fs_mgr_mount_all mounted userdata. Keep the result in
+        // order for userspace reboot to correctly remount userdata.
+        LOG(INFO) << "Userdata mounted using "
+                  << (mount_all->fstab_path.empty() ? "(default fstab)" : mount_all->fstab_path)
+                  << " result : " << mount_fstab_result.code;
+        initial_mount_fstab_return_code = mount_fstab_result.code;
     }
 
     if (queue_event) {
         /* queue_fs_event will queue event based on mount_fstab return code
          * and return processed return code*/
-        initial_mount_fstab_return_code = mount_fstab_return_code;
-        auto queue_fs_result = queue_fs_event(mount_fstab_return_code, false);
+        auto queue_fs_result = queue_fs_event(mount_fstab_result.code, false);
         if (!queue_fs_result.ok()) {
             return Error() << "queue_fs_event() failed: " << queue_fs_result.error();
         }
@@ -689,11 +723,20 @@ static Result<void> do_mount_all(const BuiltinArguments& args) {
     return {};
 }
 
-/* umount_all <fstab> */
+/* umount_all [ <fstab> ] */
 static Result<void> do_umount_all(const BuiltinArguments& args) {
+    auto umount_all = ParseUmountAll(args.args);
+    if (!umount_all.ok()) return umount_all.error();
+
     Fstab fstab;
-    if (!ReadFstabFromFile(args[1], &fstab)) {
-        return Error() << "Could not read fstab";
+    if (umount_all->empty()) {
+        if (!ReadDefaultFstab(&fstab)) {
+            return Error() << "Could not read default fstab";
+        }
+    } else {
+        if (!ReadFstabFromFile(*umount_all, &fstab)) {
+            return Error() << "Could not read fstab";
+        }
     }
 
     if (auto result = fs_mgr_umount_all(&fstab); result != 0) {
@@ -702,10 +745,20 @@ static Result<void> do_umount_all(const BuiltinArguments& args) {
     return {};
 }
 
+/* swapon_all [ <fstab> ] */
 static Result<void> do_swapon_all(const BuiltinArguments& args) {
+    auto swapon_all = ParseSwaponAll(args.args);
+    if (!swapon_all.ok()) return swapon_all.error();
+
     Fstab fstab;
-    if (!ReadFstabFromFile(args[1], &fstab)) {
-        return Error() << "Could not read fstab '" << args[1] << "'";
+    if (swapon_all->empty()) {
+        if (!ReadDefaultFstab(&fstab)) {
+            return Error() << "Could not read default fstab";
+        }
+    } else {
+        if (!ReadFstabFromFile(*swapon_all, &fstab)) {
+            return Error() << "Could not read fstab '" << *swapon_all << "'";
+        }
     }
 
     if (!fs_mgr_swapon_all(fstab)) {
@@ -840,6 +893,11 @@ static Result<void> do_verity_update_state(const BuiltinArguments& args) {
         // for system as root, so it has property [partition.system.verified].
         std::string partition = entry.mount_point == "/" ? "system" : Basename(entry.mount_point);
         SetProperty("partition." + partition + ".verified", std::to_string(mode));
+
+        std::string hash_alg = fs_mgr_get_hashtree_algorithm(entry);
+        if (!hash_alg.empty()) {
+            SetProperty("partition." + partition + ".verified.hash_alg", hash_alg);
+        }
     }
 
     return {};
@@ -943,6 +1001,23 @@ static Result<void> do_copy(const BuiltinArguments& args) {
     }
     if (auto result = WriteFile(args[2], *file_contents); !result.ok()) {
         return Error() << "Could not write to output file '" << args[2] << "': " << result.error();
+    }
+
+    return {};
+}
+
+static Result<void> do_copy_per_line(const BuiltinArguments& args) {
+    std::string file_contents;
+    if (!android::base::ReadFileToString(args[1], &file_contents, true)) {
+        return Error() << "Could not read input file '" << args[1] << "'";
+    }
+    auto lines = Split(file_contents, "\n");
+    for (const auto& line : lines) {
+        auto result = WriteFile(args[2], line);
+        if (!result.ok()) {
+            LOG(VERBOSE) << "Could not write to output file '" << args[2] << "' with '" << line
+                         << "' : " << result.error();
+        }
     }
 
     return {};
@@ -1065,11 +1140,12 @@ static Result<void> do_load_system_props(const BuiltinArguments& args) {
 static Result<void> do_wait(const BuiltinArguments& args) {
     auto timeout = kCommandRetryTimeout;
     if (args.size() == 3) {
-        int timeout_int;
-        if (!android::base::ParseInt(args[2], &timeout_int)) {
+        double timeout_double;
+        if (!android::base::ParseDouble(args[2], &timeout_double, 0)) {
             return Error() << "failed to parse timeout";
         }
-        timeout = std::chrono::seconds(timeout_int);
+        timeout = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::duration<double>(timeout_double));
     }
 
     if (wait_for_file(args[1].c_str(), timeout) != 0) {
@@ -1160,6 +1236,10 @@ static Result<void> do_remount_userdata(const BuiltinArguments& args) {
     }
     // TODO(b/135984674): check that fstab contains /data.
     if (auto rc = fs_mgr_remount_userdata_into_checkpointing(&fstab); rc < 0) {
+        std::string proc_mounts_output;
+        android::base::ReadFileToString("/proc/mounts", &proc_mounts_output, true);
+        android::base::WriteStringToFile(proc_mounts_output,
+                                         "/metadata/userspacereboot/mount_info.txt");
         trigger_shutdown("reboot,mount_userdata_failed");
     }
     if (auto result = queue_fs_event(initial_mount_fstab_return_code, true); !result.ok()) {
@@ -1189,7 +1269,7 @@ static Result<void> do_mark_post_data(const BuiltinArguments& args) {
 }
 
 static Result<void> GenerateLinkerConfiguration() {
-    const char* linkerconfig_binary = "/system/bin/linkerconfig";
+    const char* linkerconfig_binary = "/apex/com.android.runtime/bin/linkerconfig";
     const char* linkerconfig_target = "/linkerconfig";
     const char* arguments[] = {linkerconfig_binary, "--target", linkerconfig_target};
 
@@ -1198,8 +1278,30 @@ static Result<void> GenerateLinkerConfiguration() {
         return ErrnoError() << "failed to execute linkerconfig";
     }
 
+    auto current_mount_ns = GetCurrentMountNamespace();
+    if (!current_mount_ns.ok()) {
+        return current_mount_ns.error();
+    }
+    if (*current_mount_ns == NS_DEFAULT) {
+        SetDefaultMountNamespaceReady();
+    }
+
     LOG(INFO) << "linkerconfig generated " << linkerconfig_target
               << " with mounted APEX modules info";
+
+    return {};
+}
+
+static Result<void> MountLinkerConfigForDefaultNamespace() {
+    // No need to mount linkerconfig for default mount namespace if the path does not exist (which
+    // would mean it is already mounted)
+    if (access("/linkerconfig/default", 0) != 0) {
+        return {};
+    }
+
+    if (mount("/linkerconfig/default", "/linkerconfig", nullptr, MS_BIND | MS_REC, nullptr) != 0) {
+        return ErrnoError() << "Failed to mount linker configuration for default mount namespace.";
+    }
 
     return {};
 }
@@ -1302,11 +1404,14 @@ static Result<void> do_perform_apex_config(const BuiltinArguments& args) {
 }
 
 static Result<void> do_enter_default_mount_ns(const BuiltinArguments& args) {
-    if (SwitchToDefaultMountNamespace()) {
-        return {};
-    } else {
-        return Error() << "Failed to enter into default mount namespace";
+    if (auto result = SwitchToMountNamespaceIfNeeded(NS_DEFAULT); !result.ok()) {
+        return result.error();
     }
+    if (auto result = MountLinkerConfigForDefaultNamespace(); !result.ok()) {
+        return result.error();
+    }
+    LOG(INFO) << "Switched to default mount namespace";
+    return {};
 }
 
 // Builtin-function-map start
@@ -1324,6 +1429,7 @@ const BuiltinFunctionMap& GetBuiltinFunctionMap() {
         {"class_start_post_data",   {1,     1,    {false,  do_class_start_post_data}}},
         {"class_stop",              {1,     1,    {false,  do_class_stop}}},
         {"copy",                    {2,     2,    {true,   do_copy}}},
+        {"copy_per_line",           {2,     2,    {true,   do_copy_per_line}}},
         {"domainname",              {1,     1,    {true,   do_domainname}}},
         {"enable",                  {1,     1,    {false,  do_enable}}},
         {"exec",                    {1,     kMax, {false,  do_exec}}},
@@ -1338,6 +1444,7 @@ const BuiltinFunctionMap& GetBuiltinFunctionMap() {
         {"interface_restart",       {1,     1,    {false,  do_interface_restart}}},
         {"interface_start",         {1,     1,    {false,  do_interface_start}}},
         {"interface_stop",          {1,     1,    {false,  do_interface_stop}}},
+        {"load_exports",            {1,     1,    {false,  do_load_exports}}},
         {"load_persist_props",      {0,     0,    {false,  do_load_persist_props}}},
         {"load_system_props",       {0,     0,    {false,  do_load_system_props}}},
         {"loglevel",                {1,     1,    {false,  do_loglevel}}},
@@ -1347,11 +1454,11 @@ const BuiltinFunctionMap& GetBuiltinFunctionMap() {
         // mount_all is currently too complex to run in vendor_init as it queues action triggers,
         // imports rc scripts, etc.  It should be simplified and run in vendor_init context.
         // mount and umount are run in the same context as mount_all for symmetry.
-        {"mount_all",               {1,     kMax, {false,  do_mount_all}}},
+        {"mount_all",               {0,     kMax, {false,  do_mount_all}}},
         {"mount",                   {3,     kMax, {false,  do_mount}}},
         {"perform_apex_config",     {0,     0,    {false,  do_perform_apex_config}}},
         {"umount",                  {1,     1,    {false,  do_umount}}},
-        {"umount_all",              {1,     1,    {false,  do_umount_all}}},
+        {"umount_all",              {0,     1,    {false,  do_umount_all}}},
         {"update_linker_config",    {0,     0,    {false,  do_update_linker_config}}},
         {"readahead",               {1,     2,    {true,   do_readahead}}},
         {"remount_userdata",        {0,     0,    {false,  do_remount_userdata}}},
@@ -1364,7 +1471,7 @@ const BuiltinFunctionMap& GetBuiltinFunctionMap() {
         {"setrlimit",               {3,     3,    {false,  do_setrlimit}}},
         {"start",                   {1,     1,    {false,  do_start}}},
         {"stop",                    {1,     1,    {false,  do_stop}}},
-        {"swapon_all",              {1,     1,    {false,  do_swapon_all}}},
+        {"swapon_all",              {0,     1,    {false,  do_swapon_all}}},
         {"enter_default_mount_ns",  {0,     0,    {false,  do_enter_default_mount_ns}}},
         {"symlink",                 {2,     2,    {true,   do_symlink}}},
         {"sysclktz",                {1,     1,    {false,  do_sysclktz}}},

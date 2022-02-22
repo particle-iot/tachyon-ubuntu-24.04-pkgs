@@ -64,12 +64,15 @@ public:
     virtual status_t setLegacyBufferDrop(bool drop) override;
     virtual status_t getLastQueuedBuffer(sp<GraphicBuffer>* outBuffer,
             sp<Fence>* outFence, float outTransformMatrix[16]) override;
+    virtual status_t getLastQueuedBuffer(sp<GraphicBuffer>* outBuffer, sp<Fence>* outFence,
+                                         Rect* outRect, uint32_t* outTransform) override;
     virtual IBinder* onAsBinder();
     virtual status_t setSharedBufferMode(bool sharedBufferMode) override;
     virtual status_t setAutoRefresh(bool autoRefresh) override;
     virtual void getFrameTimestamps(FrameEventHistoryDelta *outDelta) override;
     virtual status_t getUniqueId(uint64_t* outId) const override;
     virtual status_t getConsumerUsage(uint64_t* outUsage) const override;
+    virtual status_t setAutoPrerotation(bool autoPrerotation) override;
 
     // The Layer which created this producer, and on which queued Buffer's will be displayed.
     sp<Layer> getLayer() const;

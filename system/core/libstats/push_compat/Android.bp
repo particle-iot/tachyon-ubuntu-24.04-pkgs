@@ -19,6 +19,10 @@
 // protocols. This library should only be used by DNS resolver or other
 // native modules on Q that log pushed atoms to statsd.
 // =========================================================================
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_defaults {
     name: "libstatspush_compat_defaults",
     srcs: [
@@ -32,11 +36,15 @@ cc_defaults {
         "-DWRITE_TO_STATSD=1",
         "-DWRITE_TO_LOGD=0",
     ],
-    header_libs: ["libstatssocket_headers"],
+    header_libs: [
+        "libcutils_headers",
+        "libstatssocket_headers",
+    ],
     static_libs: [
         "libbase",
+    ],
+    shared_libs: [
         "liblog",
-        "libutils",
     ],
 }
 
@@ -44,7 +52,12 @@ cc_library {
     name: "libstatspush_compat",
     defaults: ["libstatspush_compat_defaults"],
     export_include_dirs: ["include"],
-    static_libs: ["libgtest_prod"],
+    export_header_lib_headers: [
+        "libstatssocket_headers",
+    ],
+    header_libs: ["libgtest_prod_headers"],
+    apex_available: ["com.android.resolv"],
+    min_sdk_version: "29",
 }
 
 cc_test {
@@ -56,4 +69,3 @@ cc_test {
     ],
     static_libs: ["libgmock"],
 }
-

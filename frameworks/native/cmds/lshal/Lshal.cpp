@@ -59,7 +59,8 @@ void Lshal::forEachCommand(const std::function<void(const Command* c)>& f) const
 }
 
 void Lshal::usage() {
-    err() << "lshal: List and debug HALs." << std::endl << std::endl
+    err() << "lshal: List and debug HIDL HALs." << std::endl
+          << "   (for AIDL HALs, see `dumpsys`)" << std::endl << std::endl
           << "commands:" << std::endl;
 
     size_t nameMaxLength = 0;
@@ -101,7 +102,7 @@ Status Lshal::emitDebugInfo(
         const std::string &interfaceName,
         const std::string &instanceName,
         const std::vector<std::string> &options,
-        bool excludesParentInstances,
+        ParentDebugInfoLevel parentDebugInfoLevel,
         std::ostream &out,
         NullableOStream<std::ostream> err) const {
     using android::hidl::base::V1_0::IBase;
@@ -126,7 +127,7 @@ Status Lshal::emitDebugInfo(
         return NO_INTERFACE;
     }
 
-    if (excludesParentInstances) {
+    if (parentDebugInfoLevel != ParentDebugInfoLevel::FULL) {
         const std::string descriptor = getDescriptor(base.get());
         if (descriptor.empty()) {
             std::string msg = interfaceName + "/" + instanceName + " getDescriptor failed";
@@ -134,16 +135,17 @@ Status Lshal::emitDebugInfo(
             LOG(ERROR) << msg;
         }
         if (descriptor != interfaceName) {
+            if (parentDebugInfoLevel == ParentDebugInfoLevel::FQNAME_ONLY) {
+                out << "[See " << descriptor << "/" << instanceName << "]";
+            }
             return OK;
         }
     }
 
-    PipeRelay relay(out);
-
-    if (relay.initCheck() != OK) {
-        std::string msg = "PipeRelay::initCheck() FAILED w/ " + std::to_string(relay.initCheck());
-        err << msg << std::endl;
-        LOG(ERROR) << msg;
+    auto relay = PipeRelay::create(out, err, interfaceName + "/" + instanceName);
+    if (!relay.ok()) {
+        err << "Unable to create PipeRelay: " << relay.error() << std::endl;
+        LOG(ERROR) << "Unable to create PipeRelay: " << relay.error();
         return IO_ERROR;
     }
 
@@ -151,7 +153,7 @@ Status Lshal::emitDebugInfo(
         native_handle_create(1 /* numFds */, 0 /* numInts */),
         native_handle_delete);
 
-    fdHandle->data[0] = relay.fd();
+    fdHandle->data[0] = relay.value()->fd().get();
 
     hardware::Return<void> ret = base->debug(fdHandle.get(), convert(options));
 

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <optional>
+#include <tuple>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <libdm/dm.h>
@@ -26,30 +29,43 @@
 
 using namespace android::fs_mgr;
 
+using chromeos_update_engine::InstallOperation;
+using UeExtent = chromeos_update_engine::Extent;
+using google::protobuf::RepeatedPtrField;
+using ::testing::Matches;
+using ::testing::Pointwise;
+using ::testing::Truly;
+
 namespace android {
 namespace snapshot {
 
 class PartitionCowCreatorTest : public ::testing::Test {
   public:
-    void SetUp() override { SnapshotTestPropertyFetcher::SetUp(); }
-    void TearDown() override { SnapshotTestPropertyFetcher::TearDown(); }
+    void SetUp() override {
+        SKIP_IF_NON_VIRTUAL_AB();
+        SnapshotTestPropertyFetcher::SetUp();
+    }
+    void TearDown() override {
+        RETURN_IF_NON_VIRTUAL_AB();
+        SnapshotTestPropertyFetcher::TearDown();
+    }
 };
 
 TEST_F(PartitionCowCreatorTest, IntersectSelf) {
-    constexpr uint64_t initial_size = 1_MiB;
-    constexpr uint64_t final_size = 40_KiB;
+    constexpr uint64_t super_size = 1_MiB;
+    constexpr uint64_t partition_size = 40_KiB;
 
-    auto builder_a = MetadataBuilder::New(initial_size, 1_KiB, 2);
+    auto builder_a = MetadataBuilder::New(super_size, 1_KiB, 2);
     ASSERT_NE(builder_a, nullptr);
     auto system_a = builder_a->AddPartition("system_a", LP_PARTITION_ATTR_READONLY);
     ASSERT_NE(system_a, nullptr);
-    ASSERT_TRUE(builder_a->ResizePartition(system_a, final_size));
+    ASSERT_TRUE(builder_a->ResizePartition(system_a, partition_size));
 
-    auto builder_b = MetadataBuilder::New(initial_size, 1_KiB, 2);
+    auto builder_b = MetadataBuilder::New(super_size, 1_KiB, 2);
     ASSERT_NE(builder_b, nullptr);
     auto system_b = builder_b->AddPartition("system_b", LP_PARTITION_ATTR_READONLY);
     ASSERT_NE(system_b, nullptr);
-    ASSERT_TRUE(builder_b->ResizePartition(system_b, final_size));
+    ASSERT_TRUE(builder_b->ResizePartition(system_b, partition_size));
 
     PartitionCowCreator creator{.target_metadata = builder_b.get(),
                                 .target_suffix = "_b",
@@ -58,8 +74,8 @@ TEST_F(PartitionCowCreatorTest, IntersectSelf) {
                                 .current_suffix = "_a"};
     auto ret = creator.Run();
     ASSERT_TRUE(ret.has_value());
-    ASSERT_EQ(final_size, ret->snapshot_status.device_size());
-    ASSERT_EQ(final_size, ret->snapshot_status.snapshot_size());
+    ASSERT_EQ(partition_size, ret->snapshot_status.device_size());
+    ASSERT_EQ(partition_size, ret->snapshot_status.snapshot_size());
 }
 
 TEST_F(PartitionCowCreatorTest, Holes) {
@@ -108,20 +124,20 @@ TEST_F(PartitionCowCreatorTest, CowSize) {
     using RepeatedInstallOperationPtr = google::protobuf::RepeatedPtrField<InstallOperation>;
     using Extent = chromeos_update_engine::Extent;
 
-    constexpr uint64_t initial_size = 50_MiB;
-    constexpr uint64_t final_size = 40_MiB;
+    constexpr uint64_t super_size = 50_MiB;
+    constexpr uint64_t partition_size = 40_MiB;
 
-    auto builder_a = MetadataBuilder::New(initial_size, 1_KiB, 2);
+    auto builder_a = MetadataBuilder::New(super_size, 1_KiB, 2);
     ASSERT_NE(builder_a, nullptr);
     auto system_a = builder_a->AddPartition("system_a", LP_PARTITION_ATTR_READONLY);
     ASSERT_NE(system_a, nullptr);
-    ASSERT_TRUE(builder_a->ResizePartition(system_a, final_size));
+    ASSERT_TRUE(builder_a->ResizePartition(system_a, partition_size));
 
-    auto builder_b = MetadataBuilder::New(initial_size, 1_KiB, 2);
+    auto builder_b = MetadataBuilder::New(super_size, 1_KiB, 2);
     ASSERT_NE(builder_b, nullptr);
     auto system_b = builder_b->AddPartition("system_b", LP_PARTITION_ATTR_READONLY);
     ASSERT_NE(system_b, nullptr);
-    ASSERT_TRUE(builder_b->ResizePartition(system_b, final_size));
+    ASSERT_TRUE(builder_b->ResizePartition(system_b, partition_size));
 
     const uint64_t block_size = builder_b->logical_block_size();
     const uint64_t chunk_size = kSnapshotChunkSize * dm::kSectorSize;
@@ -129,13 +145,15 @@ TEST_F(PartitionCowCreatorTest, CowSize) {
 
     auto cow_device_size = [](const std::vector<InstallOperation>& iopv, MetadataBuilder* builder_a,
                               MetadataBuilder* builder_b, Partition* system_b) {
-        RepeatedInstallOperationPtr riop(iopv.begin(), iopv.end());
+        PartitionUpdate update;
+        *update.mutable_operations() = RepeatedInstallOperationPtr(iopv.begin(), iopv.end());
+
         PartitionCowCreator creator{.target_metadata = builder_b,
                                     .target_suffix = "_b",
                                     .target_partition = system_b,
                                     .current_metadata = builder_a,
                                     .current_suffix = "_a",
-                                    .operations = &riop};
+                                    .update = &update};
 
         auto ret = creator.Run();
 
@@ -187,7 +205,86 @@ TEST_F(PartitionCowCreatorTest, CowSize) {
     ASSERT_EQ(6 * chunk_size, cow_device_size(iopv, builder_a.get(), builder_b.get(), system_b));
 }
 
+TEST_F(PartitionCowCreatorTest, Zero) {
+    constexpr uint64_t super_size = 1_MiB;
+    auto builder_a = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_a, nullptr);
+
+    auto builder_b = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_b, nullptr);
+    auto system_b = builder_b->AddPartition("system_b", LP_PARTITION_ATTR_READONLY);
+    ASSERT_NE(system_b, nullptr);
+
+    PartitionCowCreator creator{.target_metadata = builder_b.get(),
+                                .target_suffix = "_b",
+                                .target_partition = system_b,
+                                .current_metadata = builder_a.get(),
+                                .current_suffix = "_a",
+                                .update = nullptr};
+
+    auto ret = creator.Run();
+
+    ASSERT_EQ(0u, ret->snapshot_status.device_size());
+    ASSERT_EQ(0u, ret->snapshot_status.snapshot_size());
+    ASSERT_EQ(0u, ret->snapshot_status.cow_file_size());
+    ASSERT_EQ(0u, ret->snapshot_status.cow_partition_size());
+}
+
+TEST_F(PartitionCowCreatorTest, CompressionEnabled) {
+    constexpr uint64_t super_size = 1_MiB;
+    auto builder_a = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_a, nullptr);
+
+    auto builder_b = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_b, nullptr);
+    auto system_b = builder_b->AddPartition("system_b", LP_PARTITION_ATTR_READONLY);
+    ASSERT_NE(system_b, nullptr);
+    ASSERT_TRUE(builder_b->ResizePartition(system_b, 128_KiB));
+
+    PartitionUpdate update;
+    update.set_estimate_cow_size(256_KiB);
+
+    PartitionCowCreator creator{.target_metadata = builder_b.get(),
+                                .target_suffix = "_b",
+                                .target_partition = system_b,
+                                .current_metadata = builder_a.get(),
+                                .current_suffix = "_a",
+                                .compression_enabled = true,
+                                .update = &update};
+
+    auto ret = creator.Run();
+    ASSERT_TRUE(ret.has_value());
+    ASSERT_EQ(ret->snapshot_status.cow_file_size(), 1458176);
+}
+
+TEST_F(PartitionCowCreatorTest, CompressionWithNoManifest) {
+    constexpr uint64_t super_size = 1_MiB;
+    auto builder_a = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_a, nullptr);
+
+    auto builder_b = MetadataBuilder::New(super_size, 1_KiB, 2);
+    ASSERT_NE(builder_b, nullptr);
+    auto system_b = builder_b->AddPartition("system_b", LP_PARTITION_ATTR_READONLY);
+    ASSERT_NE(system_b, nullptr);
+    ASSERT_TRUE(builder_b->ResizePartition(system_b, 128_KiB));
+
+    PartitionUpdate update;
+
+    PartitionCowCreator creator{.target_metadata = builder_b.get(),
+                                .target_suffix = "_b",
+                                .target_partition = system_b,
+                                .current_metadata = builder_a.get(),
+                                .current_suffix = "_a",
+                                .compression_enabled = true,
+                                .update = nullptr};
+
+    auto ret = creator.Run();
+    ASSERT_FALSE(ret.has_value());
+}
+
 TEST(DmSnapshotInternals, CowSizeCalculator) {
+    SKIP_IF_NON_VIRTUAL_AB();
+
     DmSnapCowSizeCalculator cc(512, 8);
     unsigned long int b;
 
@@ -211,7 +308,84 @@ TEST(DmSnapshotInternals, CowSizeCalculator) {
         cc.WriteByte(b);
         ASSERT_EQ(cc.cow_size_sectors(), 40);
     }
+
+    // Write a byte that would surely overflow the counter
+    cc.WriteChunk(std::numeric_limits<uint64_t>::max());
+    ASSERT_FALSE(cc.cow_size_sectors().has_value());
 }
+
+void BlocksToExtents(const std::vector<uint64_t>& blocks,
+                     google::protobuf::RepeatedPtrField<UeExtent>* extents) {
+    for (uint64_t block : blocks) {
+        AppendExtent(extents, block, 1);
+    }
+}
+
+template <typename T>
+std::vector<uint64_t> ExtentsToBlocks(const T& extents) {
+    std::vector<uint64_t> blocks;
+    for (const auto& extent : extents) {
+        for (uint64_t offset = 0; offset < extent.num_blocks(); ++offset) {
+            blocks.push_back(extent.start_block() + offset);
+        }
+    }
+    return blocks;
+}
+
+InstallOperation CreateCopyOp(const std::vector<uint64_t>& src_blocks,
+                              const std::vector<uint64_t>& dst_blocks) {
+    InstallOperation op;
+    op.set_type(InstallOperation::SOURCE_COPY);
+    BlocksToExtents(src_blocks, op.mutable_src_extents());
+    BlocksToExtents(dst_blocks, op.mutable_dst_extents());
+    return op;
+}
+
+// ExtentEqual(tuple<UeExtent, UeExtent>)
+MATCHER(ExtentEqual, "") {
+    auto&& [a, b] = arg;
+    return a.start_block() == b.start_block() && a.num_blocks() == b.num_blocks();
+}
+
+struct OptimizeOperationTestParam {
+    InstallOperation input;
+    std::optional<InstallOperation> expected_output;
+};
+
+class OptimizeOperationTest : public ::testing::TestWithParam<OptimizeOperationTestParam> {
+    void SetUp() override { SKIP_IF_NON_VIRTUAL_AB(); }
+};
+TEST_P(OptimizeOperationTest, Test) {
+    InstallOperation actual_output;
+    EXPECT_EQ(GetParam().expected_output.has_value(),
+              OptimizeSourceCopyOperation(GetParam().input, &actual_output))
+            << "OptimizeSourceCopyOperation should "
+            << (GetParam().expected_output.has_value() ? "succeed" : "fail");
+    if (!GetParam().expected_output.has_value()) return;
+    EXPECT_THAT(actual_output.src_extents(),
+                Pointwise(ExtentEqual(), GetParam().expected_output->src_extents()));
+    EXPECT_THAT(actual_output.dst_extents(),
+                Pointwise(ExtentEqual(), GetParam().expected_output->dst_extents()));
+}
+
+std::vector<OptimizeOperationTestParam> GetOptimizeOperationTestParams() {
+    return {
+            {CreateCopyOp({}, {}), CreateCopyOp({}, {})},
+            {CreateCopyOp({1, 2, 4}, {1, 2, 4}), CreateCopyOp({}, {})},
+            {CreateCopyOp({1, 2, 3}, {4, 5, 6}), std::nullopt},
+            {CreateCopyOp({3, 2}, {1, 2}), CreateCopyOp({3}, {1})},
+            {CreateCopyOp({5, 6, 3, 4, 1, 2}, {1, 2, 3, 4, 5, 6}),
+             CreateCopyOp({5, 6, 1, 2}, {1, 2, 5, 6})},
+            {CreateCopyOp({1, 2, 3, 5, 5, 6}, {5, 6, 3, 4, 1, 2}),
+             CreateCopyOp({1, 2, 5, 5, 6}, {5, 6, 4, 1, 2})},
+            {CreateCopyOp({1, 2, 5, 6, 9, 10}, {1, 4, 5, 6, 7, 8}),
+             CreateCopyOp({2, 9, 10}, {4, 7, 8})},
+            {CreateCopyOp({2, 3, 3, 4, 4}, {1, 2, 3, 4, 5}), CreateCopyOp({2, 3, 4}, {1, 2, 5})},
+    };
+}
+
+INSTANTIATE_TEST_CASE_P(Snapshot, OptimizeOperationTest,
+                        ::testing::ValuesIn(GetOptimizeOperationTestParams()));
 
 }  // namespace snapshot
 }  // namespace android

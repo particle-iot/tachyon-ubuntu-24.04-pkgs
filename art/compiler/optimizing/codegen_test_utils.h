@@ -19,8 +19,6 @@
 
 #include "arch/arm/registers_arm.h"
 #include "arch/instruction_set.h"
-#include "arch/mips/registers_mips.h"
-#include "arch/mips64/registers_mips64.h"
 #include "arch/x86/registers_x86.h"
 #include "code_simulator.h"
 #include "code_simulator_container.h"
@@ -43,14 +41,6 @@
 
 #ifdef ART_ENABLE_CODEGEN_x86_64
 #include "code_generator_x86_64.h"
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips
-#include "code_generator_mips.h"
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips64
-#include "code_generator_mips64.h"
 #endif
 
 namespace art {
@@ -258,9 +248,17 @@ static void Run(const InternalCodeAllocator& allocator,
                 Expected expected) {
   InstructionSet target_isa = codegen.GetInstructionSet();
 
+  struct CodeHolder : CommonCompilerTestImpl {
+   protected:
+    ClassLinker* GetClassLinker() override { return nullptr; }
+    Runtime* GetRuntime() override { return nullptr; }
+  };
+  CodeHolder code_holder;
+  const void* code_ptr =
+      code_holder.MakeExecutable(allocator.GetMemory(), ArrayRef<const uint8_t>(), target_isa);
+
   typedef Expected (*fptr)();
-  CommonCompilerTest::MakeExecutable(allocator.GetMemory().data(), allocator.GetMemory().size());
-  fptr f = reinterpret_cast<fptr>(reinterpret_cast<uintptr_t>(allocator.GetMemory().data()));
+  fptr f = reinterpret_cast<fptr>(reinterpret_cast<uintptr_t>(code_ptr));
   if (target_isa == InstructionSet::kThumb2) {
     // For thumb we need the bottom bit set.
     f = reinterpret_cast<fptr>(reinterpret_cast<uintptr_t>(f) + 1);
@@ -323,38 +321,26 @@ static void RunCode(CodegenTargetConfig target_config,
 }
 
 #ifdef ART_ENABLE_CODEGEN_arm
-CodeGenerator* create_codegen_arm_vixl32(HGraph* graph, const CompilerOptions& compiler_options) {
+inline CodeGenerator* create_codegen_arm_vixl32(HGraph* graph, const CompilerOptions& compiler_options) {
   return new (graph->GetAllocator()) TestCodeGeneratorARMVIXL(graph, compiler_options);
 }
 #endif
 
 #ifdef ART_ENABLE_CODEGEN_arm64
-CodeGenerator* create_codegen_arm64(HGraph* graph, const CompilerOptions& compiler_options) {
+inline CodeGenerator* create_codegen_arm64(HGraph* graph, const CompilerOptions& compiler_options) {
   return new (graph->GetAllocator()) TestCodeGeneratorARM64(graph, compiler_options);
 }
 #endif
 
 #ifdef ART_ENABLE_CODEGEN_x86
-CodeGenerator* create_codegen_x86(HGraph* graph, const CompilerOptions& compiler_options) {
+inline CodeGenerator* create_codegen_x86(HGraph* graph, const CompilerOptions& compiler_options) {
   return new (graph->GetAllocator()) TestCodeGeneratorX86(graph, compiler_options);
 }
 #endif
 
 #ifdef ART_ENABLE_CODEGEN_x86_64
-CodeGenerator* create_codegen_x86_64(HGraph* graph, const CompilerOptions& compiler_options) {
+inline CodeGenerator* create_codegen_x86_64(HGraph* graph, const CompilerOptions& compiler_options) {
   return new (graph->GetAllocator()) x86_64::CodeGeneratorX86_64(graph, compiler_options);
-}
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips
-CodeGenerator* create_codegen_mips(HGraph* graph, const CompilerOptions& compiler_options) {
-  return new (graph->GetAllocator()) mips::CodeGeneratorMIPS(graph, compiler_options);
-}
-#endif
-
-#ifdef ART_ENABLE_CODEGEN_mips64
-CodeGenerator* create_codegen_mips64(HGraph* graph, const CompilerOptions& compiler_options) {
-  return new (graph->GetAllocator()) mips64::CodeGeneratorMIPS64(graph, compiler_options);
 }
 #endif
 

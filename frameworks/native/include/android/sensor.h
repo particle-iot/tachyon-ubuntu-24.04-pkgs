@@ -15,6 +15,9 @@
  */
 
 /**
+ * Structures and functions to receive and process sensor events in
+ * native code.
+ *
  * @addtogroup Sensor
  * @{
  */
@@ -42,18 +45,19 @@
  *   - DO NOT CHANGE THE LAYOUT OR SIZE OF STRUCTURES
  */
 
-/**
- * Structures and functions to receive and process sensor events in
- * native code.
- *
- */
-
 #include <android/looper.h>
 
 #include <stdbool.h>
 #include <sys/types.h>
 #include <math.h>
 #include <stdint.h>
+
+#if !defined(__INTRODUCED_IN)
+#define __INTRODUCED_IN(__api_level) /* nothing */
+#endif
+#if !defined(__DEPRECATED_IN)
+#define __DEPRECATED_IN(__api_level) __attribute__((__deprecated__))
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -245,6 +249,13 @@ enum {
      * {@link ASENSOR_TYPE_ACCELEROMETER_UNCALIBRATED}
      */
     ASENSOR_TYPE_ACCELEROMETER_UNCALIBRATED = 35,
+    /**
+     * {@link ASENSOR_TYPE_HINGE_ANGLE}
+     * reporting-mode: on-change
+     *
+     * The hinge angle sensor value is returned in degrees.
+     */
+    ASENSOR_TYPE_HINGE_ANGLE = 36,
 };
 
 /**
@@ -549,13 +560,8 @@ typedef ASensorRef const* ASensorList;
  *     ASensorManager* sensorManager = ASensorManager_getInstance();
  *
  */
-#if __ANDROID_API__ >= 26
-__attribute__ ((deprecated)) ASensorManager* ASensorManager_getInstance();
-#else
-ASensorManager* ASensorManager_getInstance();
-#endif
+ASensorManager* ASensorManager_getInstance() __DEPRECATED_IN(26);
 
-#if __ANDROID_API__ >= 26
 /**
  * Get a reference to the sensor manager. ASensorManager is a singleton
  * per package as different packages may have access to different sensors.
@@ -567,7 +573,6 @@ ASensorManager* ASensorManager_getInstance();
  * Available since API level 26.
  */
 ASensorManager* ASensorManager_getInstanceForPackage(const char* packageName) __INTRODUCED_IN(26);
-#endif
 
 /**
  * Returns the list of available sensors.
@@ -580,7 +585,6 @@ int ASensorManager_getSensorList(ASensorManager* manager, ASensorList* list);
  */
 ASensor const* ASensorManager_getDefaultSensor(ASensorManager* manager, int type);
 
-#if __ANDROID_API__ >= 21
 /**
  * Returns the default sensor with the given type and wakeUp properties or NULL if no sensor
  * of this type and wakeUp properties exists.
@@ -588,7 +592,6 @@ ASensor const* ASensorManager_getDefaultSensor(ASensorManager* manager, int type
  * Available since API level 21.
  */
 ASensor const* ASensorManager_getDefaultSensorEx(ASensorManager* manager, int type, bool wakeUp) __INTRODUCED_IN(21);
-#endif
 
 /**
  * Creates a new sensor event queue and associate it with a looper.
@@ -605,7 +608,6 @@ ASensorEventQueue* ASensorManager_createEventQueue(ASensorManager* manager,
  */
 int ASensorManager_destroyEventQueue(ASensorManager* manager, ASensorEventQueue* queue);
 
-#if __ANDROID_API__ >= 26
 /**
  * Create direct channel based on shared memory
  *
@@ -702,7 +704,6 @@ void ASensorManager_destroyDirectChannel(ASensorManager* manager, int channelId)
  */
 int ASensorManager_configureDirectReport(ASensorManager* manager,
         ASensor const* sensor, int channelId, int rate) __INTRODUCED_IN(26);
-#endif /* __ANDROID_API__ >= 26 */
 
 /*****************************************************************************/
 
@@ -791,7 +792,6 @@ int ASensorEventQueue_hasEvents(ASensorEventQueue* queue);
  */
 ssize_t ASensorEventQueue_getEvents(ASensorEventQueue* queue, ASensorEvent* events, size_t count);
 
-#if __ANDROID_API__ >= 29
 /**
  * Request that {@link ASENSOR_TYPE_ADDITIONAL_INFO} events to be delivered on
  * the given {@link ASensorEventQueue}.
@@ -815,7 +815,6 @@ ssize_t ASensorEventQueue_getEvents(ASensorEventQueue* queue, ASensorEvent* even
  * \return 0 on success or a negative error code on failure
  */
 int ASensorEventQueue_requestAdditionalInfoEvents(ASensorEventQueue* queue, bool enable) __INTRODUCED_IN(29);
-#endif /* __ANDROID_API__ >= 29 */
 
 /*****************************************************************************/
 
@@ -846,7 +845,6 @@ float ASensor_getResolution(ASensor const* sensor);
  */
 int ASensor_getMinDelay(ASensor const* sensor);
 
-#if __ANDROID_API__ >= 21
 /**
  * Returns the maximum size of batches for this sensor. Batches will often be
  * smaller, as the hardware fifo might be used for other sensors.
@@ -882,9 +880,7 @@ int ASensor_getReportingMode(ASensor const* sensor) __INTRODUCED_IN(21);
  * Available since API level 21.
  */
 bool ASensor_isWakeUpSensor(ASensor const* sensor) __INTRODUCED_IN(21);
-#endif /* __ANDROID_API__ >= 21 */
 
-#if __ANDROID_API__ >= 26
 /**
  * Test if sensor supports a certain type of direct channel.
  *
@@ -910,9 +906,7 @@ bool ASensor_isDirectChannelTypeSupported(ASensor const* sensor, int channelType
  *         does not support direct report.
  */
 int ASensor_getHighestDirectReportRateLevel(ASensor const* sensor) __INTRODUCED_IN(26);
-#endif /* __ANDROID_API__ >= 26 */
 
-#if __ANDROID_API__ >= 29
 /**
  * Returns the sensor's handle.
  *
@@ -930,7 +924,6 @@ int ASensor_getHighestDirectReportRateLevel(ASensor const* sensor) __INTRODUCED_
  * Available since API level 29.
  */
 int ASensor_getHandle(ASensor const* sensor) __INTRODUCED_IN(29);
-#endif /* __ANDROID_API__ >= 29 */
 
 #ifdef __cplusplus
 };

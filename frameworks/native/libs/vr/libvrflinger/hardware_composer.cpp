@@ -47,11 +47,8 @@ namespace dvr {
 namespace {
 
 const char kDvrPerformanceProperty[] = "sys.dvr.performance";
-const char kDvrStandaloneProperty[] = "ro.boot.vr";
 
 const char kRightEyeOffsetProperty[] = "dvr.right_eye_offset_ns";
-
-const char kUseExternalDisplayProperty[] = "persist.vr.use_external_display";
 
 // Surface flinger uses "VSYNC-sf" and "VSYNC-app" for its version of these
 // events. Name ours similarly.
@@ -139,6 +136,20 @@ HardwareComposer::~HardwareComposer(void) {
   composer_callback_->SetVsyncService(nullptr);
 }
 
+void HardwareComposer::UpdateEdidData(Hwc2::Composer* composer,
+                                      hwc2_display_t hw_id) {
+  const auto error = composer->getDisplayIdentificationData(
+      hw_id, &display_port_, &display_identification_data_);
+  if (error != android::hardware::graphics::composer::V2_1::Error::NONE) {
+    if (error !=
+        android::hardware::graphics::composer::V2_1::Error::UNSUPPORTED) {
+      ALOGI("hardware_composer: identification data error\n");
+    } else {
+      ALOGI("hardware_composer: identification data unsupported\n");
+    }
+  }
+}
+
 bool HardwareComposer::Initialize(
     Hwc2::Composer* composer, hwc2_display_t primary_display_id,
     RequestDisplayCallback request_display_callback) {
@@ -146,8 +157,6 @@ bool HardwareComposer::Initialize(
     ALOGE("HardwareComposer::Initialize: already initialized.");
     return false;
   }
-
-  is_standalone_device_ = property_get_bool(kDvrStandaloneProperty, false);
 
   request_display_callback_ = request_display_callback;
 
@@ -165,6 +174,8 @@ bool HardwareComposer::Initialize(
       !post_thread_event_fd_,
       "HardwareComposer: Failed to create interrupt event fd : %s",
       strerror(errno));
+
+  UpdateEdidData(composer, primary_display_id);
 
   post_thread_ = std::thread(&HardwareComposer::PostThread, this);
 
@@ -192,8 +203,6 @@ void HardwareComposer::OnBootFinished() {
     return;
   boot_finished_ = true;
   post_thread_wait_.notify_one();
-  if (is_standalone_device_)
-    request_display_callback_(true);
 }
 
 // Update the post thread quiescent state based on idle and suspended inputs.
@@ -253,17 +262,11 @@ void HardwareComposer::OnPostThreadPaused() {
   layers_.clear();
 
   // Phones create a new composer client on resume and destroy it on pause.
-  // Standalones only create the composer client once and then use SetPowerMode
-  // to control the screen on pause/resume.
-  if (!is_standalone_device_) {
-    if (composer_callback_ != nullptr) {
-      composer_callback_->SetVsyncService(nullptr);
-      composer_callback_ = nullptr;
-    }
-    composer_.reset(nullptr);
-  } else {
-    EnableDisplay(*target_display_, false);
+  if (composer_callback_ != nullptr) {
+    composer_callback_->SetVsyncService(nullptr);
+    composer_callback_ = nullptr;
   }
+  composer_.reset(nullptr);
 
   // Trigger target-specific performance mode change.
   property_set(kDvrPerformanceProperty, "idle");
@@ -574,7 +577,7 @@ void HardwareComposer::SetDisplaySurfaces(
     surfaces_changed_ = true;
   }
 
-  if (request_display_callback_ && !is_standalone_device_)
+  if (request_display_callback_)
     request_display_callback_(!display_idle);
 
   // Set idle state based on whether there are any surfaces to handle.
@@ -758,28 +761,6 @@ void HardwareComposer::PostThread() {
   };
 
   VsyncEyeOffsets vsync_eye_offsets = get_vsync_eye_offsets();
-
-  if (is_standalone_device_) {
-    // First, wait until boot finishes.
-    std::unique_lock<std::mutex> lock(post_thread_mutex_);
-    if (PostThreadCondWait(lock, -1, [this] { return boot_finished_; })) {
-      return;
-    }
-
-    // Then, wait until we're either leaving the quiescent state, or the boot
-    // finished display off timeout expires.
-    if (PostThreadCondWait(lock, kBootFinishedDisplayOffTimeoutSec,
-                           [this] { return !post_thread_quiescent_; })) {
-      return;
-    }
-
-    LOG_ALWAYS_FATAL_IF(post_thread_state_ & PostThreadState::Suspended,
-                        "Vr flinger should own the display by now.");
-    post_thread_resumed_ = true;
-    post_thread_ready_.notify_all();
-    if (!composer_)
-      CreateComposer();
-  }
 
   while (1) {
     ATRACE_NAME("HardwareComposer::PostThread");
@@ -965,18 +946,9 @@ bool HardwareComposer::UpdateTargetDisplay() {
       external_display_ = GetDisplayParams(composer_.get(),
           *displays.external_display, /*is_primary*/ false);
 
-      if (property_get_bool(kUseExternalDisplayProperty, false)) {
-        ALOGI("External display connected. Switching to external display.");
-        target_display_ = &(*external_display_);
-        target_display_changed = true;
-      } else {
-        ALOGI("External display connected, but sysprop %s is unset, so"
-              " using primary display.", kUseExternalDisplayProperty);
-        if (was_using_external_display) {
-          target_display_ = &primary_display_;
-          target_display_changed = true;
-        }
-      }
+      ALOGI("External display connected. Switching to external display.");
+      target_display_ = &(*external_display_);
+      target_display_changed = true;
     } else {
       // External display was disconnected
       external_display_ = std::nullopt;
@@ -998,6 +970,9 @@ bool HardwareComposer::UpdateTargetDisplay() {
     else if (target_display_->is_primary && external_display_) {
       EnableDisplay(*external_display_, false);
     }
+
+    // Update the cached edid data for the current display.
+    UpdateEdidData(composer_.get(), target_display_->id);
 
     // Turn the new target display on.
     EnableDisplay(*target_display_, true);
@@ -1190,6 +1165,26 @@ Return<void> HardwareComposer::ComposerCallback::onVsync(Hwc2::Display display,
     vsync_service_->OnVsync(timestamp);
   }
 
+  return Void();
+}
+
+Return<void> HardwareComposer::ComposerCallback::onVsync_2_4(
+    Hwc2::Display /*display*/, int64_t /*timestamp*/,
+    Hwc2::VsyncPeriodNanos /*vsyncPeriodNanos*/) {
+  LOG_ALWAYS_FATAL("Unexpected onVsync_2_4 callback");
+  return Void();
+}
+
+Return<void> HardwareComposer::ComposerCallback::onVsyncPeriodTimingChanged(
+    Hwc2::Display /*display*/,
+    const Hwc2::VsyncPeriodChangeTimeline& /*updatedTimeline*/) {
+  LOG_ALWAYS_FATAL("Unexpected onVsyncPeriodTimingChanged callback");
+  return Void();
+}
+
+Return<void> HardwareComposer::ComposerCallback::onSeamlessPossible(
+    Hwc2::Display /*display*/) {
+  LOG_ALWAYS_FATAL("Unexpected onSeamlessPossible callback");
   return Void();
 }
 

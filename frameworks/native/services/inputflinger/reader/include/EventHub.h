@@ -24,6 +24,7 @@
 #include <input/KeyCharacterMap.h>
 #include <input/KeyLayoutMap.h>
 #include <input/Keyboard.h>
+#include <input/PropertyMap.h>
 #include <input/VirtualKeyMap.h>
 #include <utils/BitSet.h>
 #include <utils/Errors.h>
@@ -31,7 +32,6 @@
 #include <utils/List.h>
 #include <utils/Log.h>
 #include <utils/Mutex.h>
-#include <utils/PropertyMap.h>
 
 #include <linux/input.h>
 #include <sys/epoll.h>
@@ -145,12 +145,11 @@ extern uint32_t getAbsAxisUsage(int32_t axis, uint32_t deviceClasses);
  * which keys are currently down.  Finally, the event hub keeps track of the capabilities of
  * individual input devices, such as their class and the set of key codes that they support.
  */
-class EventHubInterface : public virtual RefBase {
-protected:
+class EventHubInterface {
+public:
     EventHubInterface() {}
     virtual ~EventHubInterface() {}
 
-public:
     // Synthetic raw event type codes produced when devices are added or removed.
     enum {
         // Sent when a device is added.
@@ -261,62 +260,64 @@ class EventHub : public EventHubInterface {
 public:
     EventHub();
 
-    virtual uint32_t getDeviceClasses(int32_t deviceId) const;
+    virtual uint32_t getDeviceClasses(int32_t deviceId) const override;
 
-    virtual InputDeviceIdentifier getDeviceIdentifier(int32_t deviceId) const;
+    virtual InputDeviceIdentifier getDeviceIdentifier(int32_t deviceId) const override;
 
-    virtual int32_t getDeviceControllerNumber(int32_t deviceId) const;
+    virtual int32_t getDeviceControllerNumber(int32_t deviceId) const override;
 
-    virtual void getConfiguration(int32_t deviceId, PropertyMap* outConfiguration) const;
+    virtual void getConfiguration(int32_t deviceId, PropertyMap* outConfiguration) const override;
 
     virtual status_t getAbsoluteAxisInfo(int32_t deviceId, int axis,
-                                         RawAbsoluteAxisInfo* outAxisInfo) const;
+                                         RawAbsoluteAxisInfo* outAxisInfo) const override;
 
-    virtual bool hasRelativeAxis(int32_t deviceId, int axis) const;
+    virtual bool hasRelativeAxis(int32_t deviceId, int axis) const override;
 
-    virtual bool hasInputProperty(int32_t deviceId, int property) const;
+    virtual bool hasInputProperty(int32_t deviceId, int property) const override;
 
     virtual status_t mapKey(int32_t deviceId, int32_t scanCode, int32_t usageCode,
                             int32_t metaState, int32_t* outKeycode, int32_t* outMetaState,
-                            uint32_t* outFlags) const;
+                            uint32_t* outFlags) const override;
 
-    virtual status_t mapAxis(int32_t deviceId, int32_t scanCode, AxisInfo* outAxisInfo) const;
+    virtual status_t mapAxis(int32_t deviceId, int32_t scanCode,
+                             AxisInfo* outAxisInfo) const override;
 
-    virtual void setExcludedDevices(const std::vector<std::string>& devices);
+    virtual void setExcludedDevices(const std::vector<std::string>& devices) override;
 
-    virtual int32_t getScanCodeState(int32_t deviceId, int32_t scanCode) const;
-    virtual int32_t getKeyCodeState(int32_t deviceId, int32_t keyCode) const;
-    virtual int32_t getSwitchState(int32_t deviceId, int32_t sw) const;
-    virtual status_t getAbsoluteAxisValue(int32_t deviceId, int32_t axis, int32_t* outValue) const;
+    virtual int32_t getScanCodeState(int32_t deviceId, int32_t scanCode) const override;
+    virtual int32_t getKeyCodeState(int32_t deviceId, int32_t keyCode) const override;
+    virtual int32_t getSwitchState(int32_t deviceId, int32_t sw) const override;
+    virtual status_t getAbsoluteAxisValue(int32_t deviceId, int32_t axis,
+                                          int32_t* outValue) const override;
 
     virtual bool markSupportedKeyCodes(int32_t deviceId, size_t numCodes, const int32_t* keyCodes,
-                                       uint8_t* outFlags) const;
+                                       uint8_t* outFlags) const override;
 
-    virtual size_t getEvents(int timeoutMillis, RawEvent* buffer, size_t bufferSize);
-    virtual std::vector<TouchVideoFrame> getVideoFrames(int32_t deviceId);
+    virtual size_t getEvents(int timeoutMillis, RawEvent* buffer, size_t bufferSize) override;
+    virtual std::vector<TouchVideoFrame> getVideoFrames(int32_t deviceId) override;
 
-    virtual bool hasScanCode(int32_t deviceId, int32_t scanCode) const;
-    virtual bool hasLed(int32_t deviceId, int32_t led) const;
-    virtual void setLedState(int32_t deviceId, int32_t led, bool on);
+    virtual bool hasScanCode(int32_t deviceId, int32_t scanCode) const override;
+    virtual bool hasLed(int32_t deviceId, int32_t led) const override;
+    virtual void setLedState(int32_t deviceId, int32_t led, bool on) override;
 
-    virtual void getVirtualKeyDefinitions(int32_t deviceId,
-                                          std::vector<VirtualKeyDefinition>& outVirtualKeys) const;
+    virtual void getVirtualKeyDefinitions(
+            int32_t deviceId, std::vector<VirtualKeyDefinition>& outVirtualKeys) const override;
 
-    virtual sp<KeyCharacterMap> getKeyCharacterMap(int32_t deviceId) const;
-    virtual bool setKeyboardLayoutOverlay(int32_t deviceId, const sp<KeyCharacterMap>& map);
+    virtual sp<KeyCharacterMap> getKeyCharacterMap(int32_t deviceId) const override;
+    virtual bool setKeyboardLayoutOverlay(int32_t deviceId,
+                                          const sp<KeyCharacterMap>& map) override;
 
-    virtual void vibrate(int32_t deviceId, nsecs_t duration);
-    virtual void cancelVibrate(int32_t deviceId);
+    virtual void vibrate(int32_t deviceId, nsecs_t duration) override;
+    virtual void cancelVibrate(int32_t deviceId) override;
 
-    virtual void requestReopenDevices();
+    virtual void requestReopenDevices() override;
 
-    virtual void wake();
+    virtual void wake() override;
 
-    virtual void dump(std::string& dump);
-    virtual void monitor();
+    virtual void dump(std::string& dump) override;
+    virtual void monitor() override;
 
-protected:
-    virtual ~EventHub();
+    virtual ~EventHub() override;
 
 private:
     struct Device {
@@ -372,22 +373,22 @@ private:
         }
     };
 
-    status_t openDeviceLocked(const char* devicePath);
+    status_t openDeviceLocked(const std::string& devicePath);
     void openVideoDeviceLocked(const std::string& devicePath);
     void createVirtualKeyboardLocked();
     void addDeviceLocked(Device* device);
     void assignDescriptorLocked(InputDeviceIdentifier& identifier);
 
-    void closeDeviceByPathLocked(const char* devicePath);
+    void closeDeviceByPathLocked(const std::string& devicePath);
     void closeVideoDeviceByPathLocked(const std::string& devicePath);
     void closeDeviceLocked(Device* device);
     void closeAllDevicesLocked();
 
     void configureFd(Device* device);
 
-    bool isDeviceEnabled(int32_t deviceId);
-    status_t enableDevice(int32_t deviceId);
-    status_t disableDevice(int32_t deviceId);
+    bool isDeviceEnabled(int32_t deviceId) override;
+    status_t enableDevice(int32_t deviceId) override;
+    status_t disableDevice(int32_t deviceId) override;
     status_t registerFdForEpoll(int fd);
     status_t unregisterFdFromEpoll(int fd);
     status_t registerDeviceForEpollLocked(Device* device);
@@ -395,14 +396,14 @@ private:
     status_t unregisterDeviceFromEpollLocked(Device* device);
     void unregisterVideoDeviceFromEpollLocked(const TouchVideoDevice& videoDevice);
 
-    status_t scanDirLocked(const char* dirname);
+    status_t scanDirLocked(const std::string& dirname);
     status_t scanVideoDirLocked(const std::string& dirname);
     void scanDevicesLocked();
     status_t readNotifyLocked();
 
     Device* getDeviceByDescriptorLocked(const std::string& descriptor) const;
     Device* getDeviceLocked(int32_t deviceId) const;
-    Device* getDeviceByPathLocked(const char* devicePath) const;
+    Device* getDeviceByPathLocked(const std::string& devicePath) const;
     /**
      * Look through all available fd's (both for input devices and for video devices),
      * and return the device pointer.
@@ -424,6 +425,9 @@ private:
 
     status_t mapLed(Device* device, int32_t led, int32_t* outScanCode) const;
     void setLedStateLocked(Device* device, int32_t led, bool on);
+
+    void addDeviceInputInotify();
+    void addDeviceInotify();
 
     // Protect all internal state.
     mutable Mutex mLock;
@@ -464,8 +468,8 @@ private:
     int mWakeReadPipeFd;
     int mWakeWritePipeFd;
 
-    int mInputWd;
-    int mVideoWd;
+    int mDeviceInputWd;
+    int mDeviceWd = -1;
 
     // Maximum number of signalled FDs to handle at a time.
     static const int EPOLL_MAX_EVENTS = 16;
@@ -475,8 +479,6 @@ private:
     size_t mPendingEventCount;
     size_t mPendingEventIndex;
     bool mPendingINotify;
-
-    bool mUsingEpollWakeup;
 };
 
 }; // namespace android

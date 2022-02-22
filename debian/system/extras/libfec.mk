@@ -17,13 +17,13 @@ CPPFLAGS += \
   -I/usr/include/android \
   -Idebian/include/external/fec \
   -Iexternal/boringssl/include \
-  -Isystem/core/base/include \
   -Isystem/core/libcrypto_utils/include \
   -Isystem/core/libsparse/include \
   -Isystem/core/libutils/include \
   -Isystem/extras/ext4_utils/include \
   -Isystem/extras/libfec/include \
   -Isystem/extras/squashfs_utils \
+  -Isystem/libbase/include \
 
 debian/out/system/extras/$(NAME).a: $(OBJECTS)
 	mkdir --parents debian/out/system/extras

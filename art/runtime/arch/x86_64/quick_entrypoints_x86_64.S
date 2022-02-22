@@ -38,115 +38,24 @@ MACRO0(SETUP_SAVE_REFS_AND_ARGS_FRAME)
     int3
     int3
 #else
+    SETUP_SAVE_REFS_AND_ARGS_FRAME_REGISTERS_ONLY
     // R10 := Runtime::Current()
-    movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), %r10
-    movq (%r10), %r10
-    // Save callee and GPR args, mixed together to agree with core spills bitmap.
-    PUSH r15  // Callee save.
-    PUSH r14  // Callee save.
-    PUSH r13  // Callee save.
-    PUSH r12  // Callee save.
-    PUSH r9   // Quick arg 5.
-    PUSH r8   // Quick arg 4.
-    PUSH rsi  // Quick arg 1.
-    PUSH rbp  // Callee save.
-    PUSH rbx  // Callee save.
-    PUSH rdx  // Quick arg 2.
-    PUSH rcx  // Quick arg 3.
-    // Create space for FPR args and create 2 slots for ArtMethod*.
-    subq MACRO_LITERAL(16 + 12 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(16 + 12 * 8)
+    LOAD_RUNTIME_INSTANCE r10
     // R10 := ArtMethod* for ref and args callee save frame method.
     movq RUNTIME_SAVE_REFS_AND_ARGS_METHOD_OFFSET(%r10), %r10
-    // Save FPRs.
-    movq %xmm0, 16(%rsp)
-    movq %xmm1, 24(%rsp)
-    movq %xmm2, 32(%rsp)
-    movq %xmm3, 40(%rsp)
-    movq %xmm4, 48(%rsp)
-    movq %xmm5, 56(%rsp)
-    movq %xmm6, 64(%rsp)
-    movq %xmm7, 72(%rsp)
-    movq %xmm12, 80(%rsp)
-    movq %xmm13, 88(%rsp)
-    movq %xmm14, 96(%rsp)
-    movq %xmm15, 104(%rsp)
     // Store ArtMethod* to bottom of stack.
     movq %r10, 0(%rsp)
     // Store rsp as the top quick frame.
     movq %rsp, %gs:THREAD_TOP_QUICK_FRAME_OFFSET
-
-    // Ugly compile-time check, but we only have the preprocessor.
-    // Last +8: implicit return address pushed on stack when caller made call.
-#if (FRAME_SIZE_SAVE_REFS_AND_ARGS != 11 * 8 + 12 * 8 + 16 + 8)
-#error "FRAME_SIZE_SAVE_REFS_AND_ARGS(X86_64) size not as expected."
-#endif
 #endif  // __APPLE__
 END_MACRO
 
 MACRO0(SETUP_SAVE_REFS_AND_ARGS_FRAME_WITH_METHOD_IN_RDI)
-    // Save callee and GPR args, mixed together to agree with core spills bitmap.
-    PUSH r15  // Callee save.
-    PUSH r14  // Callee save.
-    PUSH r13  // Callee save.
-    PUSH r12  // Callee save.
-    PUSH r9   // Quick arg 5.
-    PUSH r8   // Quick arg 4.
-    PUSH rsi  // Quick arg 1.
-    PUSH rbp  // Callee save.
-    PUSH rbx  // Callee save.
-    PUSH rdx  // Quick arg 2.
-    PUSH rcx  // Quick arg 3.
-    // Create space for FPR args and create 2 slots for ArtMethod*.
-    subq LITERAL(80 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(80 + 4 * 8)
-    // Save FPRs.
-    movq %xmm0, 16(%rsp)
-    movq %xmm1, 24(%rsp)
-    movq %xmm2, 32(%rsp)
-    movq %xmm3, 40(%rsp)
-    movq %xmm4, 48(%rsp)
-    movq %xmm5, 56(%rsp)
-    movq %xmm6, 64(%rsp)
-    movq %xmm7, 72(%rsp)
-    movq %xmm12, 80(%rsp)
-    movq %xmm13, 88(%rsp)
-    movq %xmm14, 96(%rsp)
-    movq %xmm15, 104(%rsp)
+    SETUP_SAVE_REFS_AND_ARGS_FRAME_REGISTERS_ONLY
     // Store ArtMethod to bottom of stack.
     movq %rdi, 0(%rsp)
     // Store rsp as the stop quick frame.
     movq %rsp, %gs:THREAD_TOP_QUICK_FRAME_OFFSET
-END_MACRO
-
-MACRO0(RESTORE_SAVE_REFS_AND_ARGS_FRAME)
-    // Restore FPRs.
-    movq 16(%rsp), %xmm0
-    movq 24(%rsp), %xmm1
-    movq 32(%rsp), %xmm2
-    movq 40(%rsp), %xmm3
-    movq 48(%rsp), %xmm4
-    movq 56(%rsp), %xmm5
-    movq 64(%rsp), %xmm6
-    movq 72(%rsp), %xmm7
-    movq 80(%rsp), %xmm12
-    movq 88(%rsp), %xmm13
-    movq 96(%rsp), %xmm14
-    movq 104(%rsp), %xmm15
-    addq MACRO_LITERAL(80 + 4 * 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(80 + 4 * 8))
-    // Restore callee and GPR args, mixed together to agree with core spills bitmap.
-    POP rcx
-    POP rdx
-    POP rbx
-    POP rbp
-    POP rsi
-    POP r8
-    POP r9
-    POP r12
-    POP r13
-    POP r14
-    POP r15
 END_MACRO
 
     /*
@@ -178,8 +87,7 @@ MACRO1(SETUP_SAVE_EVERYTHING_FRAME_R14_R15_SAVED, runtime_method_offset = RUNTIM
     subq MACRO_LITERAL(8 + 16 * 8), %rsp
     CFI_ADJUST_CFA_OFFSET(8 + 16 * 8)
     // R10 := Runtime::Current()
-    movq _ZN3art7Runtime9instance_E@GOTPCREL(%rip), %r10
-    movq (%r10), %r10
+    LOAD_RUNTIME_INSTANCE r10
     // Save FPRs.
     movq %xmm0, 8(%rsp)
     movq %xmm1, 16(%rsp)
@@ -828,7 +736,7 @@ MACRO3(ONE_ARG_SAVE_EVERYTHING_DOWNCALL, c_name, cxx_name, runtime_method_offset
     CFI_REMEMBER_STATE
     RESTORE_SAVE_EVERYTHING_FRAME_KEEP_RAX        // restore frame up to return address
     ret
-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, FRAME_SIZE_SAVE_EVERYTHING)
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, FRAME_SIZE_SAVE_EVERYTHING
 1:
     DELIVER_PENDING_EXCEPTION_FRAME_READY
     END_FUNCTION VAR(c_name)
@@ -1279,7 +1187,7 @@ DEFINE_FUNCTION art_quick_check_instance_of
     addq LITERAL(24), %rsp            // pop arguments
     CFI_ADJUST_CFA_OFFSET(-24)
     ret
-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 64)  // Reset unwind info so following code unwinds.
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 64  // Reset unwind info so following code unwinds.
 
 .Lthrow_class_cast_exception:
     RESTORE_FP_CALLEE_SAVE_FRAME
@@ -1503,45 +1411,23 @@ END_FUNCTION art_quick_proxy_invoke_handler
     /*
      * Called to resolve an imt conflict.
      * rdi is the conflict ArtMethod.
-     * rax is a hidden argument that holds the target interface method's dex method index.
+     * rax is a hidden argument that holds the target interface method.
      *
-     * Note that this stub writes to r10, r11, rax and rdi.
+     * Note that this stub writes to rdi.
      */
 DEFINE_FUNCTION art_quick_imt_conflict_trampoline
 #if defined(__APPLE__)
     int3
     int3
 #else
-    movq __SIZEOF_POINTER__(%rsp), %r10 // Load referrer.
-    mov %eax, %r11d             // Remember method index in R11.
-    PUSH rdx                    // Preserve RDX as we need to clobber it by LOCK CMPXCHG16B.
-    // If the method is obsolete, just go through the dex cache miss slow path.
-    // The obsolete flag is set with suspended threads, so we do not need an acquire operation here.
-    testl LITERAL(ACC_OBSOLETE_METHOD), ART_METHOD_ACCESS_FLAGS_OFFSET(%r10)
-    jnz .Limt_conflict_trampoline_dex_cache_miss
-    movl ART_METHOD_DECLARING_CLASS_OFFSET(%r10), %r10d  // Load declaring class (no read barrier).
-    movl MIRROR_CLASS_DEX_CACHE_OFFSET(%r10), %r10d    // Load the DexCache (without read barrier).
-    UNPOISON_HEAP_REF r10d
-    movq MIRROR_DEX_CACHE_RESOLVED_METHODS_OFFSET(%r10), %r10  // Load the resolved methods.
-    andl LITERAL(METHOD_DEX_CACHE_SIZE_MINUS_ONE), %eax  // Calculate DexCache method slot index.
-    shll LITERAL(1), %eax       // Multiply by 2 as entries have size 2 * __SIZEOF_POINTER__.
-    leaq 0(%r10, %rax, __SIZEOF_POINTER__), %r10 // Load DexCache method slot address.
-    mov %rcx, %rdx              // Make RDX:RAX == RCX:RBX so that LOCK CMPXCHG16B makes no changes.
-    mov %rbx, %rax              // (The actual value does not matter.)
-    lock cmpxchg16b (%r10)      // Relaxed atomic load RDX:RAX from the dex cache slot.
     movq ART_METHOD_JNI_OFFSET_64(%rdi), %rdi  // Load ImtConflictTable
-    cmp %rdx, %r11              // Compare method index to see if we had a DexCache method hit.
-    jne .Limt_conflict_trampoline_dex_cache_miss
 .Limt_table_iterate:
     cmpq %rax, 0(%rdi)
     jne .Limt_table_next_entry
     // We successfully hit an entry in the table. Load the target method
     // and jump to it.
     movq __SIZEOF_POINTER__(%rdi), %rdi
-    CFI_REMEMBER_STATE
-    POP rdx
     jmp *ART_METHOD_QUICK_CODE_OFFSET_64(%rdi)
-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 16)
 .Limt_table_next_entry:
     // If the entry is null, the interface method is not in the ImtConflictTable.
     cmpq LITERAL(0), 0(%rdi)
@@ -1552,66 +1438,8 @@ DEFINE_FUNCTION art_quick_imt_conflict_trampoline
 .Lconflict_trampoline:
     // Call the runtime stub to populate the ImtConflictTable and jump to the
     // resolved method.
-    CFI_REMEMBER_STATE
-    POP rdx
     movq %rax, %rdi  // Load interface method
     INVOKE_TRAMPOLINE_BODY artInvokeInterfaceTrampoline
-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 16)
-.Limt_conflict_trampoline_dex_cache_miss:
-    // We're not creating a proper runtime method frame here,
-    // artLookupResolvedMethod() is not allowed to walk the stack.
-
-    // Save GPR args and ImtConflictTable; RDX is already saved.
-    PUSH r9   // Quick arg 5.
-    PUSH r8   // Quick arg 4.
-    PUSH rsi  // Quick arg 1.
-    PUSH rcx  // Quick arg 3.
-    PUSH rdi  // ImtConflictTable
-    // Save FPR args and callee-saves, align stack to 16B.
-    subq MACRO_LITERAL(12 * 8 + 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(12 * 8 + 8)
-    movq %xmm0, 0(%rsp)
-    movq %xmm1, 8(%rsp)
-    movq %xmm2, 16(%rsp)
-    movq %xmm3, 24(%rsp)
-    movq %xmm4, 32(%rsp)
-    movq %xmm5, 40(%rsp)
-    movq %xmm6, 48(%rsp)
-    movq %xmm7, 56(%rsp)
-    movq %xmm12, 64(%rsp)  // XMM12-15 are callee-save in ART compiled code ABI
-    movq %xmm13, 72(%rsp)  // but caller-save in native ABI.
-    movq %xmm14, 80(%rsp)
-    movq %xmm15, 88(%rsp)
-
-    movq %r11, %rdi             // Pass method index.
-    movq 12 * 8 + 8 + 6 * 8 + 8(%rsp), %rsi   // Pass referrer.
-    call SYMBOL(artLookupResolvedMethod)  // (uint32_t method_index, ArtMethod* referrer)
-
-    // Restore FPRs.
-    movq 0(%rsp), %xmm0
-    movq 8(%rsp), %xmm1
-    movq 16(%rsp), %xmm2
-    movq 24(%rsp), %xmm3
-    movq 32(%rsp), %xmm4
-    movq 40(%rsp), %xmm5
-    movq 48(%rsp), %xmm6
-    movq 56(%rsp), %xmm7
-    movq 64(%rsp), %xmm12
-    movq 72(%rsp), %xmm13
-    movq 80(%rsp), %xmm14
-    movq 88(%rsp), %xmm15
-    addq MACRO_LITERAL(12 * 8 + 8), %rsp
-    CFI_ADJUST_CFA_OFFSET(-(12 * 8 + 8))
-    // Restore ImtConflictTable and GPR args.
-    POP rdi
-    POP rcx
-    POP rsi
-    POP r8
-    POP r9
-
-    cmp LITERAL(0), %rax        // If the method wasn't resolved,
-    je .Lconflict_trampoline    //   skip the lookup and go to artInvokeInterfaceTrampoline().
-    jmp .Limt_table_iterate
 #endif  // __APPLE__
 END_FUNCTION art_quick_imt_conflict_trampoline
 
@@ -1680,27 +1508,26 @@ END_FUNCTION art_quick_resolution_trampoline
  * #-------------------#
  * | caller method...  |
  * #-------------------#
- * | Return            |
- * | Callee-Save Data  |
- * #-------------------#
- * | handle scope      |
- * #-------------------#
+ * | Return PC         |
+ * | Callee-Saves      |
+ * | padding           | // 8B
  * | Method*           |    <--- (1)
  * #-------------------#
  * | local ref cookie  | // 4B
- * | handle scope size | // 4B   TODO: roll into call stack alignment?
+ * | padding           | // 0B or 4B to align handle scope on 8B address
+ * | handle scope      | // Size depends on number of references; multiple of 4B.
  * #-------------------#
- * | JNI Call Stack    |
- * #-------------------#    <--- SP on native call
+ * | JNI Stack Args    | // Empty if all args fit into registers.
+ * #-------------------#    <--- SP on native call (1)
+ * | Free scratch      |
+ * #-------------------#
+ * | SP for JNI call   | // Pointer to (1).
+ * #-------------------#
+ * | Hidden arg        | // For @CriticalNative
+ * #-------------------#
  * |                   |
  * | Stack for Regs    |    The trampoline assembly will pop these values
  * |                   |    into registers for native call
- * #-------------------#
- * | Native code ptr   |
- * #-------------------#
- * | Free scratch      |
- * #-------------------#
- * | Ptr to (1)        |    <--- RSP
  * #-------------------#
  */
     /*
@@ -1731,24 +1558,23 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     // 5k = 5120
     subq LITERAL(5120), %rsp
     // prepare for artQuickGenericJniTrampoline call
-    // (Thread*,  SP)
-    //    rdi    rsi      <= C calling convention
-    //  gs:...   rbp      <= where they are
-    movq %gs:THREAD_SELF_OFFSET, %rdi
-    movq %rbp, %rsi
+    // (Thread*, managed_sp, reserved_area)
+    //    rdi       rsi           rdx   <= C calling convention
+    //  gs:...      rbp           rsp   <= where they are
+    movq %gs:THREAD_SELF_OFFSET, %rdi  // Pass Thread::Current().
+    movq %rbp, %rsi                    // Pass managed frame SP.
+    movq %rsp, %rdx                    // Pass reserved area.
     call SYMBOL(artQuickGenericJniTrampoline)  // (Thread*, sp)
 
     // The C call will have registered the complete save-frame on success.
     // The result of the call is:
-    // %rax: pointer to native code, 0 on error.
-    // %rdx: pointer to the bottom of the used area of the alloca, can restore stack till there.
+    //     %rax: pointer to native code, 0 on error.
+    //     The bottom of the reserved area contains values for arg registers,
+    //     hidden arg register and SP for out args for the call.
 
-    // Check for error (locking can throw for synchronized native method).
+    // Check for error (class init check or locking for synchronized native method can throw).
     test %rax, %rax
     jz .Lexception_in_native
-
-    // Release part of the alloca.
-    movq %rdx, %rsp
 
     // pop from the register-passing alloca region
     // what's the right layout?
@@ -1767,10 +1593,17 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     movq 40(%rsp), %xmm5
     movq 48(%rsp), %xmm6
     movq 56(%rsp), %xmm7
-    addq LITERAL(64), %rsp          // floating-point done
+
+    // Save call target in scratch register.
+    movq %rax, %r11
+
+    // Load hidden arg (rax) for @CriticalNative.
+    movq 64(%rsp), %rax
+    // Load SP for out args, releasing unneeded reserved area.
+    movq 72(%rsp), %rsp
 
     // native call
-    call *%rax
+    call *%r11
 
     // result sign extension is handled in C code
     // prepare for artQuickGenericJniEndTrampoline call
@@ -1790,6 +1623,7 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
 
     // Tear down the alloca.
     movq %rbp, %rsp
+    CFI_REMEMBER_STATE
     CFI_DEF_CFA_REGISTER(rsp)
 
     // Tear down the callee-save frame.
@@ -1824,16 +1658,20 @@ DEFINE_FUNCTION art_quick_generic_jni_trampoline
     // store into fpr, for when it's a fpr return...
     movq %rax, %xmm0
     ret
+
+    // Undo the unwinding information from above since it doesn't apply below.
+    CFI_RESTORE_STATE_AND_DEF_CFA rbp, 208
 .Lexception_in_native:
     pushq %gs:THREAD_TOP_QUICK_FRAME_OFFSET
     addq LITERAL(-1), (%rsp)  // Remove the GenericJNI tag.
     movq (%rsp), %rsp
-    CFI_DEF_CFA_REGISTER(rsp)
-    // Do a call to push a new save-all frame required by the runtime.
-    call .Lexception_call
-.Lexception_call:
-    DELIVER_PENDING_EXCEPTION
+    call art_deliver_pending_exception
 END_FUNCTION art_quick_generic_jni_trampoline
+
+DEFINE_FUNCTION art_deliver_pending_exception
+    // This will create a new save-all frame, required by the runtime.
+    DELIVER_PENDING_EXCEPTION
+END_FUNCTION art_deliver_pending_exception
 
     /*
      * Called to bridge from the quick to interpreter ABI. On entry the arguments match those
@@ -2260,7 +2098,7 @@ DEFINE_FUNCTION art_quick_osr_stub
     movq %rax, (%rcx)              // Store the result.
     ret
 .Losr_entry:
-    CFI_RESTORE_STATE_AND_DEF_CFA(rsp, 80)
+    CFI_RESTORE_STATE_AND_DEF_CFA rsp, 80
     // Since the call has pushed the return address we need to switch the CFA register to RBP.
     CFI_DEF_CFA_REGISTER(rbp)
 

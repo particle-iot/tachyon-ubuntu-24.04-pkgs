@@ -22,6 +22,7 @@
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <fs_mgr/roots.h>
 
@@ -34,6 +35,7 @@ using android::fs_mgr::GetEntryForPath;
 using android::fs_mgr::MetadataBuilder;
 using android::fs_mgr::Partition;
 using android::fs_mgr::ReadDefaultFstab;
+using google::protobuf::RepeatedPtrField;
 
 namespace android {
 namespace snapshot {
@@ -90,7 +92,7 @@ AutoDeleteSnapshot::~AutoDeleteSnapshot() {
     }
 }
 
-Return InitializeCow(const std::string& device) {
+Return InitializeKernelCow(const std::string& device) {
     // When the kernel creates a persistent dm-snapshot, it requires a CoW file
     // to store the modifications. The kernel interface does not specify how
     // the CoW is used, and there is no standard associated.
@@ -164,6 +166,33 @@ std::ostream& operator<<(std::ostream& os, const Now&) {
     time_t t = time(nullptr);
     localtime_r(&t, &now);
     return os << std::put_time(&now, "%Y%m%d-%H%M%S");
+}
+
+void AppendExtent(RepeatedPtrField<chromeos_update_engine::Extent>* extents, uint64_t start_block,
+                  uint64_t num_blocks) {
+    if (extents->size() > 0) {
+        auto last_extent = extents->rbegin();
+        auto next_block = last_extent->start_block() + last_extent->num_blocks();
+        if (start_block == next_block) {
+            last_extent->set_num_blocks(last_extent->num_blocks() + num_blocks);
+            return;
+        }
+    }
+    auto* new_extent = extents->Add();
+    new_extent->set_start_block(start_block);
+    new_extent->set_num_blocks(num_blocks);
+}
+
+bool IsCompressionEnabled() {
+    return android::base::GetBoolProperty("ro.virtual_ab.compression.enabled", false);
+}
+
+std::string GetOtherPartitionName(const std::string& name) {
+    auto suffix = android::fs_mgr::GetPartitionSlotSuffix(name);
+    CHECK(suffix == "_a" || suffix == "_b");
+
+    auto other_suffix = (suffix == "_a") ? "_b" : "_a";
+    return name.substr(0, name.size() - suffix.size()) + other_suffix;
 }
 
 }  // namespace snapshot
