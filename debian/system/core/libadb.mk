@@ -8,7 +8,6 @@ LIBADB_SRC_FILES := \
   adb_unique_fd.cpp \
   adb_utils.cpp \
   fdevent/fdevent.cpp \
-  fdevent/fdevent_poll.cpp \
   services.cpp \
   sockets.cpp \
   socket_spec.cpp \
@@ -96,9 +95,7 @@ $(OBJECTS): %.o: %.cpp
 
 debian/out/system/core/dummy.cpp:
 	mkdir --parents debian/out/system/core
-	echo '#include <optional>' > $@
-	echo '#include <string>' >> $@
-	echo '#include <string_view>' >> $@
+	rm -f $@
 	echo '#include <adb_wifi.h>' >> $@
 	echo '#include <adb_mdns.h>' >> $@
 	echo 'void init_mdns_transport_discovery(void) {}' >> $@
@@ -106,6 +103,5 @@ debian/out/system/core/dummy.cpp:
 	echo 'void mdns_cleanup() {}' >> $@
 	echo 'std::string mdns_list_discovered_services() {return std::string("");}' >> $@
 	echo 'std::optional<MdnsInfo> mdns_get_connect_service_info(const std::string& name) {return std::nullopt;}' >> $@
-	echo 'std::optional<MdnsInfo> mdns_get_connect_service_info(std::string_view name) {return std::nullopt;}' >> $@
 	echo 'std::optional<MdnsInfo> mdns_get_pairing_service_info(const std::string& name) {return std::nullopt;}' >> $@
 	echo 'bool adb_secure_connect_by_service_name(const std::string& instance_name) {return false;}' >> $@

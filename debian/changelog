@@ -1,3 +1,12 @@
+android-platform-tools (31.0.3-1~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Remove building libart for i386 since it ftbfs now.
+  * Simplify d/rules, d/art/libart.mk, and d/system/core/libadb.mk
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 13 Mar 2022 18:05:41 +0900
+
 android-platform-tools (31.0.3-1~exp1) experimental; urgency=medium
 
   * Team upload.

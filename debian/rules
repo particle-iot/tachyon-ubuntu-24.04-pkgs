@@ -133,9 +133,7 @@ art/libnativeloader.a: debian/art/libnativeloader.mk art/libnativebridge.a s/cor
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 # Only for debug purpose to build standalone object
-debian/out/art/asm_defines.h debian/out/art/operator_out.cc: debian/art/libart.mk
-	dh_auto_build --buildsystem=makefile -- --file=$< $@
-debian/out/art/mterp.S: debian/art/libart.mk debian/out/art debian/out/art/asm_defines.h
+debian/out/art/asm_defines.h debian/out/art/mterp.S debian/out/art/operator_out.cc: debian/art/libart.mk
 	dh_auto_build --buildsystem=makefile -- --file=$< $@
 art/runtime/%.a art/libartbase/%.a art/libdexfile/%.a debian/out/art/%.a: debian/art/libart.mk
 	dh_auto_build --buildsystem=makefile -- --file=$< $@
@@ -152,7 +150,7 @@ ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
 endif
 
 # libdexfile depends on libart, and it only builds on limited Arch
-ifneq ($(filter amd64 i386 arm64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 arm64,$(DEB_HOST_ARCH)),)
   COMPONENTS += \
     art/libdexfile_external.a \
     art/libdexfile_support.a \

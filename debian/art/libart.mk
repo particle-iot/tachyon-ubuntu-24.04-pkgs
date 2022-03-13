@@ -329,20 +329,18 @@ SOURCES_libdexfile = \
   external/dex_file_ext.cc \
   external/dex_file_supp.cc \
 
-SOURCES := $(foreach source, $(SOURCES_libartbase), art/libartbase/$(source)) \
-           $(foreach source, $(SOURCES_libdexfile), art/libdexfile/$(source)) \
-           $(foreach source, $(SOURCES_runtime), art/runtime/$(source)) \
-           art/libartpalette/system/palette_fake.cc \
-           art/libprofile/profile/profile_boot_info.cc \
-           art/libprofile/profile/profile_compilation_info.cc \
-
-
-# Add generated operator_out.cc and mterp.S
-SOURCES += \
+SOURCES := \
+  $(foreach source, $(SOURCES_libartbase), art/libartbase/$(source)) \
+  $(foreach source, $(SOURCES_libdexfile), art/libdexfile/$(source)) \
+  $(foreach source, $(SOURCES_runtime), art/runtime/$(source)) \
+  art/libartpalette/system/palette_fake.cc \
+  art/libprofile/profile/profile_boot_info.cc \
+  art/libprofile/profile/profile_compilation_info.cc \
+  \
   debian/out/art/operator_out.cc \
   debian/out/art/mterp.S
 
-# from runtime/Android.bp
+# from art/runtime/Android.bp
 SOURCES_OPERATOR = \
   base/callee_save_type.h \
   base/locks.h \
@@ -429,10 +427,9 @@ CPPFLAGS += \
   -DART_READ_BARRIER_TYPE_IS_BAKER=1 \
   -DART_STACK_OVERFLOW_GAP_arm=8192 \
   -DART_STACK_OVERFLOW_GAP_arm64=8192 \
-  -DART_STACK_OVERFLOW_GAP_mips=16384 \
-  -DART_STACK_OVERFLOW_GAP_mips64=16384 \
   -DART_STACK_OVERFLOW_GAP_x86_64=8192 \
   -DART_STACK_OVERFLOW_GAP_x86=8192 \
+  -DART_STATIC_LIBARTBASE \
   -DART_USE_READ_BARRIER=1 \
   -DBUILDING_LIBART=1 \
   -DIMT_SIZE=43 \
@@ -475,7 +472,6 @@ ifeq ($(CPU),arm)
 endif
 
 debian/out/art/$(NAME).a: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
-	mkdir --parents debian/out/art
 	ar -rcs $@ $^
 
 $(OBJECTS_CXX): %.o: %.cc
@@ -489,11 +485,9 @@ debian/out/art/operator_out.cc: $(SOURCES_OPERATOR)
 	art/tools/generate_operator_out.py art/runtime $^ > $@
 
 debian/out/art/mterp.S: art/runtime/interpreter/mterp/$(CPU)ng/*.S
-	mkdir --parents debian/out/art
-	python3 art/runtime/interpreter/mterp/gen_mterp.py $@ $^
+	art/runtime/interpreter/mterp/gen_mterp.py $@ $^
 
 debian/out/art/asm_defines.h: debian/out/art/asm_defines.output
-	mkdir --parents debian/out/art
 	art/tools/cpp-define-generator/make_header.py $^ > $@
 
 debian/out/art/asm_defines.output: art/tools/cpp-define-generator/asm_defines.cc
