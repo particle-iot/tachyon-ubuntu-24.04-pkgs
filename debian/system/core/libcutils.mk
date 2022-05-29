@@ -46,9 +46,18 @@ CPPFLAGS += \
   -Isystem/libbase/include \
   -Isystem/logging/liblog/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS_C) $(OBJECTS_CXX)
-	mkdir --parents debian/out/system/core
-	ar -rcs $@ $^
+LDFLAGS += \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-soname,$(NAME).so.0 \
+  -lbase \
+  -llog \
+  -lpthread \
+  -shared
+
+build: $(OBJECTS_C) $(OBJECTS_CXX)
+	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
 
 $(OBJECTS_C): %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)

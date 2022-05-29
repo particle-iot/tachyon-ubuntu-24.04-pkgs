@@ -12,5 +12,5 @@ LDFLAGS += -lpng
 STATIC_LIBS = debian/out/frameworks/native/libETC1.a
 
 debian/out/development/$(NAME): $(SOURCES)
-	mkdir --parents debian/out/development
+	mkdir -p debian/out/development
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(CPPFLAGS) $(STATIC_LIBS) $(LDFLAGS)

@@ -18,9 +18,17 @@ CPPFLAGS += \
   -Isystem/core/libsparse/include \
   -Isystem/libbase/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS)
-	mkdir --parents debian/out/system/core
-	ar -rcs $@ $^
+LDFLAGS += \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-soname,$(NAME).so.0 \
+  -lbase \
+  -lz \
+  -shared
+
+build: $(OBJECTS)
+	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

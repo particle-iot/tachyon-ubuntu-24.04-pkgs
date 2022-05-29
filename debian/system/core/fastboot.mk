@@ -33,7 +33,6 @@ CPPFLAGS += \
    -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
    -I/usr/include/android \
    -Iexternal/avb \
-   -Iexternal/boringssl/include \
    -Iexternal/fmtlib/include \
    -Ipackages/modules/adb \
    -Isystem/core/demangle/include \
@@ -50,17 +49,23 @@ CPPFLAGS += \
    -Isystem/libziparchive/include \
    -Isystem/tools/mkbootimg/include/bootimg \
 
-LDFLAGS += -lpthread -lusb-1.0 -lz -lprotobuf
+LDFLAGS += \
+  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -fuse-ld=gold \
+  -lbase \
+  -lcrypto \
+  -lcutils \
+  -lpthread \
+  -lprotobuf \
+  -lsparse \
+  -lusb-1.0 \
+  -lziparchive \
+
 STATIC_LIBS = \
   debian/out/system/core/libadb.a \
-  debian/out/system/core/libbase.a \
-  debian/out/system/core/libcutils.a \
-  debian/out/system/core/liblog.a \
-  debian/out/system/core/libsparse.a \
-  debian/out/system/core/libziparchive.a \
   debian/out/system/extras/libext4_utils.a \
-  debian/out/external/boringssl/libssl.a \
-  debian/out/external/boringssl/libcrypto.a \
 
 # -latomic should be the last library specified
 # https://github.com/android/ndk/issues/589
@@ -68,9 +73,8 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
   LDFLAGS += -latomic
 endif
 
-debian/out/system/core/$(NAME): $(OBJECTS)
-	mkdir --parents debian/out/system/core
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(CPPFLAGS) $(STATIC_LIBS) $(LDFLAGS)
+debian/out/system/core/$(NAME): $(OBJECTS) $(STATIC_LIBS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

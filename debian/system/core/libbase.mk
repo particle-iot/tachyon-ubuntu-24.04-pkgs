@@ -24,7 +24,8 @@ SOURCES_fmtlib = \
 SOURCES := \
   $(foreach source, $(SOURCES), system/libbase/$(source)) \
   $(foreach source, $(SOURCES_fmtlib), external/fmtlib/$(source))
-OBJECTS_CC = $(SOURCES:.cc=.o)
+SOURCES_CC = $(filter %.cc,$(SOURCES))
+OBJECTS_CC = $(SOURCES_CC:.cc=.o)
 SOURCES_CPP = $(filter %.cpp,$(SOURCES))
 OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
 
@@ -37,9 +38,23 @@ CPPFLAGS += \
   -Isystem/libbase/include \
   -Isystem/logging/liblog/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS_CC) $(OBJECTS_CPP)
-	mkdir --parents debian/out/system/core
-	ar -rcs $@ $^
+LDFLAGS += \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-soname,$(NAME).so.0 \
+  -llog \
+  -lpthread \
+  -shared
+
+# -latomic should be the last library specified
+# https://github.com/android/ndk/issues/589
+ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
+  LDFLAGS += -latomic
+endif
+
+build: $(OBJECTS_CC) $(OBJECTS_CPP)
+	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
 
 $(OBJECTS_CPP): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

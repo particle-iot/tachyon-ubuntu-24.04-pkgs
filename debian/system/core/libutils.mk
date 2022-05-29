@@ -39,9 +39,25 @@ CPPFLAGS += \
   -Isystem/logging/liblog/include \
   -Isystem/unwinding/libbacktrace/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS)
-	mkdir --parents debian/out/system/core
-	ar -rcs $@ $^
+LDFLAGS += \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-soname,$(NAME).so.0 \
+  -lbacktrace \
+  -lcutils \
+  -llog \
+  -lpthread \
+  -shared
+
+# -latomic should be the last library specified
+# https://github.com/android/ndk/issues/589
+ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
+  LDFLAGS += -latomic
+endif
+
+build: $(OBJECTS)
+	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

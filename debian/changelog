@@ -1,3 +1,10 @@
+android-platform-tools (31.0.3-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * Merge packaging changes from 29.0.6-6 to 29.0.6-18
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 29 May 2022 22:13:08 +0900
+
 android-platform-tools (31.0.3-1~exp2) experimental; urgency=medium
 
   * Team upload.
@@ -36,6 +43,151 @@ android-platform-tools (31.0.3-1~exp1) experimental; urgency=medium
   * debian/*.mk: Update
 
  -- Roger Shimizu <rosh@debian.org>  Wed, 23 Feb 2022 03:10:44 +0900
+
+android-platform-tools (29.0.6-18) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control: Update Depends version.
+  * debian/control: Add Section to each binary package.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 May 2022 20:13:51 +0900
+
+android-platform-tools (29.0.6-17) unstable; urgency=medium
+
+  * Team upload.
+  * debian/tests/control: Add Depends for etc1tool test.
+  * debian/control: Update B-D list to install packages only necessary.
+  * debian/rules: Build libext4_utils.mk only for fastboot needed
+    architectures.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 May 2022 02:12:26 +0900
+
+android-platform-tools (29.0.6-16) unstable; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Skip dh_auto_test for buildd: all
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 May 2022 18:10:50 +0900
+
+android-platform-tools (29.0.6-15) unstable; urgency=medium
+
+  * Team upload.
+  * Make use of android-libboringssl-dev package
+  * Build etc1tool on any architecture
+  * debian/rules:
+    - Port some tests from autopkgtest to run on dh_auto_test.
+  * d/*.mk:
+    - Update symblic linking command to easier rebuild locally.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 May 2022 01:44:34 +0900
+
+android-platform-tools (29.0.6-14) unstable; urgency=medium
+
+  * Team upload.
+  * Fix gcc build for libsparse.mk
+  * Add debian/watch
+  * debian/*.mk:
+    - Link atomic library only necessary for armel and mipsel.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 08 May 2022 23:40:34 +0900
+
+android-platform-tools (29.0.6-13) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Update B-D: libselinux1-dev to all arch, since building
+      libziparchive.mk depends on this package.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 08 May 2022 00:41:07 +0900
+
+android-platform-tools (29.0.6-12) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Add libgtest-dev to Depends of android-libziparchive-dev.
+    - Fix multiarch issues.
+  * Add DexFiles.cpp to libbacktrace.mk
+  * Make libziparchive.so build on all arch
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 07 May 2022 23:25:20 +0900
+
+android-platform-tools (29.0.6-11) unstable; urgency=medium
+
+  * Team upload.
+  * Update d/*.lintian-overrides
+  * debian/control:
+    - Revise B-D and Depends for each package.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 04 May 2022 19:33:12 +0900
+
+android-platform-tools (29.0.6-10) unstable; urgency=medium
+
+  * Team upload.
+  * Fix multiarch issues
+  * Make liblog and libnativehelper dynamic linked
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 03 May 2022 01:41:05 +0900
+
+android-platform-tools (29.0.6-9) unstable; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Update version for android-sdk-libsparse-utils.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 19 Apr 2022 02:56:18 +0900
+
+android-platform-tools (29.0.6-8) unstable; urgency=medium
+
+  * Team upload.
+  * debian/system/core/*img*.mk: Fix ftbfs issue on armel.
+  * debian/control: Fix ftbfs issue on mips*el.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 18 Apr 2022 22:49:01 +0900
+
+android-platform-tools (29.0.6-7) unstable; urgency=medium
+
+  * Team upload.
+  * debian/*.mk and debian/rules:
+    - Remove libart since it is not dependency for adb and fastboot.
+    - Following libraries are no longer static linked:
+      + libbacktrace.so
+      + libbase.so
+      + libcutils.so
+      + libsparse.so
+      + libutils.so
+      + libziparchive.so
+  * debian/control:
+    - Add new packages to replace old ones in
+      android-platform-system-core:
+      + android-libutils
+      + android-libutils-dev
+      + android-libziparchive
+      + android-libziparchive-dev
+      + android-platform-system-core-headers
+      + android-libbacktrace
+      + android-libbacktrace-dev
+      + android-libbase
+      + android-libbase-dev
+      + mkbootimg
+    - Remove package: dmtracedump
+  * debian/tests:
+    - Remove test for dmtracedump
+  * debian/rules:
+    - Mark the same version for android-lib* packages as adb and
+      fastboot.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 18 Apr 2022 01:04:48 +0900
+
+android-platform-tools (29.0.6-6) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - For adb and fastboot package, move
+      android-sdk-platform-tools-common from Depends to Recommends,
+      since it might be removed from testing soon.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 25 Feb 2022 01:58:51 +0900
 
 android-platform-tools (29.0.6-5) unstable; urgency=medium
 

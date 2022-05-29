@@ -34,12 +34,10 @@ libunwindstack_SOURCES := \
   RegsX86_64.cpp \
   RegsMips.cpp \
   RegsMips64.cpp \
-  Unwinder.cpp \
   Symbols.cpp \
+  Unwinder.cpp \
 
-# these might still be needed by libart/dexdump/dexlist
 libunwindstack_dexfile_SOURCES := \
-  DexFile.cpp \
   DexFiles.cpp \
 
 ifeq ($(DEB_HOST_ARCH), amd64)
@@ -47,21 +45,6 @@ ifeq ($(DEB_HOST_ARCH), amd64)
 endif
 ifeq ($(DEB_HOST_ARCH), i386)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsX86.S
-endif
-ifeq ($(DEB_HOST_ARCH), armel)
-  # TODO port me!
-endif
-ifeq ($(DEB_HOST_ARCH), armhf)
-  # TODO port me!
-endif
-ifeq ($(DEB_HOST_ARCH), arm64)
-  # TODO port me!
-endif
-ifeq ($(DEB_HOST_ARCH), mipsel)
-  SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips.S
-endif
-ifeq ($(DEB_HOST_ARCH), mips64el)
-  SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips64.S
 endif
 
 SOURCES = \
@@ -76,22 +59,31 @@ OBJECTS_ASSEMBLY := $(SOURCES_ASSEMBLY:.S=.o)
 
 CXXFLAGS += -std=gnu++2a -fno-omit-frame-pointer
 CPPFLAGS += \
-  -I/usr/include \
-  -I/usr/include/android \
-  -I/usr/include/android/lzma \
-  -Iart/libdexfile/external/include \
-  -Idebian/include/external/libunwind \
-  -Isystem/core/demangle/include \
-  -Isystem/core/include \
+  -Idebian/include/external/lzma \
   -Isystem/libbase/include \
   -Isystem/libprocinfo/include \
   -Isystem/logging/liblog/include \
   -Isystem/unwinding/libbacktrace/include \
   -Isystem/unwinding/libunwindstack/include \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
-	mkdir --parents debian/out/system/core
-	ar -rcs $@ $^
+LDFLAGS += \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-soname,$(NAME).so.0 \
+  -lbase \
+  -llog \
+  -lpthread \
+  -shared
+
+# -latomic should be the last library specified
+# https://github.com/android/ndk/issues/589
+ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
+  LDFLAGS += -latomic
+endif
+
+build: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
+	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
 
 $(OBJECTS_CXX): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

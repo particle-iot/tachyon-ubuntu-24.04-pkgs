@@ -7,7 +7,7 @@ CXXFLAGS += -std=gnu++2a
 CPPFLAGS += -Iframeworks/native/opengl/include
 
 debian/out/frameworks/native/$(NAME).a: $(OBJECTS)
-	mkdir --parents debian/out/frameworks/native
+	mkdir -p debian/out/frameworks/native
 	ar -rcs $@ $^
 
 $(OBJECTS): %.o: %.cpp

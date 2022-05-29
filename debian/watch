@@ -1,0 +1,5 @@
+# this produces a corrupt tarball, see README.source and get-orig-source
+version=4
+opts="pagemangle=s%\">platform-tools-%\.tar\.gz\">platform-tools-%g;s%/\+/refs/tags/%/+archive/%g" \
+https://android.googlesource.com/platform/system/core/+refs \
+    [\w\/]+\+archive\/platform-tools-([0-9\.]+)\.tar\.gz

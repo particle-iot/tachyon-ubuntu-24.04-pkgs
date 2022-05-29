@@ -33,7 +33,6 @@ CPPFLAGS += \
   -DADB_VERSION='"$(DEB_VERSION)"' \
   -I/usr/include \
   -I/usr/include/android \
-  -Iexternal/boringssl/include \
   -Ifastdeploy/proto \
   -Ipackages/modules/adb \
   -Ipackages/modules/adb/proto \
@@ -42,16 +41,27 @@ CPPFLAGS += \
   -Isystem/libbase/include \
   -Isystem/libziparchive/include \
 
-LDFLAGS += -lpthread -lusb-1.0 -lz -lprotobuf -lzstd -llz4 -lbrotlienc -lbrotlidec
+LDFLAGS += \
+  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Ldebian/out/system/core \
+  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -fuse-ld=gold \
+  -lbase \
+  -lbrotlidec \
+  -lbrotlienc \
+  -lcrypto \
+  -lcutils \
+  -llz4 \
+  -lprotobuf \
+  -lpthread \
+  -lssl \
+  -lusb-1.0 \
+  -lziparchive \
+  -lzstd \
+
 STATIC_LIBS = \
   debian/out/system/core/libadb.a \
-  debian/out/system/core/libbase.a \
   debian/out/system/core/libcrypto_utils.a \
-  debian/out/system/core/libcutils.a \
-  debian/out/system/core/liblog.a \
-  debian/out/system/core/libziparchive.a \
-  debian/out/external/boringssl/libssl.a \
-  debian/out/external/boringssl/libcrypto.a \
 
 # -latomic should be the last library specified
 # https://github.com/android/ndk/issues/589
@@ -59,9 +69,8 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
   LDFLAGS += -latomic
 endif
 
-debian/out/system/core/$(NAME): $(OBJECTS_CC) $(OBJECTS_CPP)
-	mkdir --parents debian/out/system/core
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(CPPFLAGS) $(STATIC_LIBS) $(LDFLAGS)
+debian/out/system/core/$(NAME): $(OBJECTS_CC) $(OBJECTS_CPP) $(STATIC_LIBS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS_CPP): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

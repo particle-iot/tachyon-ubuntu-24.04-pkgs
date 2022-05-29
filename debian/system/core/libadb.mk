@@ -73,7 +73,6 @@ CPPFLAGS += \
   -DADB_VERSION='"$(DEB_VERSION)"' \
   -I/usr/include \
   -I/usr/include/android \
-  -Iexternal/boringssl/include \
   -Ipackages/modules/adb \
   -Ipackages/modules/adb/crypto/include \
   -Ipackages/modules/adb/pairing_auth/include \
@@ -87,7 +86,6 @@ CPPFLAGS += \
   -Isystem/libbase/include \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
-	mkdir --parents debian/out/system/core
 	ar -rcs $@ $^
 
 $(OBJECTS): %.o: %.cpp

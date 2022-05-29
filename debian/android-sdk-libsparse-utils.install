@@ -1,0 +1,7 @@
+#!/usr/bin/dh-exec
+
+system/core/libsparse/simg_dump.py => usr/bin/simg_dump
+debian/out/system/core/simg2simg	usr/bin
+debian/out/system/core/img2simg		usr/bin
+debian/out/system/core/simg2img		usr/bin
+debian/out/system/core/append2simg	usr/bin

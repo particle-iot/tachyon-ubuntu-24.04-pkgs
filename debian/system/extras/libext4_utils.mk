@@ -34,11 +34,11 @@ CPPFLAGS += \
   -Isystem/libbase/include \
 
 debian/out/system/extras/libext4_utils.a: $(OBJECTS_C) $(OBJECTS_CXX)
-	mkdir --parents debian/out/system/extras
+	mkdir -p debian/out/system/extras
 	ar -rcs $@ $^
 
 $(OBJECTS_C): %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)
 
 $(OBJECTS_CXX): %.o: %.cpp
-	$(CXX) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)
+	$(CXX) -c -o $@ $< $(CPPFLAGS) $(CXXFLAGS)

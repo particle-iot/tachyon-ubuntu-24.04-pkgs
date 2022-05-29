@@ -1,0 +1,5 @@
+libnativehelper/include_jni/*          usr/include/android/nativehelper
+libnativehelper/include/nativehelper   usr/include/android
+libnativehelper/header_only_include/nativehelper usr/include/android
+libnativehelper/include_platform/*     usr/include/android
+libnativehelper/include_platform_header_only/* usr/include/android
