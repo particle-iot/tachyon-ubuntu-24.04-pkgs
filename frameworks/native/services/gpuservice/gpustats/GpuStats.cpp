@@ -84,6 +84,38 @@ static void addLoadingTime(GpuStatsInfo::Driver driver, int64_t driverLoadingTim
     }
 }
 
+void GpuStats::purgeOldDriverStats() {
+    ALOG_ASSERT(mAppStats.size() == MAX_NUM_APP_RECORDS);
+
+    struct GpuStatsApp {
+        // Key is <app package name>+<driver version code>.
+        const std::string *appStatsKey = nullptr;
+        const std::chrono::time_point<std::chrono::system_clock> *lastAccessTime = nullptr;
+    };
+    std::vector<GpuStatsApp> gpuStatsApps(MAX_NUM_APP_RECORDS);
+
+    // Create a list of pointers to package names and their last access times.
+    int index = 0;
+    for (const auto & [appStatsKey, gpuStatsAppInfo] : mAppStats) {
+        GpuStatsApp &gpuStatsApp = gpuStatsApps[index];
+        gpuStatsApp.appStatsKey = &appStatsKey;
+        gpuStatsApp.lastAccessTime = &gpuStatsAppInfo.lastAccessTime;
+        ++index;
+    }
+
+    // Sort the list with the oldest access times at the front.
+    std::sort(gpuStatsApps.begin(), gpuStatsApps.end(), [](GpuStatsApp a, GpuStatsApp b) -> bool {
+        return *a.lastAccessTime < *b.lastAccessTime;
+    });
+
+    // Remove the oldest packages from mAppStats to make room for new apps.
+    for (int i = 0; i < APP_RECORD_HEADROOM; ++i) {
+        mAppStats.erase(*gpuStatsApps[i].appStatsKey);
+        gpuStatsApps[i].appStatsKey = nullptr;
+        gpuStatsApps[i].lastAccessTime = nullptr;
+    }
+}
+
 void GpuStats::insertDriverStats(const std::string& driverPackageName,
                                  const std::string& driverVersionName, uint64_t driverVersionCode,
                                  int64_t driverBuildTime, const std::string& appPackageName,
@@ -123,19 +155,22 @@ void GpuStats::insertDriverStats(const std::string& driverPackageName,
     const std::string appStatsKey = appPackageName + std::to_string(driverVersionCode);
     if (!mAppStats.count(appStatsKey)) {
         if (mAppStats.size() >= MAX_NUM_APP_RECORDS) {
-            ALOGV("GpuStatsAppInfo has reached maximum size. Ignore new stats.");
-            return;
+            ALOGV("GpuStatsAppInfo has reached maximum size. Removing old stats to make room.");
+            purgeOldDriverStats();
         }
 
         GpuStatsAppInfo appInfo;
         addLoadingTime(driver, driverLoadingTime, &appInfo);
         appInfo.appPackageName = appPackageName;
         appInfo.driverVersionCode = driverVersionCode;
+        appInfo.angleInUse = driverPackageName == "angle";
+        appInfo.lastAccessTime = std::chrono::system_clock::now();
         mAppStats.insert({appStatsKey, appInfo});
-        return;
+    } else {
+        mAppStats[appStatsKey].angleInUse = driverPackageName == "angle";
+        addLoadingTime(driver, driverLoadingTime, &mAppStats[appStatsKey]);
+        mAppStats[appStatsKey].lastAccessTime = std::chrono::system_clock::now();
     }
-
-    addLoadingTime(driver, driverLoadingTime, &mAppStats[appStatsKey]);
 }
 
 void GpuStats::insertTargetStats(const std::string& appPackageName,
@@ -291,24 +326,28 @@ AStatsManager_PullAtomCallbackReturn GpuStats::pullAppInfoAtom(AStatsEventList* 
 
     if (data) {
         for (const auto& ele : mAppStats) {
-            AStatsEvent* event = AStatsEventList_addStatsEvent(data);
-            AStatsEvent_setAtomId(event, android::util::GPU_STATS_APP_INFO);
-            AStatsEvent_writeString(event, ele.second.appPackageName.c_str());
-            AStatsEvent_writeInt64(event, ele.second.driverVersionCode);
+            std::string glDriverBytes = int64VectorToProtoByteString(
+                ele.second.glDriverLoadingTime);
+            std::string vkDriverBytes = int64VectorToProtoByteString(
+                ele.second.vkDriverLoadingTime);
+            std::string angleDriverBytes = int64VectorToProtoByteString(
+                ele.second.angleDriverLoadingTime);
 
-            std::string bytes = int64VectorToProtoByteString(ele.second.glDriverLoadingTime);
-            AStatsEvent_writeByteArray(event, (const uint8_t*)bytes.c_str(), bytes.length());
-
-            bytes = int64VectorToProtoByteString(ele.second.vkDriverLoadingTime);
-            AStatsEvent_writeByteArray(event, (const uint8_t*)bytes.c_str(), bytes.length());
-
-            bytes = int64VectorToProtoByteString(ele.second.angleDriverLoadingTime);
-            AStatsEvent_writeByteArray(event, (const uint8_t*)bytes.c_str(), bytes.length());
-
-            AStatsEvent_writeBool(event, ele.second.cpuVulkanInUse);
-            AStatsEvent_writeBool(event, ele.second.falsePrerotation);
-            AStatsEvent_writeBool(event, ele.second.gles1InUse);
-            AStatsEvent_build(event);
+            android::util::addAStatsEvent(
+                    data,
+                    android::util::GPU_STATS_APP_INFO,
+                    ele.second.appPackageName.c_str(),
+                    ele.second.driverVersionCode,
+                    android::util::BytesField(glDriverBytes.c_str(),
+                                              glDriverBytes.length()),
+                    android::util::BytesField(vkDriverBytes.c_str(),
+                                              vkDriverBytes.length()),
+                    android::util::BytesField(angleDriverBytes.c_str(),
+                                              angleDriverBytes.length()),
+                    ele.second.cpuVulkanInUse,
+                    ele.second.falsePrerotation,
+                    ele.second.gles1InUse,
+                    ele.second.angleInUse);
         }
     }
 
@@ -326,22 +365,22 @@ AStatsManager_PullAtomCallbackReturn GpuStats::pullGlobalInfoAtom(AStatsEventLis
 
     if (data) {
         for (const auto& ele : mGlobalStats) {
-            AStatsEvent* event = AStatsEventList_addStatsEvent(data);
-            AStatsEvent_setAtomId(event, android::util::GPU_STATS_GLOBAL_INFO);
-            AStatsEvent_writeString(event, ele.second.driverPackageName.c_str());
-            AStatsEvent_writeString(event, ele.second.driverVersionName.c_str());
-            AStatsEvent_writeInt64(event, ele.second.driverVersionCode);
-            AStatsEvent_writeInt64(event, ele.second.driverBuildTime);
-            AStatsEvent_writeInt64(event, ele.second.glLoadingCount);
-            AStatsEvent_writeInt64(event, ele.second.glLoadingFailureCount);
-            AStatsEvent_writeInt64(event, ele.second.vkLoadingCount);
-            AStatsEvent_writeInt64(event, ele.second.vkLoadingFailureCount);
-            AStatsEvent_writeInt32(event, ele.second.vulkanVersion);
-            AStatsEvent_writeInt32(event, ele.second.cpuVulkanVersion);
-            AStatsEvent_writeInt32(event, ele.second.glesVersion);
-            AStatsEvent_writeInt64(event, ele.second.angleLoadingCount);
-            AStatsEvent_writeInt64(event, ele.second.angleLoadingFailureCount);
-            AStatsEvent_build(event);
+          android::util::addAStatsEvent(
+                  data,
+                  android::util::GPU_STATS_GLOBAL_INFO,
+                  ele.second.driverPackageName.c_str(),
+                  ele.second.driverVersionName.c_str(),
+                  ele.second.driverVersionCode,
+                  ele.second.driverBuildTime,
+                  ele.second.glLoadingCount,
+                  ele.second.glLoadingFailureCount,
+                  ele.second.vkLoadingCount,
+                  ele.second.vkLoadingFailureCount,
+                  ele.second.vulkanVersion,
+                  ele.second.cpuVulkanVersion,
+                  ele.second.glesVersion,
+                  ele.second.angleLoadingCount,
+                  ele.second.angleLoadingFailureCount);
         }
     }
 

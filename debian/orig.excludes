@@ -12,6 +12,7 @@ debian
 *.dll
 *.exe
 *.jar
+*.ko
 *.o
 *.so
 *.tar
@@ -21,6 +22,7 @@ debian
 *.zip
 external/avb/examples
 development/apps
+development/gki/kmi_abi_chk/prebuilts
 development/host/windows/prebuilt
 development/host/windows/usb/api/AdbWinApi.rc
 development/host/windows/usb/api/Resource.h
@@ -29,6 +31,8 @@ development/host/windows/usb/winusb/Resource.h
 development/samples
 development/tools/repo_diff/service/repodiff/persistence/filesystem/testdata
 development/vndk/tools/header-checker/tests
+external/fmtlib/doc/_static
+external/openscreen/third_party
 packages/modules/adb/fastdeploy/testdata
 system/extras/memory_replay/traces
 system/extras/simpleperf

@@ -1,1 +1,0 @@
-Tests that future hiddenapi flags do not crash the runtime.

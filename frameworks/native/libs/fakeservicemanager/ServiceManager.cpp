@@ -78,4 +78,20 @@ std::optional<String16> ServiceManager::updatableViaApex(const String16& name) {
     return std::nullopt;
 }
 
+std::optional<IServiceManager::ConnectionInfo> ServiceManager::getConnectionInfo(
+        const String16& name) {
+    (void)name;
+    return std::nullopt;
+}
+
+status_t ServiceManager::registerForNotifications(const String16&,
+                                                  const sp<LocalRegistrationCallback>&) {
+    return INVALID_OPERATION;
+}
+
+status_t ServiceManager::unregisterForNotifications(const String16&,
+                                                const sp<LocalRegistrationCallback>&) {
+    return INVALID_OPERATION;
+}
+
 }  // namespace android

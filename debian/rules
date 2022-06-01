@@ -12,15 +12,14 @@ export DEB_LDFLAGS_MAINT_APPEND = -fPIC -pie
 
 ## For get-orig-source
 export DEB_SOURCE
-export DEB_VERSION_UPSTREAM
 
 export DEB_HOST_MULTIARCH
 
 ## system/core
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-31.0.3/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 31.0.3
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.1/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 33.0.1
 
 ifneq (, $(shell which clang))
   export CC=clang
@@ -44,7 +43,7 @@ s/core/lib%.so: debian/system/core/lib%.mk
 debian/manpages/system/core/%.1: debian/manpages/system/core/%.1.md
 	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
 
-s/core/libbacktrace.so: debian/system/core/libbacktrace.mk s/core/libcutils.so s/core/liblzma.so s/core/libcpu_features.so
+s/core/libbacktrace.so: debian/system/core/libbacktrace.mk s/core/libcutils.so e/liblzma.so e/libcpu_features.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/core/libbase.so: debian/system/core/libbase.mk s/core/liblog.so
@@ -72,12 +71,12 @@ s/core/append2simg: debian/system/core/append2simg.mk s/core/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS = \
+  e/libcpu_features.so \
+  e/liblzma.so \
   s/core/libbacktrace.so \
   s/core/libbase.so \
-  s/core/libcpu_features.so \
   s/core/libcutils.so \
   s/core/liblog.so \
-  s/core/liblzma.so \
   s/core/libsparse.so \
   s/core/libutils.so \
   s/core/libziparchive.so \
@@ -145,6 +144,11 @@ dalvik/hprof-conv: debian/dalvik/hprof-conv.mk
 
 COMPONENTS += dalvik/hprof-conv
 
+## external
+
+e/lib%.so: debian/external/lib%.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
 override_dh_auto_build-arch: $(COMPONENTS)
 
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
@@ -163,12 +167,14 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure:
-	rm -rf external/boringssl development/[a-s]* development/v* development/testrunner art
+	rm -rf development/[a-s]* development/v* development/testrunner
+ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
 	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
 		(cd $$proto && \
 			find . -name '*.proto' -printf 'Regenerate %p\n' \
 			-exec protoc --cpp_out=. {} \;) \
 	done
+endif
 	dh_auto_configure
 
 override_dh_gencontrol:

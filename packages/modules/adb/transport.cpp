@@ -96,6 +96,7 @@ const char* const kFeatureOpenscreenMdns = "openscreen_mdns";
 namespace {
 
 #if ADB_HOST
+
 // Tracks and handles atransport*s that are attempting reconnection.
 class ReconnectHandler {
   public:
@@ -208,7 +209,6 @@ void ReconnectHandler::Run() {
 
             // Scan the whole list for kicked transports, so that we immediately handle an explicit
             // disconnect request.
-            bool kicked = false;
             for (auto it = reconnect_queue_.begin(); it != reconnect_queue_.end();) {
                 if (it->transport->kicked()) {
                     D("transport %s was kicked. giving up on it.", it->transport->serial.c_str());
@@ -217,7 +217,6 @@ void ReconnectHandler::Run() {
                 } else {
                     ++it;
                 }
-                kicked = true;
             }
 
             if (reconnect_queue_.empty()) continue;
@@ -948,6 +947,34 @@ static int qual_match(const std::string& to_test, const char* prefix, const std:
 
     /* Everything matched so far.  Return true if *ptr is a NUL. */
     return !*ptr;
+}
+
+// Contains either a device serial string or a USB device address like "usb:2-6"
+const char* __transport_server_one_device = nullptr;
+
+void transport_set_one_device(const char* adb_one_device) {
+    __transport_server_one_device = adb_one_device;
+}
+
+const char* transport_get_one_device() {
+    return __transport_server_one_device;
+}
+
+bool transport_server_owns_device(std::string_view serial) {
+    if (!__transport_server_one_device) {
+        // If the server doesn't own one device, server owns all devices.
+        return true;
+    }
+    return serial.compare(__transport_server_one_device) == 0;
+}
+
+bool transport_server_owns_device(std::string_view dev_path, std::string_view serial) {
+    if (!__transport_server_one_device) {
+        // If the server doesn't own one device, server owns all devices.
+        return true;
+    }
+    return serial.compare(__transport_server_one_device) == 0 ||
+           dev_path.compare(__transport_server_one_device) == 0;
 }
 
 atransport* acquire_one_transport(TransportType type, const char* serial, TransportId transport_id,

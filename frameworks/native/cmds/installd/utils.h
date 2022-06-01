@@ -120,6 +120,11 @@ int create_dir_if_needed(const std::string& pathname, mode_t mode);
 int delete_dir_contents(const std::string& pathname, bool ignore_if_missing = false);
 int delete_dir_contents_and_dir(const std::string& pathname, bool ignore_if_missing = false);
 
+bool is_renamed_deleted_dir(const std::string& path);
+int rename_delete_dir_contents_and_dir(const std::string& pathname, bool ignore_if_missing = true);
+
+void cleanup_invalid_package_dirs_under_path(const std::string& pathname);
+
 int delete_dir_contents(const char *pathname,
                         int also_delete_dir,
                         int (*exclusion_predicate)(const char *name, const int is_dir),
@@ -148,7 +153,8 @@ int validate_apk_path_subdirs(const char *path);
 
 int ensure_config_user_dirs(userid_t userid);
 
-int wait_child(pid_t pid);
+// Waits for a child process, or kills it if it times out. Returns the exit code.
+int wait_child_with_timeout(pid_t pid, int timeout_ms);
 
 int prepare_app_cache_dir(const std::string& parent, const char* name, mode_t target_mode,
         uid_t uid, gid_t gid);
@@ -164,6 +170,10 @@ int64_t get_occupied_app_cache_space_external(const std::string& uuid, int32_t u
 bool collect_profiles(std::vector<std::string>* profiles_paths);
 
 void drop_capabilities(uid_t uid);
+
+// Removes a file specified by a file descriptor. Returns true on success. Reports the file path to
+// `path` if present.
+bool remove_file_at_fd(int fd, /*out*/ std::string* path = nullptr);
 
 }  // namespace installd
 }  // namespace android

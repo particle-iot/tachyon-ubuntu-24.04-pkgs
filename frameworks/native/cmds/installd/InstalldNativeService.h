@@ -21,8 +21,9 @@
 #include <inttypes.h>
 #include <unistd.h>
 
-#include <vector>
+#include <shared_mutex>
 #include <unordered_map>
+#include <vector>
 
 #include <android-base/macros.h>
 #include <binder/BinderService.h>
@@ -44,18 +45,30 @@ public:
             int32_t userSerial, int32_t flags);
     binder::Status destroyUserData(const std::optional<std::string>& uuid, int32_t userId,
             int32_t flags);
-    binder::Status createAppDataBatched(
-            const std::optional<std::vector<std::optional<std::string>>>& uuids,
-            const std::optional<std::vector<std::optional<std::string>>>& packageNames,
-            int32_t userId, int32_t flags, const std::vector<int32_t>& appIds,
-            const std::vector<std::string>& seInfos, const std::vector<int32_t>& targetSdkVersions,
-            int64_t* _aidl_return);
+
     binder::Status createAppData(const std::optional<std::string>& uuid,
             const std::string& packageName, int32_t userId, int32_t flags, int32_t appId,
-            const std::string& seInfo, int32_t targetSdkVersion, int64_t* _aidl_return);
+            int32_t previousAppId, const std::string& seInfo, int32_t targetSdkVersion,
+            int64_t* _aidl_return);
+    binder::Status createAppDataLocked(const std::optional<std::string>& uuid,
+                                       const std::string& packageName, int32_t userId,
+                                       int32_t flags, int32_t appId, int32_t previousAppId,
+                                       const std::string& seInfo, int32_t targetSdkVersion,
+                                       int64_t* _aidl_return);
+
+    binder::Status createAppData(
+            const android::os::CreateAppDataArgs& args,
+            android::os::CreateAppDataResult* _aidl_return);
+    binder::Status createAppDataBatched(
+            const std::vector<android::os::CreateAppDataArgs>& args,
+            std::vector<android::os::CreateAppDataResult>* _aidl_return);
+
     binder::Status restoreconAppData(const std::optional<std::string>& uuid,
             const std::string& packageName, int32_t userId, int32_t flags, int32_t appId,
             const std::string& seInfo);
+    binder::Status restoreconAppDataLocked(const std::optional<std::string>& uuid,
+                                           const std::string& packageName, int32_t userId,
+                                           int32_t flags, int32_t appId, const std::string& seInfo);
     binder::Status migrateAppData(const std::optional<std::string>& uuid,
             const std::string& packageName, int32_t userId, int32_t flags);
     binder::Status clearAppData(const std::optional<std::string>& uuid,
@@ -114,7 +127,10 @@ public:
             const std::optional<std::string>& seInfo, bool downgrade,
             int32_t targetSdkVersion, const std::optional<std::string>& profileName,
             const std::optional<std::string>& dexMetadataPath,
-            const std::optional<std::string>& compilationReason);
+            const std::optional<std::string>& compilationReason,
+            bool* aidl_return);
+
+    binder::Status controlDexOptBlocking(bool block);
 
     binder::Status compileLayouts(const std::string& apkPath, const std::string& packageName,
                                   const std::string& outDexFile, int uid, bool* _aidl_return);
@@ -148,10 +164,6 @@ public:
             const std::string& outputPath);
     binder::Status deleteOdex(const std::string& apkPath, const std::string& instructionSet,
             const std::optional<std::string>& outputPath, int64_t* _aidl_return);
-    binder::Status installApkVerity(const std::string& filePath,
-            android::base::unique_fd verityInput, int32_t contentSize);
-    binder::Status assertFsverityRootHashMatches(const std::string& filePath,
-            const std::vector<uint8_t>& expectedHash);
     binder::Status reconcileSecondaryDexFile(const std::string& dexPath,
         const std::string& packageName, int32_t uid, const std::vector<std::string>& isa,
         const std::optional<std::string>& volumeUuid, int32_t storage_flag, bool* _aidl_return);
@@ -172,8 +184,13 @@ public:
 
     binder::Status migrateLegacyObbData();
 
+    binder::Status cleanupInvalidPackageDirs(const std::optional<std::string>& uuid, int32_t userId,
+                                             int32_t flags);
+
 private:
     std::recursive_mutex mLock;
+    std::unordered_map<userid_t, std::weak_ptr<std::shared_mutex>> mUserIdLock;
+    std::unordered_map<std::string, std::weak_ptr<std::recursive_mutex>> mPackageNameLock;
 
     std::recursive_mutex mMountsLock;
     std::recursive_mutex mQuotasLock;

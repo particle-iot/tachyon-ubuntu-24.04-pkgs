@@ -1,6 +1,0 @@
-Concrete1
-Hello
-Concrete2
-Hello
-Concrete3
-Hello

@@ -313,8 +313,8 @@ status_t String8::appendFormatV(const char* fmt, va_list args)
 
     if (n > 0) {
         size_t oldLength = length();
-        if ((size_t)n > SIZE_MAX - 1 ||
-            oldLength > SIZE_MAX - (size_t)n - 1) {
+        if (n > std::numeric_limits<size_t>::max() - 1 ||
+            oldLength > std::numeric_limits<size_t>::max() - n - 1) {
             return NO_MEMORY;
         }
         char* buf = lockBuffer(oldLength + n);
@@ -327,21 +327,23 @@ status_t String8::appendFormatV(const char* fmt, va_list args)
     return result;
 }
 
-status_t String8::real_append(const char* other, size_t otherLen)
-{
+status_t String8::real_append(const char* other, size_t otherLen) {
     const size_t myLen = bytes();
 
-    SharedBuffer* buf = SharedBuffer::bufferFromData(mString)
-        ->editResize(myLen+otherLen+1);
-    if (buf) {
-        char* str = (char*)buf->data();
-        mString = str;
-        str += myLen;
-        memcpy(str, other, otherLen);
-        str[otherLen] = '\0';
-        return OK;
+    SharedBuffer* buf;
+    size_t newLen;
+    if (__builtin_add_overflow(myLen, otherLen, &newLen) ||
+        __builtin_add_overflow(newLen, 1, &newLen) ||
+        (buf = SharedBuffer::bufferFromData(mString)->editResize(newLen)) == nullptr) {
+        return NO_MEMORY;
     }
-    return NO_MEMORY;
+
+    char* str = (char*)buf->data();
+    mString = str;
+    str += myLen;
+    memcpy(str, other, otherLen);
+    str[otherLen] = '\0';
+    return OK;
 }
 
 char* String8::lockBuffer(size_t size)
@@ -429,24 +431,17 @@ void String8::toLower()
 // ---------------------------------------------------------------------------
 // Path functions
 
-void String8::setPathName(const char* name)
-{
-    setPathName(name, strlen(name));
-}
-
-void String8::setPathName(const char* name, size_t len)
-{
-    char* buf = lockBuffer(len);
+static void setPathName(String8& s, const char* name) {
+    size_t len = strlen(name);
+    char* buf = s.lockBuffer(len);
 
     memcpy(buf, name, len);
 
     // remove trailing path separator, if present
-    if (len > 0 && buf[len-1] == OS_PATH_SEPARATOR)
-        len--;
-
+    if (len > 0 && buf[len - 1] == OS_PATH_SEPARATOR) len--;
     buf[len] = '\0';
 
-    unlockBuffer(len);
+    s.unlockBuffer(len);
 }
 
 String8 String8::getPathLeaf(void) const
@@ -559,7 +554,7 @@ String8& String8::appendPath(const char* name)
         size_t len = length();
         if (len == 0) {
             // no existing filename, just use the new one
-            setPathName(name);
+            setPathName(*this, name);
             return *this;
         }
 
@@ -579,7 +574,7 @@ String8& String8::appendPath(const char* name)
 
         return *this;
     } else {
-        setPathName(name);
+        setPathName(*this, name);
         return *this;
     }
 }

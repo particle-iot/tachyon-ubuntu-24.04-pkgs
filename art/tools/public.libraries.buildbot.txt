@@ -1,6 +1,0 @@
-libbacktrace.so
-libc.so
-libc++.so
-libdl.so
-libm.so
-libnativehelper.so

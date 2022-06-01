@@ -1,37 +1,42 @@
 NAME = libcutils
 
-libcutils_nonwindows_sources = \
-  fs.cpp \
-  hashmap.cpp \
-  multiuser.cpp \
+# system/core/libcutils/Android.bp
+libcutils_sockets_sources = \
+  sockets.cpp \
+  \
   socket_inaddr_any_server_unix.cpp \
   socket_local_client_unix.cpp \
   socket_local_server_unix.cpp \
   socket_network_client_unix.cpp \
   sockets_unix.cpp \
+
+libcutils_nonwindows_sources = \
+  fs.cpp \
+  hashmap.cpp \
+  multiuser.cpp \
   str_parms.cpp \
 
 cc_library_srcs = \
   config_utils.cpp \
-  canned_fs_config.cpp \
   iosched_policy.cpp \
   load_file.cpp \
   native_handle.cpp \
+  properties.cpp \
   record_stream.cpp \
-  sockets.cpp \
   strlcpy.c \
   threads.cpp \
 
 cc_library_target_not_windows_srcs = \
   ashmem-host.cpp \
+  canned_fs_config.cpp \
   fs_config.cpp \
   trace-host.cpp \
 
 SOURCES = \
+  $(libcutils_sockets_sources) \
   $(libcutils_nonwindows_sources) \
   $(cc_library_srcs) \
-  $(cc_library_target_not_windows_srcs)
-
+  $(cc_library_target_not_windows_srcs) \
 
 SOURCES_C := $(foreach source, $(filter %.c, $(SOURCES)), system/core/libcutils/$(source))
 OBJECTS_C := $(SOURCES_C:.c=.o)
@@ -40,7 +45,6 @@ OBJECTS_CXX := $(SOURCES_CXX:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-  -I/usr/include/android \
   -Isystem/core/include \
   -Isystem/core/libcutils/include \
   -Isystem/libbase/include \

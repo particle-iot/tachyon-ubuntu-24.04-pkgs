@@ -2,7 +2,7 @@
 
 debian/out/system/core/libbacktrace.so.*   usr/lib/${DEB_HOST_MULTIARCH}/android
 debian/out/system/core/libbacktrace.so     usr/lib/${DEB_HOST_MULTIARCH}/android
-debian/out/system/core/libcpu_features.so.* usr/lib/${DEB_HOST_MULTIARCH}/android
-debian/out/system/core/libcpu_features.so  usr/lib/${DEB_HOST_MULTIARCH}/android
-debian/out/system/core/liblzma.so.*        usr/lib/${DEB_HOST_MULTIARCH}/android
-debian/out/system/core/liblzma.so          usr/lib/${DEB_HOST_MULTIARCH}/android
+debian/out/external/libcpu_features.so.*   usr/lib/${DEB_HOST_MULTIARCH}/android
+debian/out/external/libcpu_features.so     usr/lib/${DEB_HOST_MULTIARCH}/android
+debian/out/external/liblzma.so.*           usr/lib/${DEB_HOST_MULTIARCH}/android
+debian/out/external/liblzma.so             usr/lib/${DEB_HOST_MULTIARCH}/android

@@ -369,7 +369,7 @@ size_t MemoryRange::Read(uint64_t addr, void* dst, size_t size) {
   return memory_->Read(read_addr, dst, read_length);
 }
 
-void MemoryRanges::Insert(MemoryRange* memory) {
+bool MemoryRanges::Insert(MemoryRange* memory) {
   uint64_t last_addr;
   if (__builtin_add_overflow(memory->offset(), memory->length(), &last_addr)) {
     // This should never happen in the real world. However, it is possible
@@ -378,7 +378,12 @@ void MemoryRanges::Insert(MemoryRange* memory) {
     // value.
     last_addr = UINT64_MAX;
   }
-  maps_.emplace(last_addr, memory);
+  auto entry = maps_.try_emplace(last_addr, memory);
+  if (entry.second) {
+    return true;
+  }
+  delete memory;
+  return false;
 }
 
 size_t MemoryRanges::Read(uint64_t addr, void* dst, size_t size) {
@@ -407,6 +412,16 @@ bool MemoryOffline::Init(const std::string& file, uint64_t offset) {
   }
 
   memory_ = std::make_unique<MemoryRange>(memory_file, sizeof(start), size, start);
+  return true;
+}
+
+bool MemoryOffline::Init(const std::string& file, uint64_t offset, uint64_t start, uint64_t size) {
+  auto memory_file = std::make_shared<MemoryFileAtOffset>();
+  if (!memory_file->Init(file, offset)) {
+    return false;
+  }
+
+  memory_ = std::make_unique<MemoryRange>(memory_file, 0, size, start);
   return true;
 }
 

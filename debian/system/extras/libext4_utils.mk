@@ -1,5 +1,6 @@
 NAME = libext4_utils
 
+# system/extras/ext4_utils/Android.bp
 ext4_utils_SOURCES = \
   ext4_utils.cpp \
   wipe.cpp \
@@ -7,6 +8,7 @@ ext4_utils_SOURCES = \
 
 ext4_utils_SOURCES := $(foreach source, $(ext4_utils_SOURCES), system/extras/ext4_utils/$(source))
 
+# system/extras/squashfs_utils/Android.bp
 squashfs_utils_SOURCES = \
   squashfs_utils.c \
 

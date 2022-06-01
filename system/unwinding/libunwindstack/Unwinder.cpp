@@ -24,7 +24,9 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <memory>
 
+#include <android-base/file.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
 
@@ -60,21 +62,12 @@ void Unwinder::FillInDexFrame() {
   frame->pc = dex_pc;
   frame->sp = regs_->sp();
 
-  MapInfo* info = maps_->Find(dex_pc);
-  if (info != nullptr) {
-    frame->map_start = info->start();
-    frame->map_end = info->end();
-    // Since this is a dex file frame, the elf_start_offset is not set
-    // by any of the normal code paths. Use the offset of the map since
-    // that matches the actual offset.
-    frame->map_elf_start_offset = info->offset();
-    frame->map_exact_offset = info->offset();
-    frame->map_load_bias = info->load_bias();
-    frame->map_flags = info->flags();
-    if (resolve_names_) {
-      frame->map_name = info->name();
-    }
-    frame->rel_pc = dex_pc - info->start();
+  frame->map_info = maps_->Find(dex_pc);
+  if (frame->map_info != nullptr) {
+    frame->rel_pc = dex_pc - frame->map_info->start();
+    // Initialize the load bias for this map so subsequent calls
+    // to GetLoadBias() will always return data.
+    frame->map_info->set_load_bias(0);
   } else {
     frame->rel_pc = dex_pc;
     warnings_ |= WARNING_DEX_PC_NOT_IN_MAP;
@@ -94,7 +87,7 @@ void Unwinder::FillInDexFrame() {
 #endif
 }
 
-FrameData* Unwinder::FillInFrame(MapInfo* map_info, Elf* elf, uint64_t rel_pc,
+FrameData* Unwinder::FillInFrame(std::shared_ptr<MapInfo>& map_info, Elf* /*elf*/, uint64_t rel_pc,
                                  uint64_t pc_adjustment) {
   size_t frame_num = frames_.size();
   frames_.resize(frame_num + 1);
@@ -109,25 +102,8 @@ FrameData* Unwinder::FillInFrame(MapInfo* map_info, Elf* elf, uint64_t rel_pc,
     return nullptr;
   }
 
-  if (resolve_names_) {
-    frame->map_name = map_info->name();
-    if (embedded_soname_ && map_info->elf_start_offset() != 0 && !frame->map_name.empty()) {
-      std::string soname = elf->GetSoname();
-      if (!soname.empty()) {
-        std::string map_with_soname;
-        map_with_soname += frame->map_name;
-        map_with_soname += '!';
-        map_with_soname += soname;
-        frame->map_name = SharedString(std::move(map_with_soname));
-      }
-    }
-  }
-  frame->map_elf_start_offset = map_info->elf_start_offset();
-  frame->map_exact_offset = map_info->offset();
-  frame->map_start = map_info->start();
-  frame->map_end = map_info->end();
-  frame->map_flags = map_info->flags();
-  frame->map_load_bias = elf->GetLoadBias();
+  frame->map_info = map_info;
+
   return frame;
 }
 
@@ -166,7 +142,7 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
     uint64_t cur_pc = regs_->pc();
     uint64_t cur_sp = regs_->sp();
 
-    MapInfo* map_info = maps_->Find(regs_->pc());
+    std::shared_ptr<MapInfo> map_info = maps_->Find(regs_->pc());
     uint64_t pc_adjustment = 0;
     uint64_t step_pc;
     uint64_t rel_pc;
@@ -174,7 +150,11 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
     if (map_info == nullptr) {
       step_pc = regs_->pc();
       rel_pc = step_pc;
-      last_error_.code = ERROR_INVALID_MAP;
+      // If we get invalid map via return_address_attempt, don't hide error for the previous frame.
+      if (!return_address_attempt || last_error_.code == ERROR_NONE) {
+        last_error_.code = ERROR_INVALID_MAP;
+        last_error_.address = step_pc;
+      }
       elf = nullptr;
     } else {
       if (ShouldStop(map_suffixes_to_ignore, map_info->name())) {
@@ -189,7 +169,7 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
         elf_from_memory_not_file_ = true;
       }
       step_pc = regs_->pc();
-      rel_pc = elf->GetRelPc(step_pc, map_info);
+      rel_pc = elf->GetRelPc(step_pc, map_info.get());
       // Everyone except elf data in gdb jit debug maps uses the relative pc.
       if (!(map_info->flags() & MAPS_FLAGS_JIT_SYMFILE_MAP)) {
         step_pc = rel_pc;
@@ -217,7 +197,7 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
     FrameData* frame = nullptr;
     if (map_info == nullptr || initial_map_names_to_skip == nullptr ||
         std::find(initial_map_names_to_skip->begin(), initial_map_names_to_skip->end(),
-                  basename(map_info->name().c_str())) == initial_map_names_to_skip->end()) {
+                  android::base::Basename(map_info->name())) == initial_map_names_to_skip->end()) {
       if (regs_->dex_pc() != 0) {
         // Add a frame to represent the dex file.
         FillInDexFrame();
@@ -248,7 +228,7 @@ void Unwinder::Unwind(const std::vector<std::string>* initial_map_names_to_skip,
         // some of the speculative frames.
         in_device_map = true;
       } else {
-        MapInfo* sp_info = maps_->Find(regs_->sp());
+        auto sp_info = maps_->Find(regs_->sp());
         if (sp_info != nullptr && sp_info->flags() & MAPS_FLAGS_DEVICE_MAP) {
           // Do not stop here, fall through in case we are
           // in the speculative unwind path and need to remove
@@ -332,18 +312,19 @@ std::string Unwinder::FormatFrame(const FrameData& frame) const {
     data += android::base::StringPrintf("  #%02zu pc %016" PRIx64, frame.num, frame.rel_pc);
   }
 
-  if (frame.map_start == frame.map_end) {
+  auto map_info = frame.map_info;
+  if (map_info == nullptr) {
     // No valid map associated with this frame.
     data += "  <unknown>";
-  } else if (!frame.map_name.empty()) {
+  } else if (!map_info->name().empty()) {
     data += "  ";
-    data += frame.map_name;
+    data += map_info->GetFullName();
   } else {
-    data += android::base::StringPrintf("  <anonymous:%" PRIx64 ">", frame.map_start);
+    data += android::base::StringPrintf("  <anonymous:%" PRIx64 ">", map_info->start());
   }
 
-  if (frame.map_elf_start_offset != 0) {
-    data += android::base::StringPrintf(" (offset 0x%" PRIx64 ")", frame.map_elf_start_offset);
+  if (map_info != nullptr && map_info->elf_start_offset() != 0) {
+    data += android::base::StringPrintf(" (offset 0x%" PRIx64 ")", map_info->elf_start_offset());
   }
 
   if (!frame.function_name.empty()) {
@@ -362,7 +343,6 @@ std::string Unwinder::FormatFrame(const FrameData& frame) const {
     data += ')';
   }
 
-  MapInfo* map_info = maps_->Find(frame.map_start);
   if (map_info != nullptr && display_build_id_) {
     std::string build_id = map_info->GetPrintableBuildID();
     if (!build_id.empty()) {
@@ -446,7 +426,7 @@ FrameData Unwinder::BuildFrameFromPcOnly(uint64_t pc, ArchEnum arch, Maps* maps,
                                          bool resolve_names) {
   FrameData frame;
 
-  MapInfo* map_info = maps->Find(pc);
+  std::shared_ptr<MapInfo> map_info = maps->Find(pc);
   if (map_info == nullptr || arch == ARCH_UNKNOWN) {
     frame.pc = pc;
     frame.rel_pc = pc;
@@ -455,7 +435,7 @@ FrameData Unwinder::BuildFrameFromPcOnly(uint64_t pc, ArchEnum arch, Maps* maps,
 
   Elf* elf = map_info->GetElf(process_memory, arch);
 
-  uint64_t relative_pc = elf->GetRelPc(pc, map_info);
+  uint64_t relative_pc = elf->GetRelPc(pc, map_info.get());
 
   uint64_t pc_adjustment = GetPcAdjustment(relative_pc, elf, arch);
   relative_pc -= pc_adjustment;
@@ -475,13 +455,7 @@ FrameData Unwinder::BuildFrameFromPcOnly(uint64_t pc, ArchEnum arch, Maps* maps,
   // Copy all the things we need into the frame for symbolization.
   frame.rel_pc = relative_pc;
   frame.pc = pc - pc_adjustment;
-  frame.map_name = map_info->name();
-  frame.map_elf_start_offset = map_info->elf_start_offset();
-  frame.map_exact_offset = map_info->offset();
-  frame.map_start = map_info->start();
-  frame.map_end = map_info->end();
-  frame.map_flags = map_info->flags();
-  frame.map_load_bias = elf->GetLoadBias();
+  frame.map_info = map_info;
 
   if (!resolve_names ||
       !elf->GetFunctionName(debug_pc, &frame.function_name, &frame.function_offset)) {

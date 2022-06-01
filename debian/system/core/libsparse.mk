@@ -1,5 +1,6 @@
 NAME = libsparse
 
+# system/core/libsparse/Android.bp
 SOURCES = \
   backed_block.cpp \
   output_file.cpp \
@@ -13,7 +14,6 @@ OBJECTS := $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-  -I/usr/include/android \
   -Isystem/core/include \
   -Isystem/core/libsparse/include \
   -Isystem/libbase/include \

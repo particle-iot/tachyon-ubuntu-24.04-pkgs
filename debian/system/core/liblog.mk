@@ -1,5 +1,6 @@
 NAME = liblog
 
+# system/logging/liblog/Android.bp
 liblog_sources = \
   log_event_list.cpp \
   log_event_write.cpp \
@@ -18,18 +19,14 @@ OBJECTS := $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a -fcommon
 CPPFLAGS += \
-  -DFAKE_LOG_DEVICE=1 \
   -DLIBLOG_LOG_TAG=1006 \
   -DSNET_EVENT_LOG_TAG=1397638484 \
-  -I/usr/include/android \
   -Isystem/core/include \
   -Isystem/core/libcutils/include \
   -Isystem/libbase/include \
   -Isystem/logging/liblog/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
-  -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -lpthread \
   -shared

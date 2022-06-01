@@ -34,7 +34,7 @@ Forwarded: not-needed
  #include <sparse/sparse.h>
  #include <ziparchive/zip_archive.h>
  
-@@ -1938,7 +1936,7 @@
+@@ -1963,7 +1961,7 @@
                  setvbuf(stdout, nullptr, _IONBF, 0);
                  setvbuf(stderr, nullptr, _IONBF, 0);
              } else if (name == "version") {

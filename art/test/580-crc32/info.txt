@@ -1,1 +1,0 @@
-This test case is used to test java.util.zip.CRC32.

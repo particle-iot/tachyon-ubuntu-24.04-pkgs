@@ -89,7 +89,19 @@ init_host_sources = [
     "host_init_verifier.cpp",
 ]
 
-cc_defaults {
+soong_config_module_type {
+    name: "libinit_cc_defaults",
+    module_type: "cc_defaults",
+    config_namespace: "ANDROID",
+    bool_variables: [
+        "PRODUCT_INSTALL_DEBUG_POLICY_TO_SYSTEM_EXT",
+    ],
+    properties: [
+        "cflags",
+    ],
+}
+
+libinit_cc_defaults {
     name: "init_defaults",
     sanitize: {
         misc_undefined: ["signed-integer-overflow"],
@@ -109,6 +121,7 @@ cc_defaults {
         "-DDUMP_ON_UMOUNT_FAILURE=0",
         "-DSHUTDOWN_ZERO_TIMEOUT=0",
         "-DINIT_FULL_SOURCES",
+        "-DINSTALL_DEBUG_POLICY_TO_SYSTEM_EXT=0",
     ],
     product_variables: {
         debuggable: {
@@ -137,16 +150,27 @@ cc_defaults {
             cppflags: ["-DUSER_MODE_LINUX"],
         },
     },
+    soong_config_variables: {
+        PRODUCT_INSTALL_DEBUG_POLICY_TO_SYSTEM_EXT: {
+            cflags: [
+                "-UINSTALL_DEBUG_POLICY_TO_SYSTEM_EXT",
+                "-DINSTALL_DEBUG_POLICY_TO_SYSTEM_EXT=1",
+            ],
+        },
+    },
     static_libs: [
         "libavb",
         "libc++fs",
         "libcgrouprc_format",
+        "libfsverity_init",
         "liblmkd_utils",
+        "libmini_keyctl_static",
         "libmodprobe",
         "libprocinfo",
         "libprotobuf-cpp-lite",
         "libpropertyinfoserializer",
         "libpropertyinfoparser",
+        "libsigningutils",
         "libsnapshot_cow",
         "libsnapshot_init",
         "libxml2",
@@ -157,6 +181,7 @@ cc_defaults {
         "libbacktrace",
         "libbase",
         "libbootloader_message",
+        "libcrypto",
         "libcutils",
         "libdl",
         "libext4_utils",
@@ -171,6 +196,7 @@ cc_defaults {
         "libprocessgroup_setup",
         "libselinux",
         "libutils",
+        "libziparchive",
     ],
     bootstrap: true,
     visibility: [":__subpackages__"],
@@ -228,17 +254,20 @@ cc_binary {
     stem: "init",
     defaults: ["init_defaults"],
     static_libs: ["libinit"],
-    required: [
-        "e2fsdroid",
-        "init.rc",
-        "mke2fs",
-        "sload_f2fs",
-        "make_f2fs",
-        "ueventd.rc",
-    ],
     srcs: ["main.cpp"],
     symlinks: ["ueventd"],
     target: {
+        platform: {
+            required: [
+                "init.rc",
+                "ueventd.rc",
+                "e2fsdroid",
+                "extra_free_kbytes.sh",
+                "make_f2fs",
+                "mke2fs",
+                "sload_f2fs",
+            ],
+        },
         recovery: {
             cflags: ["-DRECOVERY"],
             exclude_static_libs: [
@@ -247,6 +276,14 @@ cc_binary {
             exclude_shared_libs: [
                 "libbinder",
                 "libutils",
+            ],
+            required: [
+                "init_recovery.rc",
+                "ueventd.rc.recovery",
+                "e2fsdroid.recovery",
+                "make_f2fs.recovery",
+                "mke2fs.recovery",
+                "sload_f2fs.recovery",
             ],
         },
     },
@@ -289,7 +326,6 @@ cc_binary {
         "first_stage_mount.cpp",
         "reboot_utils.cpp",
         "selabel.cpp",
-        "selinux.cpp",
         "service_utils.cpp",
         "snapuserd_transition.cpp",
         "switch_root.cpp",
@@ -304,23 +340,16 @@ cc_binary {
         "libfec",
         "libfec_rs",
         "libsquashfs_utils",
-        "liblogwrap",
-        "libext4_utils",
         "libcrypto_utils",
-        "libsparse",
         "libavb",
-        "libkeyutils",
         "liblp",
         "libcutils",
         "libbase",
         "liblog",
         "libcrypto_static",
-        "libdl",
-        "libz",
         "libselinux",
         "libcap",
         "libgsi",
-        "libcom.android.sysprop.apex",
         "liblzma",
         "libunwindstack_no_dex",
         "libbacktrace_no_dex",
@@ -424,6 +453,7 @@ cc_test {
 
     srcs: [
         "devices_test.cpp",
+        "epoll_test.cpp",
         "firmware_handler_test.cpp",
         "init_test.cpp",
         "keychords_test.cpp",
@@ -431,6 +461,7 @@ cc_test {
         "persistent_properties_test.cpp",
         "property_service_test.cpp",
         "property_type_test.cpp",
+        "reboot_test.cpp",
         "rlimit_parser_test.cpp",
         "service_test.cpp",
         "subcontext_test.cpp",
@@ -541,4 +572,9 @@ cc_binary {
             enabled: false,
         },
     },
+}
+
+sh_binary {
+    name: "extra_free_kbytes.sh",
+    src: "extra_free_kbytes.sh",
 }

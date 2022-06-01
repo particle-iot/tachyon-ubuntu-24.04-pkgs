@@ -1,3 +1,0 @@
-JNI_OnLoad called
-Startup completed: false
-Startup completed: true

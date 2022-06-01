@@ -1,3 +1,0 @@
-Test that dex files loaded with PathClassClassLoader get verified and the verification results
-cached in a vdex file. Subsequent loads should initialize an instance of
-OatFile using the data in the vdex.

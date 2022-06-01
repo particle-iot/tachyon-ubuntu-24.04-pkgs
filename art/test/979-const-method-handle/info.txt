@@ -1,1 +1,0 @@
-This test checks const-method-handle and const-method-type bytecodes.

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#pragma once
 #include <android-base/result.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -42,7 +43,7 @@
 namespace android::base {
 
 template <typename T>
-void PrintTo(const Result<T>& result, std::ostream* os) {
+inline void PrintTo(const Result<T>& result, std::ostream* os) {
   if (result.ok()) {
     *os << "OK: " << ::testing::PrintToString(result.value());
   } else {
@@ -51,7 +52,7 @@ void PrintTo(const Result<T>& result, std::ostream* os) {
 }
 
 template <>
-void PrintTo(const Result<void>& result, std::ostream* os) {
+inline void PrintTo(const Result<void>& result, std::ostream* os) {
   if (result.ok()) {
     *os << "OK";
   } else {
@@ -91,9 +92,9 @@ MATCHER_P(WithCode, code_matcher, "") {
   return ::testing::ExplainMatchResult(code_matcher, arg.code(), result_listener);
 }
 
-MATCHER_P(WithMessage, messgae_matcher, "") {
+MATCHER_P(WithMessage, message_matcher, "") {
   *result_listener << "actual error is " << arg;
-  return ::testing::ExplainMatchResult(messgae_matcher, arg.message(), result_listener);
+  return ::testing::ExplainMatchResult(message_matcher, arg.message(), result_listener);
 }
 
 }  // namespace testing

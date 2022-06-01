@@ -2,20 +2,18 @@ include /usr/share/dpkg/architecture.mk
 
 NAME = libutils
 
+# system/core/libutils/Android.bp
 SOURCES = \
-  CallStack.cpp \
   FileMap.cpp \
   JenkinsHash.cpp \
-  Looper.cpp \
-  misc.cpp \
+  LightRefBase.cpp \
   NativeHandle.cpp \
   Printer.cpp \
-  ProcessCallStack.cpp \
   RefBase.cpp \
   SharedBuffer.cpp \
   StopWatch.cpp \
-  String16.cpp \
   String8.cpp \
+  String16.cpp \
   StrongPointer.cpp \
   SystemClock.cpp \
   Threads.cpp \
@@ -23,14 +21,16 @@ SOURCES = \
   Tokenizer.cpp \
   Unicode.cpp \
   VectorImpl.cpp \
+  misc.cpp \
+  \
+  Looper.cpp \
+#  Errors.cpp \
 
 SOURCES := $(foreach source, $(SOURCES), system/core/libutils/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-  -DLIBUTILS_NATIVE=1 \
-  -I/usr/include/android \
   -Isystem/core/cutils/include \
   -Isystem/core/include \
   -Isystem/core/libcutils/include \

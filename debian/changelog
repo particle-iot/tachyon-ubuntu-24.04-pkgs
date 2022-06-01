@@ -1,3 +1,22 @@
+android-platform-tools (33.0.1-1~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream release 33.0.1
+  * debian/manifest.xml:
+    - Add external/lzma, etc. and remove not needed entries.
+  * get-orig-source: Use DEB_VERSION_UPSTREAM as version for orig tarball.
+  * debian/patches:
+    - Remove unnecessary patches.
+    - Refresh patches.
+  * debian/copyright: Remove non-existing entries.
+  * Use external/lzma
+  * Use external/cpu_features
+  * Update d/*.mk for new upstream version.
+  * debian/rules:
+    - Regenerate proto only for limited architectures for adb.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 02 Jun 2022 01:02:43 +0900
+
 android-platform-tools (31.0.3-1~exp3) experimental; urgency=medium
 
   * Team upload.

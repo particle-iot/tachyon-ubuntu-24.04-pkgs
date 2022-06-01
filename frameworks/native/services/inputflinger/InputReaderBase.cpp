@@ -19,6 +19,9 @@
 //#define LOG_NDEBUG 0
 
 #include "InputReaderBase.h"
+#include "input/DisplayViewport.h"
+#include "input/Input.h"
+#include "input/NamedEnum.h"
 
 #include <android/log.h>
 #include <android-base/stringprintf.h>
@@ -64,6 +67,9 @@ std::string InputReaderConfiguration::changesToString(uint32_t changes) {
     if (changes & CHANGE_EXTERNAL_STYLUS_PRESENCE) {
         result += "EXTERNAL_STYLUS_PRESENCE | ";
     }
+    if (changes & CHANGE_POINTER_CAPTURE) {
+        result += "POINTER_CAPTURE | ";
+    }
     if (changes & CHANGE_ENABLED_STATE) {
         result += "ENABLED_STATE | ";
     }
@@ -99,17 +105,19 @@ std::optional<DisplayViewport> InputReaderConfiguration::getDisplayViewportByTyp
     size_t count = 0;
     std::optional<DisplayViewport> result = std::nullopt;
     for (const DisplayViewport& currentViewport : mDisplays) {
-        // Return the first match
+        // Return the first match, or the default display if we're looking for the internal viewport
         if (currentViewport.type == type) {
-            if (!result) {
+            if (!result ||
+                (type == ViewportType::INTERNAL &&
+                 currentViewport.displayId == ADISPLAY_ID_DEFAULT)) {
                 result = std::make_optional(currentViewport);
             }
             count++;
         }
     }
     if (count > 1) {
-        ALOGE("Found %zu viewports with type %s, but expected 1 at most",
-                count, viewportTypeToString(type));
+        ALOGW("Found %zu viewports with type %s, but expected 1 at most", count,
+              NamedEnum::string(type).c_str());
     }
     return result;
 }

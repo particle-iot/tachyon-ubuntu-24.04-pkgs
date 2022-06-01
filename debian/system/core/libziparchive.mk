@@ -1,5 +1,6 @@
 NAME = libziparchive
 
+# system/libziparchive/Android.bp
 SOURCES = \
   zip_archive.cc \
   zip_archive_stream_entry.cc \
@@ -13,12 +14,14 @@ OBJECTS_CC = $(SOURCES_CC:.cc=.o)
 SOURCES_CPP = $(filter %.cpp,$(SOURCES))
 OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
 
-CXXFLAGS += -std=gnu++17
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
+  -DINCFS_SUPPORT_DISABLED=1 \
   -DZLIB_CONST \
   -D_FILE_OFFSET_BITS=64 \
   -Isystem/core/include \
   -Isystem/libbase/include \
+  -Isystem/libziparchive/incfs_support/include \
   -Isystem/libziparchive/include \
   -Isystem/logging/liblog/include \
 

@@ -74,12 +74,12 @@ std::optional<AdbForwarder> AdbForwarder::forward(unsigned int devicePort) {
               result->toString().c_str());
         return std::nullopt;
     }
-    if (!result->stderr.empty()) {
+    if (!result->stderrStr.empty()) {
         LOG_HOST("`adb forward tcp:0 tcp:%d` writes to stderr: %s", devicePort,
-                 result->stderr.c_str());
+                 result->stderrStr.c_str());
     }
 
-    unsigned int hostPort = parsePortNumber(result->stdout, "host port");
+    unsigned int hostPort = parsePortNumber(result->stdoutStr, "host port");
     if (hostPort == 0) return std::nullopt;
 
     return AdbForwarder(hostPort);
@@ -105,9 +105,9 @@ AdbForwarder::~AdbForwarder() {
               result->toString().c_str());
         return;
     }
-    if (!result->stderr.empty()) {
+    if (!result->stderrStr.empty()) {
         LOG_HOST("`adb forward --remove tcp:%d` writes to stderr: %s", *mPort,
-                 result->stderr.c_str());
+                 result->stderrStr.c_str());
     }
 
     LOG_HOST("Successfully run `adb forward --remove tcp:%d`", *mPort);
@@ -124,7 +124,8 @@ void cleanupCommandResult(const void* id, void* obj, void* /* cookie */) {
 
 } // namespace
 
-sp<IBinder> getDeviceService(std::vector<std::string>&& serviceDispatcherArgs) {
+sp<IBinder> getDeviceService(std::vector<std::string>&& serviceDispatcherArgs,
+                             const RpcDelegateServiceManagerOptions& options) {
     std::vector<std::string> prefix{"adb", "shell", "servicedispatcher"};
     serviceDispatcherArgs.insert(serviceDispatcherArgs.begin(), prefix.begin(), prefix.end());
 
@@ -139,8 +140,8 @@ sp<IBinder> getDeviceService(std::vector<std::string>&& serviceDispatcherArgs) {
         ALOGE("Command exits with: %s", result->toString().c_str());
         return nullptr;
     }
-    if (!result->stderr.empty()) {
-        LOG_HOST("servicedispatcher writes to stderr: %s", result->stderr.c_str());
+    if (!result->stderrStr.empty()) {
+        LOG_HOST("servicedispatcher writes to stderr: %s", result->stderrStr.c_str());
     }
 
     if (!result->stdoutEndsWithNewLine()) {
@@ -148,7 +149,7 @@ sp<IBinder> getDeviceService(std::vector<std::string>&& serviceDispatcherArgs) {
         return nullptr;
     }
 
-    unsigned int devicePort = parsePortNumber(result->stdout, "device port");
+    unsigned int devicePort = parsePortNumber(result->stdoutStr, "device port");
     if (devicePort == 0) return nullptr;
 
     auto forwardResult = AdbForwarder::forward(devicePort);
@@ -158,8 +159,14 @@ sp<IBinder> getDeviceService(std::vector<std::string>&& serviceDispatcherArgs) {
     LOG_ALWAYS_FATAL_IF(!forwardResult->hostPort().has_value());
 
     auto rpcSession = RpcSession::make();
-    if (!rpcSession->setupInetClient("127.0.0.1", *forwardResult->hostPort())) {
-        ALOGE("Unable to set up inet client on host port %u", *forwardResult->hostPort());
+    if (options.maxOutgoingThreads.has_value()) {
+        rpcSession->setMaxOutgoingThreads(*options.maxOutgoingThreads);
+    }
+
+    if (status_t status = rpcSession->setupInetClient("127.0.0.1", *forwardResult->hostPort());
+        status != OK) {
+        ALOGE("Unable to set up inet client on host port %u: %s", *forwardResult->hostPort(),
+              statusToString(status).c_str());
         return nullptr;
     }
     auto binder = rpcSession->getRootObject();

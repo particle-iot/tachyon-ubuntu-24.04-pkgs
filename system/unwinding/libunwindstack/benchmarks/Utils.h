@@ -22,11 +22,18 @@
 
 #include <string>
 
+std::string GetBenchmarkFilesDirectory();
+
 std::string GetElfFile();
 
 std::string GetSymbolSortedElfFile();
 
-std::string GetCompressedElfFile();
+// GetLargeCompressedFrameElfFile and GetLargeEhFrameElfFile were added to provide larger
+// ELF files for more representative benchmarks. Theses ELF files will enable validation
+// of optimizations to the unwindstack::Elf.
+std::string GetLargeCompressedFrameElfFile();
+
+std::string GetLargeEhFrameElfFile();
 
 #if defined(__BIONIC__)
 

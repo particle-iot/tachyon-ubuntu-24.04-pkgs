@@ -3,7 +3,7 @@
 set -e
 
 # Must be invoked by `debian/rules` for the use of `DEB_*` variables
-if ! test -v DEB_VERSION_UPSTREAM; then
+if ! test -v PLATFORM_TOOLS_VERSION; then
   echo 'usage: debian/rules get-orig-source'
   exit 1
 fi
@@ -36,7 +36,7 @@ mkdir --parents debian/tmp/get-orig-source/archive
   cd debian/tmp/get-orig-source/archive
   repo --time init --manifest-url=file://"$(readlink --canonicalize-existing ../manifest/.git)" --depth=1 -c --no-tags
   repo --time sync -c --no-tags -j$(nproc)
-  tar --create --xz --file "../../../../../${DEB_SOURCE}_${DEB_VERSION_UPSTREAM}.orig.tar.xz" --exclude-from=../../../orig.excludes --mtime=2000-01-01 --sort=name ./*
+  tar --create --xz --file "../../../../../${DEB_SOURCE}_${PLATFORM_TOOLS_VERSION}.orig.tar.xz" --exclude-from=../../../orig.excludes --mtime=2000-01-01 --sort=name ./*
 )
 
 # cleanup

@@ -5,10 +5,12 @@ SOURCES = \
   chrono_utils.cpp \
   cmsg.cpp \
   file.cpp \
+  hex.cpp \
   logging.cpp \
   mapped_file.cpp \
   parsebool.cpp \
   parsenetaddress.cpp \
+  posix_strerror_r.cpp \
   process.cpp \
   properties.cpp \
   stringprintf.cpp \
@@ -32,7 +34,6 @@ OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
 CXXFLAGS += -std=gnu++2a -fno-exceptions
 CPPFLAGS += \
   -D_FILE_OFFSET_BITS=64 \
-  -I/usr/include/android \
   -Iexternal/fmtlib/include \
   -Isystem/core/include \
   -Isystem/libbase/include \

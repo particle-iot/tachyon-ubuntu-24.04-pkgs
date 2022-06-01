@@ -1,1 +1,0 @@
-Check that FinalizerTimeoutMs option works. Similar to 030-bad-finalizer.

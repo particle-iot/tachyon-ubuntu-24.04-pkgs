@@ -1,3 +1,0 @@
-value is 42
-value is 42
-non-native value is 1337

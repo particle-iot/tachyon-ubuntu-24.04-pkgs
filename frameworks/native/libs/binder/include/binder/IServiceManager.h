@@ -15,11 +15,9 @@
  */
 
 #pragma once
-
 #include <binder/IInterface.h>
 #include <utils/Vector.h>
 #include <utils/String16.h>
-
 #include <optional>
 
 namespace android {
@@ -107,6 +105,27 @@ public:
      * this can be updated.
      */
     virtual std::optional<String16> updatableViaApex(const String16& name) = 0;
+
+    /**
+     * If this instance has declared remote connection information, returns
+     * the ConnectionInfo.
+     */
+    struct ConnectionInfo {
+        std::string ipAddress;
+        unsigned int port;
+    };
+    virtual std::optional<ConnectionInfo> getConnectionInfo(const String16& name) = 0;
+
+    struct LocalRegistrationCallback : public virtual RefBase {
+        virtual void onServiceRegistration(const String16& instance, const sp<IBinder>& binder) = 0;
+        virtual ~LocalRegistrationCallback() {}
+    };
+
+    virtual status_t registerForNotifications(const String16& name,
+                                              const sp<LocalRegistrationCallback>& callback) = 0;
+
+    virtual status_t unregisterForNotifications(const String16& name,
+                                                const sp<LocalRegistrationCallback>& callback) = 0;
 };
 
 sp<IServiceManager> defaultServiceManager();
@@ -167,7 +186,8 @@ status_t getService(const String16& name, sp<INTERFACE>* outService)
 bool checkCallingPermission(const String16& permission);
 bool checkCallingPermission(const String16& permission,
                             int32_t* outPid, int32_t* outUid);
-bool checkPermission(const String16& permission, pid_t pid, uid_t uid);
+bool checkPermission(const String16& permission, pid_t pid, uid_t uid,
+                     bool logPermissionFailure = true);
 
 #ifndef __ANDROID__
 // Create an IServiceManager that delegates the service manager on the device via adb.
@@ -179,7 +199,16 @@ bool checkPermission(const String16& permission, pid_t pid, uid_t uid);
 //        // ...
 //    }
 // Resources are cleaned up when the object is destroyed.
-sp<IServiceManager> createRpcDelegateServiceManager();
+//
+// For each returned binder object, at most |maxOutgoingThreads| outgoing threads are instantiated.
+// Hence, only |maxOutgoingThreads| calls can be made simultaneously. Additional calls are blocked
+// if there are |maxOutgoingThreads| ongoing calls. See RpcSession::setMaxOutgoingThreads.
+// If |maxOutgoingThreads| is not set, default is |RpcSession::kDefaultMaxOutgoingThreads|.
+struct RpcDelegateServiceManagerOptions {
+    std::optional<size_t> maxOutgoingThreads;
+};
+sp<IServiceManager> createRpcDelegateServiceManager(
+        const RpcDelegateServiceManagerOptions& options);
 #endif
 
 } // namespace android

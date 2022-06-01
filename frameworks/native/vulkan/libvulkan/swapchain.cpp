@@ -651,7 +651,7 @@ VkResult GetPhysicalDeviceSurfaceCapabilitiesKHR(
               strerror(-err), err);
         return VK_ERROR_SURFACE_LOST_KHR;
     }
-    capabilities->minImageCount = max_buffer_count == 1 ? 1 : 2;
+    capabilities->minImageCount = std::min(max_buffer_count, 3);
     capabilities->maxImageCount = static_cast<uint32_t>(max_buffer_count);
 
     capabilities->currentExtent =
@@ -850,10 +850,13 @@ VkResult GetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice pdev,
     int query_value;
     ANativeWindow* window = SurfaceFromHandle(surface)->window.get();
 
-    err = window->query(window, NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS, &query_value);
+    err = window->query(window, NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS,
+                        &query_value);
     if (err != android::OK || query_value < 0) {
-        ALOGE("NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS query failed: %s (%d) value=%d",
-              strerror(-err), err, query_value);
+        ALOGE(
+            "NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS query failed: %s (%d) "
+            "value=%d",
+            strerror(-err), err, query_value);
         return VK_ERROR_SURFACE_LOST_KHR;
     }
     uint32_t min_undequeued_buffers = static_cast<uint32_t>(query_value);
@@ -872,11 +875,10 @@ VkResult GetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice pdev,
     present_modes.push_back(VK_PRESENT_MODE_FIFO_KHR);
 
     VkPhysicalDevicePresentationPropertiesANDROID present_properties;
-    if (QueryPresentationProperties(pdev, &present_properties)) {
-        if (present_properties.sharedImage) {
-            present_modes.push_back(VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR);
-            present_modes.push_back(VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR);
-        }
+    QueryPresentationProperties(pdev, &present_properties);
+    if (present_properties.sharedImage) {
+        present_modes.push_back(VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR);
+        present_modes.push_back(VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR);
     }
 
     uint32_t num_modes = uint32_t(present_modes.size());
@@ -961,7 +963,6 @@ VkResult GetPhysicalDevicePresentRectanglesKHR(VkPhysicalDevice,
                   strerror(-err), err);
         }
 
-        // TODO(b/143294545): Return something better than "whole window"
         pRects[0].offset.x = 0;
         pRects[0].offset.y = 0;
         pRects[0].extent = VkExtent2D{static_cast<uint32_t>(width),
@@ -1199,21 +1200,29 @@ VkResult CreateSwapchainKHR(VkDevice device,
         return VK_ERROR_SURFACE_LOST_KHR;
     }
     uint32_t min_undequeued_buffers = static_cast<uint32_t>(query_value);
-    uint32_t num_images =
-        (swap_interval ? create_info->minImageCount
-                       : std::max(3u, create_info->minImageCount)) -
-        1 + min_undequeued_buffers;
+    const auto mailbox_num_images = std::max(3u, create_info->minImageCount);
+    const auto requested_images =
+        swap_interval ? create_info->minImageCount : mailbox_num_images;
+    uint32_t num_images = requested_images - 1 + min_undequeued_buffers;
 
-    // Lower layer insists that we have at least two buffers. This is wasteful
-    // and we'd like to relax it in the shared case, but not all the pieces are
-    // in place for that to work yet. Note we only lie to the lower layer-- we
-    // don't want to give the app back a swapchain with extra images (which they
-    // can't actually use!).
-    err = native_window_set_buffer_count(window, std::max(2u, num_images));
+    // Lower layer insists that we have at least min_undequeued_buffers + 1
+    // buffers.  This is wasteful and we'd like to relax it in the shared case,
+    // but not all the pieces are in place for that to work yet.  Note we only
+    // lie to the lower layer--we don't want to give the app back a swapchain
+    // with extra images (which they can't actually use!).
+    uint32_t min_buffer_count = min_undequeued_buffers + 1;
+    err = native_window_set_buffer_count(
+        window, std::max(min_buffer_count, num_images));
     if (err != android::OK) {
         ALOGE("native_window_set_buffer_count(%d) failed: %s (%d)", num_images,
               strerror(-err), err);
         return VK_ERROR_SURFACE_LOST_KHR;
+    }
+
+    // In shared mode the num_images must be one regardless of how many
+    // buffers were allocated for the buffer queue.
+    if (swapchain_image_usage & VK_SWAPCHAIN_IMAGE_USAGE_SHARED_BIT_ANDROID) {
+        num_images = 1;
     }
 
     int32_t legacy_usage = 0;

@@ -145,11 +145,11 @@ ThreadEntry* ThreadUnwinder::SendSignalToThread(int signal, pid_t tid) {
   return nullptr;
 }
 
-void ThreadUnwinder::UnwindWithSignal(int signal, pid_t tid,
+void ThreadUnwinder::UnwindWithSignal(int signal, pid_t tid, std::unique_ptr<Regs>* initial_regs,
                                       const std::vector<std::string>* initial_map_names_to_skip,
                                       const std::vector<std::string>* map_suffixes_to_ignore) {
   ClearErrors();
-  if (tid == pid_) {
+  if (tid == static_cast<pid_t>(android::base::GetThreadId())) {
     last_error_.code = ERROR_UNSUPPORTED;
     return;
   }
@@ -164,6 +164,9 @@ void ThreadUnwinder::UnwindWithSignal(int signal, pid_t tid,
   }
 
   std::unique_ptr<Regs> regs(Regs::CreateFromUcontext(Regs::CurrentArch(), entry->GetUcontext()));
+  if (initial_regs != nullptr) {
+    initial_regs->reset(regs->Clone());
+  }
   SetRegs(regs.get());
   UnwinderFromPid::Unwind(initial_map_names_to_skip, map_suffixes_to_ignore);
 

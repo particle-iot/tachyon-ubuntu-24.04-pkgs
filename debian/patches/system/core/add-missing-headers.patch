@@ -19,6 +19,16 @@ Forwarded: not-needed
  
  #include <android-base/file.h>
  #include <android-base/unique_fd.h>
+--- a/system/core/libutils/String8.cpp
++++ b/system/core/libutils/String8.cpp
+@@ -26,6 +26,7 @@
+ #include <ctype.h>
+ 
+ #include <string>
++#include <limits>
+ 
+ #include "SharedBuffer.h"
+ 
 --- a/system/libziparchive/zip_archive_stream_entry.cc
 +++ b/system/libziparchive/zip_archive_stream_entry.cc
 @@ -23,6 +23,7 @@

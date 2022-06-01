@@ -5,9 +5,10 @@ OBJECTS = $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
-  -I/usr/include/android \
   -Isystem/core/include \
   -Isystem/core/libcrypto_utils/include \
+  \
+  -I/usr/include/android \
 
 debian/out/system/core/$(NAME).a: $(OBJECTS)
 	ar -rcs $@ $^

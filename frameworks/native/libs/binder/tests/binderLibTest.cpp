@@ -57,6 +57,7 @@ using namespace std::chrono_literals;
 using android::base::testing::HasValue;
 using android::base::testing::Ok;
 using testing::ExplainMatchResult;
+using testing::Matcher;
 using testing::Not;
 using testing::WithParamInterface;
 
@@ -112,7 +113,7 @@ enum BinderLibTestTranscationCode {
     BINDER_LIB_TEST_NOP_TRANSACTION_WAIT,
     BINDER_LIB_TEST_GETPID,
     BINDER_LIB_TEST_ECHO_VECTOR,
-    BINDER_LIB_TEST_REJECT_BUF,
+    BINDER_LIB_TEST_REJECT_OBJECTS,
     BINDER_LIB_TEST_CAN_GET_SID,
 };
 
@@ -436,6 +437,11 @@ class TestDeathRecipient : public IBinder::DeathRecipient, public BinderLibTestE
         };
 };
 
+TEST_F(BinderLibTest, CannotUseBinderAfterFork) {
+    // EXPECT_DEATH works by forking the process
+    EXPECT_DEATH({ ProcessState::self(); }, "libbinder ProcessState can not be used after fork");
+}
+
 TEST_F(BinderLibTest, WasParceled) {
     auto binder = sp<BBinder>::make();
     EXPECT_FALSE(binder->wasParceled());
@@ -465,19 +471,10 @@ TEST_F(BinderLibTest, NopTransactionClear) {
 
 TEST_F(BinderLibTest, Freeze) {
     Parcel data, reply, replypid;
-    std::ifstream freezer_file("/sys/fs/cgroup/freezer/cgroup.freeze");
+    std::ifstream freezer_file("/sys/fs/cgroup/uid_0/cgroup.freeze");
 
-    //Pass test on devices where the freezer is not supported
+    // Pass test on devices where the cgroup v2 freezer is not supported
     if (freezer_file.fail()) {
-        GTEST_SKIP();
-        return;
-    }
-
-    std::string freezer_enabled;
-    std::getline(freezer_file, freezer_enabled);
-
-    //Pass test on devices where the freezer is disabled
-    if (freezer_enabled != "1") {
         GTEST_SKIP();
         return;
     }
@@ -487,12 +484,20 @@ TEST_F(BinderLibTest, Freeze) {
     for (int i = 0; i < 10; i++) {
         EXPECT_EQ(NO_ERROR, m_server->transact(BINDER_LIB_TEST_NOP_TRANSACTION_WAIT, data, &reply, TF_ONE_WAY));
     }
-    EXPECT_EQ(-EAGAIN, IPCThreadState::self()->freeze(pid, 1, 0));
-    EXPECT_EQ(-EAGAIN, IPCThreadState::self()->freeze(pid, 1, 0));
-    EXPECT_EQ(NO_ERROR, IPCThreadState::self()->freeze(pid, 1, 1000));
+
+    // Pass test on devices where BINDER_FREEZE ioctl is not supported
+    int ret = IPCThreadState::self()->freeze(pid, false, 0);
+    if (ret != 0) {
+        GTEST_SKIP();
+        return;
+    }
+
+    EXPECT_EQ(-EAGAIN, IPCThreadState::self()->freeze(pid, true, 0));
+    EXPECT_EQ(-EAGAIN, IPCThreadState::self()->freeze(pid, true, 0));
+    EXPECT_EQ(NO_ERROR, IPCThreadState::self()->freeze(pid, true, 1000));
     EXPECT_EQ(FAILED_TRANSACTION, m_server->transact(BINDER_LIB_TEST_NOP_TRANSACTION, data, &reply));
 
-    bool sync_received, async_received;
+    uint32_t sync_received, async_received;
 
     EXPECT_EQ(NO_ERROR, IPCThreadState::self()->getProcessFreezeInfo(pid, &sync_received,
                 &async_received));
@@ -500,7 +505,7 @@ TEST_F(BinderLibTest, Freeze) {
     EXPECT_EQ(sync_received, 1);
     EXPECT_EQ(async_received, 0);
 
-    EXPECT_EQ(NO_ERROR, IPCThreadState::self()->freeze(pid, 0, 0));
+    EXPECT_EQ(NO_ERROR, IPCThreadState::self()->freeze(pid, false, 0));
     EXPECT_EQ(NO_ERROR, m_server->transact(BINDER_LIB_TEST_NOP_TRANSACTION, data, &reply));
 }
 
@@ -1162,11 +1167,51 @@ TEST_F(BinderLibTest, BufRejected) {
     memcpy(parcelData, &obj, sizeof(obj));
     data.setDataSize(sizeof(obj));
 
+    EXPECT_EQ(data.objectsCount(), 1);
+
     // Either the kernel should reject this transaction (if it's correct), but
     // if it's not, the server implementation should return an error if it
     // finds an object in the received Parcel.
-    EXPECT_THAT(server->transact(BINDER_LIB_TEST_REJECT_BUF, data, &reply),
+    EXPECT_THAT(server->transact(BINDER_LIB_TEST_REJECT_OBJECTS, data, &reply),
                 Not(StatusEq(NO_ERROR)));
+}
+
+TEST_F(BinderLibTest, WeakRejected) {
+    Parcel data, reply;
+    sp<IBinder> server = addServer();
+    ASSERT_TRUE(server != nullptr);
+
+    auto binder = sp<BBinder>::make();
+    wp<BBinder> wpBinder(binder);
+    flat_binder_object obj{
+            .hdr = {.type = BINDER_TYPE_WEAK_BINDER},
+            .flags = 0,
+            .binder = reinterpret_cast<uintptr_t>(wpBinder.get_refs()),
+            .cookie = reinterpret_cast<uintptr_t>(wpBinder.unsafe_get()),
+    };
+    data.setDataCapacity(1024);
+    // Write a bogus object at offset 0 to get an entry in the offset table
+    data.writeFileDescriptor(0);
+    EXPECT_EQ(data.objectsCount(), 1);
+    uint8_t *parcelData = const_cast<uint8_t *>(data.data());
+    // And now, overwrite it with the weak binder
+    memcpy(parcelData, &obj, sizeof(obj));
+    data.setDataSize(sizeof(obj));
+
+    // a previous bug caused other objects to be released an extra time, so we
+    // test with an object that libbinder will actually try to release
+    EXPECT_EQ(OK, data.writeStrongBinder(sp<BBinder>::make()));
+
+    EXPECT_EQ(data.objectsCount(), 2);
+
+    // send it many times, since previous error was memory corruption, make it
+    // more likely that the server crashes
+    for (size_t i = 0; i < 100; i++) {
+        EXPECT_THAT(server->transact(BINDER_LIB_TEST_REJECT_OBJECTS, data, &reply),
+                    StatusEq(BAD_VALUE));
+    }
+
+    EXPECT_THAT(server->pingBinder(), StatusEq(NO_ERROR));
 }
 
 TEST_F(BinderLibTest, GotSid) {
@@ -1174,6 +1219,19 @@ TEST_F(BinderLibTest, GotSid) {
 
     Parcel data;
     EXPECT_THAT(server->transact(BINDER_LIB_TEST_CAN_GET_SID, data, nullptr), StatusEq(OK));
+}
+
+TEST(ServiceNotifications, Unregister) {
+    auto sm = defaultServiceManager();
+    using LocalRegistrationCallback = IServiceManager::LocalRegistrationCallback;
+    class LocalRegistrationCallbackImpl : public virtual LocalRegistrationCallback {
+        void onServiceRegistration(const String16 &, const sp<IBinder> &) override {}
+        virtual ~LocalRegistrationCallbackImpl() {}
+    };
+    sp<LocalRegistrationCallback> cb = sp<LocalRegistrationCallbackImpl>::make();
+
+    EXPECT_EQ(sm->registerForNotifications(String16("RogerRafa"), cb), OK);
+    EXPECT_EQ(sm->unregisterForNotifications(String16("RogerRafa"), cb), OK);
 }
 
 class BinderLibRpcTestBase : public BinderLibTest {
@@ -1190,10 +1248,9 @@ public:
         auto rpcServer = RpcServer::make();
         EXPECT_NE(nullptr, rpcServer);
         if (rpcServer == nullptr) return {};
-        rpcServer->iUnderstandThisCodeIsExperimentalAndIWillNotUseItInProduction();
         unsigned int port;
-        if (!rpcServer->setupInetServer(0, &port)) {
-            ADD_FAILURE() << "setupInetServer failed";
+        if (status_t status = rpcServer->setupInetServer("127.0.0.1", 0, &port); status != OK) {
+            ADD_FAILURE() << "setupInetServer failed" << statusToString(status);
             return {};
         }
         return {rpcServer->releaseServer(), port};
@@ -1202,12 +1259,23 @@ public:
 
 class BinderLibRpcTest : public BinderLibRpcTestBase {};
 
+// e.g. EXPECT_THAT(expr, Debuggable(StatusEq(...))
+// If device is debuggable AND not on user builds, expects matcher.
+// Otherwise expects INVALID_OPERATION.
+// Debuggable + non user builds is necessary but not sufficient for setRpcClientDebug to work.
+static Matcher<status_t> Debuggable(const Matcher<status_t> &matcher) {
+    bool isDebuggable = android::base::GetBoolProperty("ro.debuggable", false) &&
+            android::base::GetProperty("ro.build.type", "") != "user";
+    return isDebuggable ? matcher : StatusEq(INVALID_OPERATION);
+}
+
 TEST_F(BinderLibRpcTest, SetRpcClientDebug) {
     auto binder = addServer();
     ASSERT_TRUE(binder != nullptr);
     auto [socket, port] = CreateSocket();
     ASSERT_TRUE(socket.ok());
-    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket), sp<BBinder>::make()), StatusEq(OK));
+    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket), sp<BBinder>::make()),
+                Debuggable(StatusEq(OK)));
 }
 
 // Tests for multiple RpcServer's on the same binder object.
@@ -1218,12 +1286,14 @@ TEST_F(BinderLibRpcTest, SetRpcClientDebugTwice) {
     auto [socket1, port1] = CreateSocket();
     ASSERT_TRUE(socket1.ok());
     auto keepAliveBinder1 = sp<BBinder>::make();
-    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket1), keepAliveBinder1), StatusEq(OK));
+    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket1), keepAliveBinder1),
+                Debuggable(StatusEq(OK)));
 
     auto [socket2, port2] = CreateSocket();
     ASSERT_TRUE(socket2.ok());
     auto keepAliveBinder2 = sp<BBinder>::make();
-    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket2), keepAliveBinder2), StatusEq(OK));
+    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket2), keepAliveBinder2),
+                Debuggable(StatusEq(OK)));
 }
 
 // Negative tests for RPC APIs on IBinder. Call should fail in the same way on both remote and
@@ -1242,7 +1312,7 @@ TEST_P(BinderLibRpcTestP, SetRpcClientDebugNoFd) {
     auto binder = GetService();
     ASSERT_TRUE(binder != nullptr);
     EXPECT_THAT(binder->setRpcClientDebug(android::base::unique_fd(), sp<BBinder>::make()),
-                StatusEq(BAD_VALUE));
+                Debuggable(StatusEq(BAD_VALUE)));
 }
 
 TEST_P(BinderLibRpcTestP, SetRpcClientDebugNoKeepAliveBinder) {
@@ -1250,7 +1320,8 @@ TEST_P(BinderLibRpcTestP, SetRpcClientDebugNoKeepAliveBinder) {
     ASSERT_TRUE(binder != nullptr);
     auto [socket, port] = CreateSocket();
     ASSERT_TRUE(socket.ok());
-    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket), nullptr), StatusEq(UNEXPECTED_NULL));
+    EXPECT_THAT(binder->setRpcClientDebug(std::move(socket), nullptr),
+                Debuggable(StatusEq(UNEXPECTED_NULL)));
 }
 INSTANTIATE_TEST_CASE_P(BinderLibTest, BinderLibRpcTestP, testing::Bool(),
                         BinderLibRpcTestP::ParamToString);
@@ -1563,7 +1634,7 @@ public:
                 reply->writeUint64Vector(vector);
                 return NO_ERROR;
             }
-            case BINDER_LIB_TEST_REJECT_BUF: {
+            case BINDER_LIB_TEST_REJECT_OBJECTS: {
                 return data.objectsCount() == 0 ? BAD_VALUE : NO_ERROR;
             }
             case BINDER_LIB_TEST_CAN_GET_SID: {

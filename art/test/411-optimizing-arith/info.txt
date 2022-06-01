@@ -1,7 +1,0 @@
-Tests for basic arithmethic operations:
-  - multiply,
-  - subtract,
-  - negate,
-  - division,
-  - modulo (rem),
-  - shifts.

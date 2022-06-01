@@ -2,6 +2,7 @@ include /usr/share/dpkg/architecture.mk
 
 NAME = libbacktrace
 
+# system/unwinding/libbacktrace/Android.bp
 libbacktrace_SOURCES = \
   Backtrace.cpp \
   BacktraceCurrent.cpp \
@@ -11,8 +12,10 @@ libbacktrace_SOURCES = \
   UnwindStack.cpp \
   UnwindStackMap.cpp \
 
+# system/unwinding/libunwindstack/Android.bp
 libunwindstack_SOURCES := \
   ArmExidx.cpp \
+  DexFiles.cpp \
   DwarfCfa.cpp \
   DwarfEhFrameWithHdr.cpp \
   DwarfMemory.cpp \
@@ -26,6 +29,8 @@ libunwindstack_SOURCES := \
   MapInfo.cpp \
   Maps.cpp \
   Memory.cpp \
+  MemoryMte.cpp \
+  MemoryXz.cpp \
   LocalUnwinder.cpp \
   Regs.cpp \
   RegsArm.cpp \
@@ -35,10 +40,9 @@ libunwindstack_SOURCES := \
   RegsMips.cpp \
   RegsMips64.cpp \
   Symbols.cpp \
+  ThreadEntry.cpp \
+  ThreadUnwinder.cpp \
   Unwinder.cpp \
-
-libunwindstack_dexfile_SOURCES := \
-  DexFiles.cpp \
 
 ifeq ($(DEB_HOST_ARCH), amd64)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsX86_64.S
@@ -50,7 +54,6 @@ endif
 SOURCES = \
   $(foreach source, $(filter %.cpp, $(libbacktrace_SOURCES)), libbacktrace/$(source)) \
   $(foreach source, $(filter %.cpp, $(libunwindstack_SOURCES)), libunwindstack/$(source)) \
-  $(foreach source, $(filter %.cpp, $(libunwindstack_dexfile_SOURCES)), libunwindstack/$(source)) \
 
 SOURCES := $(foreach source, $(SOURCES), system/unwinding/$(source))
 OBJECTS_CXX = $(SOURCES:.cpp=.o)
@@ -59,7 +62,7 @@ OBJECTS_ASSEMBLY := $(SOURCES_ASSEMBLY:.S=.o)
 
 CXXFLAGS += -std=gnu++2a -fno-omit-frame-pointer
 CPPFLAGS += \
-  -Idebian/include/external/lzma \
+  -Iexternal/lzma/C \
   -Isystem/libbase/include \
   -Isystem/libprocinfo/include \
   -Isystem/logging/liblog/include \

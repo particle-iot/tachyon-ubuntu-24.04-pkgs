@@ -1,3 +1,0 @@
-Main Started
-Main Finished
-Child finished

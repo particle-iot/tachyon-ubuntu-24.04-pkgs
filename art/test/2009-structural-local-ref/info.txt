@@ -1,3 +1,0 @@
-Tests structural redefinition with local-refs
-
-Tests that using the structural redefinition updates JNI local-refs.

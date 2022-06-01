@@ -1,2 +1,0 @@
-Test that we can successfully call StackVisitor.GetThis() even when
-'this' gets overwritten.

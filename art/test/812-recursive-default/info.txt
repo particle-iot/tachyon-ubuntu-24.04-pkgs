@@ -1,2 +1,0 @@
-Test that the compiler can handle recursive calls in a
-default interface method.

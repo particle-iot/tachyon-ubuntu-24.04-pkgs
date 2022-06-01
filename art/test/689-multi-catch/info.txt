@@ -1,2 +1,0 @@
-Regression test for the optimizing compiler which used
-to wrongly type an exception in a multi-catch handler.

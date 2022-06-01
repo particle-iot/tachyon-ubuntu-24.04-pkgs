@@ -29,29 +29,30 @@ OBJECTS = $(SOURCES:.cpp=.o)
 
 CXXFLAGS += -std=gnu++2a -fpermissive
 CPPFLAGS += \
-   -D_FILE_OFFSET_BITS=64 \
-   -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
-   -I/usr/include/android \
-   -Iexternal/avb \
-   -Iexternal/fmtlib/include \
-   -Ipackages/modules/adb \
-   -Isystem/core/demangle/include \
-   -Isystem/core/diagnose_usb/include \
-   -Isystem/core/fs_mgr/include \
-   -Isystem/core/fs_mgr/include_fstab \
-   -Isystem/core/fs_mgr/liblp/include \
-   -Isystem/core/fs_mgr/libstorage_literals \
-   -Isystem/core/include \
-   -Isystem/core/libcutils/include \
-   -Isystem/core/libsparse/include \
-   -Isystem/extras/ext4_utils/include \
-   -Isystem/libbase/include \
-   -Isystem/libziparchive/include \
-   -Isystem/tools/mkbootimg/include/bootimg \
+  -D_FILE_OFFSET_BITS=64 \
+  -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
+  -Iexternal/avb \
+  -Iexternal/fmtlib/include \
+  -Ipackages/modules/adb \
+  -Isystem/core/demangle/include \
+  -Isystem/core/diagnose_usb/include \
+  -Isystem/core/fs_mgr/include \
+  -Isystem/core/fs_mgr/include_fstab \
+  -Isystem/core/fs_mgr/liblp/include \
+  -Isystem/core/fs_mgr/libstorage_literals \
+  -Isystem/core/include \
+  -Isystem/core/libcutils/include \
+  -Isystem/core/libsparse/include \
+  -Isystem/extras/ext4_utils/include \
+  -Isystem/libbase/include \
+  -Isystem/libziparchive/include \
+  -Isystem/tools/mkbootimg/include/bootimg \
+  \
+  -I/usr/include/android \
 
 LDFLAGS += \
-  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Ldebian/out/system/core \
+  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -fuse-ld=gold \
   -lbase \

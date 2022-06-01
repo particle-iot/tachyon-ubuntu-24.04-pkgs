@@ -3,18 +3,19 @@
 
   <remote  name="aosp"
            fetch="https://android.googlesource.com/" />
-  <default revision="refs/tags/platform-tools-31.0.3"
+  <default revision="refs/tags/platform-tools-33.0.1"
            remote="aosp"
            sync-j="4" />
 
-   <project path="art" name="platform/art" groups="pdk" />
    <project path="dalvik" name="platform/dalvik" groups="pdk-cw-fs,pdk-fs" />
    <project path="development" name="platform/development" groups="developers,pdk-cw-fs,pdk-fs" />
    <project path="external/avb" name="platform/external/avb" groups="pdk" />
-   <project path="external/boringssl" name="platform/external/boringssl" groups="pdk" />
    <project path="external/cpu_features" name="platform/external/cpu_features" groups="pdk" />
    <project path="external/dlmalloc" name="platform/external/dlmalloc" groups="pdk" />
    <project path="external/fmtlib" name="platform/external/fmtlib" groups="pdk" />
+   <project path="external/mdnsresponder" name="platform/external/mdnsresponder" groups="pdk" />
+   <project path="external/openscreen" name="platform/external/openscreen" groups="pdk" />
+   <project path="external/lzma" name="platform/external/lzma" groups="pdk" />
    <project path="frameworks/native" name="platform/frameworks/native" groups="pdk" />
    <project path="libnativehelper" name="platform/libnativehelper" groups="pdk" />
    <project path="packages/modules/adb" name="platform/packages/modules/adb" groups="pdk" />

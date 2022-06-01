@@ -1,2 +1,0 @@
-Regression test for instrumentation deopt, which previously did not expect a
-quickened instruction when returning from instrumentation stub.

@@ -119,6 +119,19 @@ cc_library {
         "//apex_available:platform",
         "//apex_available:anyapex",
     ],
+    // This library is being deprecated in favor of libunwindstack.
+    // Therefore, only allow the current set of users, and block anyone
+    // else.
+    visibility: [
+        "//art:__subpackages__",
+        "//bionic/libc/malloc_debug",
+        "//frameworks/native/opengl/libs",
+        "//packages/modules/vndk/apex",
+        "//packages/modules/Bluetooth/system/gd",
+        "//packages/modules/Bluetooth/system/vendor_libs/test_vendor_lib",
+        "//system/core/init",
+        "//system/core/libutils",
+    ],
     min_sdk_version: "apex_inherit",
     vndk: {
         enabled: true,
@@ -220,8 +233,6 @@ cc_test {
         "liblog",
         "libunwindstack",
     ],
-
-    group_static_libs: true,
 
     target: {
         android: {

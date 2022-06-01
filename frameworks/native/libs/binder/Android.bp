@@ -25,6 +25,7 @@ cc_library_headers {
     name: "libbinder_headers",
     export_include_dirs: ["include"],
     vendor_available: true,
+    recovery_available: true,
     host_supported: true,
     // TODO(b/153609531): remove when no longer needed.
     native_bridge_supported: true,
@@ -64,9 +65,6 @@ libbinder_device_interface_sources = [
     "PermissionCache.cpp",
     "PermissionController.cpp",
 ]
-libbinder_no_vendor_interface_sources = [
-    ":packagemanager_aidl",
-]
 
 cc_library {
     name: "libbinder",
@@ -78,6 +76,7 @@ cc_library {
     vndk: {
         enabled: true,
     },
+    recovery_available: true,
     double_loadable: true,
     host_supported: true,
     // TODO(b/153609531): remove when no longer needed.
@@ -94,9 +93,6 @@ cc_library {
     // or dessert updates. Instead, apex users should use libbinder_ndk.
     apex_available: [
         "//apex_available:platform",
-        // TODO(b/166468760) remove these three
-        "com.android.media.swcodec",
-        "test_com.android.media.swcodec",
     ],
 
     srcs: [
@@ -104,6 +100,7 @@ cc_library {
         "BpBinder.cpp",
         "BufferedTextOutput.cpp",
         "Debug.cpp",
+        "FdTrigger.cpp",
         "IInterface.cpp",
         "IMemory.cpp",
         "IPCThreadState.cpp",
@@ -119,17 +116,17 @@ cc_library {
         "ParcelFileDescriptor.cpp",
         "PersistableBundle.cpp",
         "ProcessState.cpp",
-        "RpcAddress.cpp",
         "RpcSession.cpp",
         "RpcServer.cpp",
         "RpcState.cpp",
+        "RpcTransportRaw.cpp",
         "Static.cpp",
         "Stability.cpp",
         "Status.cpp",
         "TextOutput.cpp",
         "Utils.cpp",
         ":libbinder_aidl",
-    ] + libbinder_no_vendor_interface_sources,
+    ],
 
     target: {
         android: {
@@ -141,18 +138,20 @@ cc_library {
             },
         },
         vendor: {
-            exclude_srcs: libbinder_device_interface_sources + libbinder_no_vendor_interface_sources,
+            exclude_srcs: libbinder_device_interface_sources,
         },
         darwin: {
             enabled: false,
         },
         host: {
-            static_libs: [
-                "libbase",
-            ],
             srcs: [
                 "ServiceManagerHost.cpp",
                 "UtilsHost.cpp",
+            ],
+        },
+        recovery: {
+            exclude_header_libs: [
+                "libandroid_runtime_vm_headers",
             ],
         },
     },
@@ -160,10 +159,6 @@ cc_library {
     aidl: {
         export_aidl_headers: true,
     },
-
-    // TODO(b/142684679): for com.android.media which is compiled
-    // as vendor and used as system code.
-    use_apex_name_macro: true,
 
     cflags: [
         "-Wall",
@@ -190,6 +185,10 @@ cc_library {
         "libutils",
     ],
 
+    static_libs: [
+        "libbase",
+    ],
+
     header_libs: [
         "libbinder_headers",
         "libandroid_runtime_vm_headers",
@@ -203,7 +202,6 @@ cc_library {
     sanitize: {
         misc_undefined: ["integer"],
     },
-    min_sdk_version: "29",
 
     tidy: true,
     tidy_flags: [
@@ -226,16 +224,63 @@ cc_library {
         "portability*",
     ],
 
-    pgo: {
-        sampling: true,
-        profile_file: "libbinder/libbinder.profdata",
-    },
+    afdo: true,
+}
+
+cc_defaults {
+    name: "libbinder_tls_shared_deps",
+    shared_libs: [
+        "libbinder",
+        "libcrypto",
+        "liblog",
+        "libssl",
+        "libutils",
+    ],
+}
+
+cc_defaults {
+    name: "libbinder_tls_defaults",
+    defaults: ["libbinder_tls_shared_deps"],
+    host_supported: true,
+
+    header_libs: [
+        "libbinder_headers",
+    ],
+    export_header_lib_headers: [
+        "libbinder_headers",
+    ],
+    export_shared_lib_headers: [
+        "libssl",
+    ],
+    export_include_dirs: ["include_tls"],
+    static_libs: [
+        "libbase",
+    ],
+    srcs: [
+        "RpcTransportTls.cpp",
+        "RpcTlsUtils.cpp",
+    ],
+}
+
+cc_library_shared {
+    name: "libbinder_tls",
+    defaults: ["libbinder_tls_defaults"],
+}
+
+// For testing
+cc_library_static {
+    name: "libbinder_tls_static",
+    defaults: ["libbinder_tls_defaults"],
+    visibility: [
+        ":__subpackages__",
+    ],
 }
 
 // AIDL interface between libbinder and framework.jar
 filegroup {
     name: "libbinder_aidl",
     srcs: [
+        "aidl/android/os/ConnectionInfo.aidl",
         "aidl/android/os/IClientCallback.aidl",
         "aidl/android/os/IServiceCallback.aidl",
         "aidl/android/os/IServiceManager.aidl",
@@ -244,14 +289,27 @@ filegroup {
     path: "aidl",
 }
 
-filegroup {
+aidl_interface {
     name: "packagemanager_aidl",
+    unstable: true,
+    local_include_dir: "aidl",
+    host_supported: true,
     srcs: [
         "aidl/android/content/pm/IPackageChangeObserver.aidl",
         "aidl/android/content/pm/IPackageManagerNative.aidl",
         "aidl/android/content/pm/PackageChangeEvent.aidl",
+        "aidl/android/content/pm/IStagedApexObserver.aidl",
+        "aidl/android/content/pm/ApexStagedEvent.aidl",
+        "aidl/android/content/pm/StagedApexInfo.aidl",
     ],
-    path: "aidl",
+    backend: {
+        rust: {
+            apex_available: [
+                "com.android.virt",
+            ],
+            enabled: true,
+        },
+    },
 }
 
 aidl_interface {
@@ -271,13 +329,14 @@ aidl_interface {
 cc_library {
     name: "libbinder_rpc_unstable",
     srcs: ["libbinder_rpc_unstable.cpp"],
-    defaults: ["libbinder_ndk_host_user"],
     shared_libs: [
         "libbase",
         "libbinder",
         "libbinder_ndk",
+        "liblog",
         "libutils",
     ],
+    export_include_dirs: ["include_rpc_unstable"],
 
     // enumerate stable entry points, for apex use
     stubs: {
@@ -287,10 +346,13 @@ cc_library {
     // This library is intentionally limited to these targets, and it will be removed later.
     // Do not expand the visibility.
     visibility: [
-        "//packages/modules/Virtualization/authfs:__subpackages__",
-        "//packages/modules/Virtualization/compos:__subpackages__",
-        "//packages/modules/Virtualization/microdroid",
+        "//packages/modules/Virtualization:__subpackages__",
     ],
+}
+
+filegroup {
+    name: "libbinder_rpc_unstable_header",
+    srcs: ["include_rpc_unstable/binder_rpc_unstable.hpp"],
 }
 
 // libbinder historically contained additional interfaces that provided specific
@@ -357,5 +419,6 @@ cc_binary {
         "libbinder",
         "liblog",
         "libutils",
+        "android.debug_aidl-cpp",
     ],
 }

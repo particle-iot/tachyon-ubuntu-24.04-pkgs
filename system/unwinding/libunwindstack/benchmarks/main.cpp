@@ -58,6 +58,11 @@ bool LockToCPU(int lock_cpu) {
 #endif
 
 int main(int argc, char** argv) {
+#if defined(__BIONIC__)
+  // Enable decay time option to allow frees to run faster at the cost of slightly increasing RSS.
+  // All applications on Android run with this option enabled.
+  mallopt(M_DECAY_TIME, 1);
+#endif
   std::vector<char*> new_argv;
   // The first argument is not an option, so add it as is.
   new_argv.push_back(argv[0]);

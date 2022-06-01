@@ -1,4 +1,0 @@
-JNI_OnLoad called
-Main Started
-Succeeded
-Main Finished

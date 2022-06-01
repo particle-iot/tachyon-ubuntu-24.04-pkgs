@@ -21,7 +21,7 @@
         <input
           type="checkbox"
           :value="label"
-          :checked="modelValue.get(label)"
+          :checked="partitionSelected.get(label)"
           @change="updateSelected($event.target.value)"
         >
         {{ label }}
@@ -38,34 +38,58 @@ export default {
       default: new Array(),
     },
     modelValue: {
-      type: Map,
-      default: new Map(),
+      type: Array,
+      required: true
     },
   },
   data() {
     return {
       selectAll: 1,
       selectAllText: ['Select All', 'Unselect All'],
+      partitionSelected: new Map()
+    }
+  },
+  watch: {
+    partitionSelected: {
+      handler: function() {
+        let list = []
+        for (let [key, value] of this.partitionSelected) {
+          if (value) {
+            list.push(key)
+          }
+        }
+        this.$emit('update:modelValue', list)
+      },
+      deep: true
     }
   },
   mounted() {
-    // Set the default value to be true once mounted
-    for (let key of this.labels) {
-      this.modelValue.set(key, true)
+    // Set the default value to be true once mounted if nothing has been selected
+    if (this.modelValue.length === 0) {
+      for (let key of this.labels) {
+        this.partitionSelected.set(key, true)
+      }
+    } else {
+      for (let key of this.labels) {
+        this.partitionSelected.set(key, false)
+      }
+      for (let key of this.modelValue) {
+        this.partitionSelected.set(key, true)
+      }
     }
+    this.$emit('update:modelValue', this.modelValue)
   },
   methods: {
     updateSelected(newSelect) {
-      this.modelValue.set(newSelect, !this.modelValue.get(newSelect))
-      this.$emit('update:modelValue', this.modelValue)
+      this.partitionSelected.set(newSelect, !this.partitionSelected.get(newSelect))
     },
     revertAllSelection() {
       this.selectAll = 1 - this.selectAll
-      for (let key of this.modelValue.keys()) {
-        this.modelValue.set(key, Boolean(this.selectAll))
+      for (let key of this.partitionSelected.keys()) {
+        this.partitionSelected.set(key, Boolean(this.selectAll))
       }
     },
-  },
+  }
 }
 </script>
 

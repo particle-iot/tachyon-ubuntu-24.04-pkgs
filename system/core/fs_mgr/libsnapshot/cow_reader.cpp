@@ -34,7 +34,12 @@
 namespace android {
 namespace snapshot {
 
-CowReader::CowReader() : fd_(-1), header_(), fd_size_(0) {}
+CowReader::CowReader(ReaderFlags reader_flag)
+    : fd_(-1),
+      header_(),
+      fd_size_(0),
+      merge_op_blocks_(std::make_shared<std::vector<uint32_t>>()),
+      reader_flag_(reader_flag) {}
 
 static void SHA256(const void*, size_t, uint8_t[]) {
 #if 0
@@ -43,6 +48,24 @@ static void SHA256(const void*, size_t, uint8_t[]) {
     SHA256_Update(&c, data, length);
     SHA256_Final(out, &c);
 #endif
+}
+
+std::unique_ptr<CowReader> CowReader::CloneCowReader() {
+    auto cow = std::make_unique<CowReader>();
+    cow->owned_fd_.reset();
+    cow->header_ = header_;
+    cow->footer_ = footer_;
+    cow->fd_size_ = fd_size_;
+    cow->last_label_ = last_label_;
+    cow->ops_ = ops_;
+    cow->merge_op_blocks_ = merge_op_blocks_;
+    cow->merge_op_start_ = merge_op_start_;
+    cow->block_map_ = block_map_;
+    cow->num_total_data_ops_ = num_total_data_ops_;
+    cow->num_ordered_ops_to_merge_ = num_ordered_ops_to_merge_;
+    cow->has_seq_ops_ = has_seq_ops_;
+    cow->data_loc_ = data_loc_;
+    return cow;
 }
 
 bool CowReader::InitForMerge(android::base::unique_fd&& fd) {
@@ -133,11 +156,14 @@ bool CowReader::Parse(android::base::borrowed_fd fd, std::optional<uint64_t> lab
     if (!ParseOps(label)) {
         return false;
     }
+    // If we're resuming a write, we're not ready to merge
+    if (label.has_value()) return true;
     return PrepMergeOps();
 }
 
 bool CowReader::ParseOps(std::optional<uint64_t> label) {
     uint64_t pos;
+    auto data_loc = std::make_shared<std::unordered_map<uint64_t, uint64_t>>();
 
     // Skip the scratch space
     if (header_.major_version >= 2 && (header_.buffer_size > 0)) {
@@ -156,6 +182,13 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
         }
         // Reading a v1 version of COW which doesn't have buffer_size.
         header_.buffer_size = 0;
+    }
+    uint64_t data_pos = 0;
+
+    if (header_.cluster_ops) {
+        data_pos = pos + header_.cluster_ops * sizeof(CowOperation);
+    } else {
+        data_pos = pos + sizeof(CowOperation);
     }
 
     auto ops_buffer = std::make_shared<std::vector<CowOperation>>();
@@ -177,7 +210,11 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
         while (current_op_num < ops_buffer->size()) {
             auto& current_op = ops_buffer->data()[current_op_num];
             current_op_num++;
+            if (current_op.type == kCowXorOp) {
+                data_loc->insert({current_op.new_block, data_pos});
+            }
             pos += sizeof(CowOperation) + GetNextOpOffset(current_op, header_.cluster_ops);
+            data_pos += current_op.data_length + GetNextDataOffset(current_op, header_.cluster_ops);
 
             if (current_op.type == kCowClusterOp) {
                 break;
@@ -195,7 +232,7 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
                 memcpy(&footer_->op, &current_op, sizeof(footer->op));
                 off_t offs = lseek(fd_.get(), pos, SEEK_SET);
                 if (offs < 0 || pos != static_cast<uint64_t>(offs)) {
-                    PLOG(ERROR) << "lseek next op failed";
+                    PLOG(ERROR) << "lseek next op failed " << offs;
                     return false;
                 }
                 if (!android::base::ReadFully(fd_, &footer->data, sizeof(footer->data))) {
@@ -215,7 +252,7 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
         // Position for next cluster read
         off_t offs = lseek(fd_.get(), pos, SEEK_SET);
         if (offs < 0 || pos != static_cast<uint64_t>(offs)) {
-            PLOG(ERROR) << "lseek next op failed";
+            PLOG(ERROR) << "lseek next op failed " << offs;
             return false;
         }
         ops_buffer->resize(current_op_num);
@@ -268,6 +305,7 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
 
     ops_ = ops_buffer;
     ops_->shrink_to_fit();
+    data_loc_ = data_loc;
 
     return true;
 }
@@ -378,7 +416,7 @@ bool CowReader::ParseOps(std::optional<uint64_t> label) {
 //==============================================================
 bool CowReader::PrepMergeOps() {
     auto merge_op_blocks = std::make_shared<std::vector<uint32_t>>();
-    std::set<int, std::greater<int>> other_ops;
+    std::vector<int> other_ops;
     auto seq_ops_set = std::unordered_set<uint32_t>();
     auto block_map = std::make_shared<std::unordered_map<uint32_t, int>>();
     size_t num_seqs = 0;
@@ -409,28 +447,81 @@ bool CowReader::PrepMergeOps() {
         if (!has_seq_ops_ && IsOrderedOp(current_op)) {
             merge_op_blocks->emplace_back(current_op.new_block);
         } else if (seq_ops_set.count(current_op.new_block) == 0) {
-            other_ops.insert(current_op.new_block);
+            other_ops.push_back(current_op.new_block);
         }
         block_map->insert({current_op.new_block, i});
     }
+    for (auto block : *merge_op_blocks) {
+        if (block_map->count(block) == 0) {
+            LOG(ERROR) << "Invalid Sequence Ops. Could not find Cow Op for new block " << block;
+            return false;
+        }
+    }
+
     if (merge_op_blocks->size() > header_.num_merge_ops) {
         num_ordered_ops_to_merge_ = merge_op_blocks->size() - header_.num_merge_ops;
     } else {
         num_ordered_ops_to_merge_ = 0;
     }
-    merge_op_blocks->reserve(merge_op_blocks->size() + other_ops.size());
-    for (auto block : other_ops) {
-        merge_op_blocks->emplace_back(block);
+
+    // Sort the vector in increasing order if merging in user-space as
+    // we can batch merge them when iterating from forward.
+    //
+    // dm-snapshot-merge requires decreasing order as we iterate the blocks
+    // in reverse order.
+    if (reader_flag_ == ReaderFlags::USERSPACE_MERGE) {
+        std::sort(other_ops.begin(), other_ops.end());
+    } else {
+        std::sort(other_ops.begin(), other_ops.end(), std::greater<int>());
     }
+
+    merge_op_blocks->insert(merge_op_blocks->end(), other_ops.begin(), other_ops.end());
 
     num_total_data_ops_ = merge_op_blocks->size();
     if (header_.num_merge_ops > 0) {
-        merge_op_blocks->erase(merge_op_blocks->begin(),
-                               merge_op_blocks->begin() + header_.num_merge_ops);
+        merge_op_start_ = header_.num_merge_ops;
     }
 
     block_map_ = block_map;
     merge_op_blocks_ = merge_op_blocks;
+    return true;
+}
+
+bool CowReader::VerifyMergeOps() {
+    auto itr = GetMergeOpIter(true);
+    std::unordered_map<uint64_t, CowOperation> overwritten_blocks;
+    while (!itr->Done()) {
+        CowOperation op = itr->Get();
+        uint64_t block;
+        bool offset;
+        if (op.type == kCowCopyOp) {
+            block = op.source;
+            offset = false;
+        } else if (op.type == kCowXorOp) {
+            block = op.source / BLOCK_SZ;
+            offset = (op.source % BLOCK_SZ) != 0;
+        } else {
+            itr->Next();
+            continue;
+        }
+
+        CowOperation* overwrite = nullptr;
+        if (overwritten_blocks.count(block)) {
+            overwrite = &overwritten_blocks[block];
+            LOG(ERROR) << "Invalid Sequence! Block needed for op:\n"
+                       << op << "\noverwritten by previously merged op:\n"
+                       << *overwrite;
+        }
+        if (offset && overwritten_blocks.count(block + 1)) {
+            overwrite = &overwritten_blocks[block + 1];
+            LOG(ERROR) << "Invalid Sequence! Block needed for op:\n"
+                       << op << "\noverwritten by previously merged op:\n"
+                       << *overwrite;
+        }
+        if (overwrite != nullptr) return false;
+        overwritten_blocks[op.new_block] = op;
+        itr->Next();
+    }
     return true;
 }
 
@@ -459,6 +550,9 @@ class CowOpIter final : public ICowOpIter {
     const CowOperation& Get() override;
     void Next() override;
 
+    void Prev() override;
+    bool RDone() override;
+
   private:
     std::shared_ptr<std::vector<CowOperation>> ops_;
     std::vector<CowOperation>::iterator op_iter_;
@@ -467,6 +561,15 @@ class CowOpIter final : public ICowOpIter {
 CowOpIter::CowOpIter(std::shared_ptr<std::vector<CowOperation>>& ops) {
     ops_ = ops;
     op_iter_ = ops_->begin();
+}
+
+bool CowOpIter::RDone() {
+    return op_iter_ == ops_->begin();
+}
+
+void CowOpIter::Prev() {
+    CHECK(!RDone());
+    op_iter_--;
 }
 
 bool CowOpIter::Done() {
@@ -487,31 +590,103 @@ class CowRevMergeOpIter final : public ICowOpIter {
   public:
     explicit CowRevMergeOpIter(std::shared_ptr<std::vector<CowOperation>> ops,
                                std::shared_ptr<std::vector<uint32_t>> merge_op_blocks,
-                               std::shared_ptr<std::unordered_map<uint32_t, int>> map);
+                               std::shared_ptr<std::unordered_map<uint32_t, int>> map,
+                               uint64_t start);
 
     bool Done() override;
     const CowOperation& Get() override;
     void Next() override;
+
+    void Prev() override;
+    bool RDone() override;
 
   private:
     std::shared_ptr<std::vector<CowOperation>> ops_;
     std::shared_ptr<std::vector<uint32_t>> merge_op_blocks_;
     std::shared_ptr<std::unordered_map<uint32_t, int>> map_;
     std::vector<uint32_t>::reverse_iterator block_riter_;
+    uint64_t start_;
 };
 
-CowRevMergeOpIter::CowRevMergeOpIter(std::shared_ptr<std::vector<CowOperation>> ops,
-                                     std::shared_ptr<std::vector<uint32_t>> merge_op_blocks,
-                                     std::shared_ptr<std::unordered_map<uint32_t, int>> map) {
+class CowMergeOpIter final : public ICowOpIter {
+  public:
+    explicit CowMergeOpIter(std::shared_ptr<std::vector<CowOperation>> ops,
+                            std::shared_ptr<std::vector<uint32_t>> merge_op_blocks,
+                            std::shared_ptr<std::unordered_map<uint32_t, int>> map, uint64_t start);
+
+    bool Done() override;
+    const CowOperation& Get() override;
+    void Next() override;
+
+    void Prev() override;
+    bool RDone() override;
+
+  private:
+    std::shared_ptr<std::vector<CowOperation>> ops_;
+    std::shared_ptr<std::vector<uint32_t>> merge_op_blocks_;
+    std::shared_ptr<std::unordered_map<uint32_t, int>> map_;
+    std::vector<uint32_t>::iterator block_iter_;
+    uint64_t start_;
+};
+
+CowMergeOpIter::CowMergeOpIter(std::shared_ptr<std::vector<CowOperation>> ops,
+                               std::shared_ptr<std::vector<uint32_t>> merge_op_blocks,
+                               std::shared_ptr<std::unordered_map<uint32_t, int>> map,
+                               uint64_t start) {
     ops_ = ops;
     merge_op_blocks_ = merge_op_blocks;
     map_ = map;
+    start_ = start;
+
+    block_iter_ = merge_op_blocks->begin() + start;
+}
+
+bool CowMergeOpIter::RDone() {
+    return block_iter_ == merge_op_blocks_->begin();
+}
+
+void CowMergeOpIter::Prev() {
+    CHECK(!RDone());
+    block_iter_--;
+}
+
+bool CowMergeOpIter::Done() {
+    return block_iter_ == merge_op_blocks_->end();
+}
+
+void CowMergeOpIter::Next() {
+    CHECK(!Done());
+    block_iter_++;
+}
+
+const CowOperation& CowMergeOpIter::Get() {
+    CHECK(!Done());
+    return ops_->data()[map_->at(*block_iter_)];
+}
+
+CowRevMergeOpIter::CowRevMergeOpIter(std::shared_ptr<std::vector<CowOperation>> ops,
+                                     std::shared_ptr<std::vector<uint32_t>> merge_op_blocks,
+                                     std::shared_ptr<std::unordered_map<uint32_t, int>> map,
+                                     uint64_t start) {
+    ops_ = ops;
+    merge_op_blocks_ = merge_op_blocks;
+    map_ = map;
+    start_ = start;
 
     block_riter_ = merge_op_blocks->rbegin();
 }
 
+bool CowRevMergeOpIter::RDone() {
+    return block_riter_ == merge_op_blocks_->rbegin();
+}
+
+void CowRevMergeOpIter::Prev() {
+    CHECK(!RDone());
+    block_riter_--;
+}
+
 bool CowRevMergeOpIter::Done() {
-    return block_riter_ == merge_op_blocks_->rend();
+    return block_riter_ == merge_op_blocks_->rend() - start_;
 }
 
 void CowRevMergeOpIter::Next() {
@@ -528,8 +703,14 @@ std::unique_ptr<ICowOpIter> CowReader::GetOpIter() {
     return std::make_unique<CowOpIter>(ops_);
 }
 
-std::unique_ptr<ICowOpIter> CowReader::GetRevMergeOpIter() {
-    return std::make_unique<CowRevMergeOpIter>(ops_, merge_op_blocks_, block_map_);
+std::unique_ptr<ICowOpIter> CowReader::GetRevMergeOpIter(bool ignore_progress) {
+    return std::make_unique<CowRevMergeOpIter>(ops_, merge_op_blocks_, block_map_,
+                                               ignore_progress ? 0 : merge_op_start_);
+}
+
+std::unique_ptr<ICowOpIter> CowReader::GetMergeOpIter(bool ignore_progress) {
+    return std::make_unique<CowMergeOpIter>(ops_, merge_op_blocks_, block_map_,
+                                            ignore_progress ? 0 : merge_op_start_);
 }
 
 bool CowReader::GetRawBytes(uint64_t offset, void* buffer, size_t len, size_t* read) {
@@ -599,7 +780,13 @@ bool CowReader::ReadData(const CowOperation& op, IByteSink* sink) {
             return false;
     }
 
-    CowDataStream stream(this, op.source, op.data_length);
+    uint64_t offset;
+    if (op.type == kCowXorOp) {
+        offset = data_loc_->at(op.new_block);
+    } else {
+        offset = op.source;
+    }
+    CowDataStream stream(this, offset, op.data_length);
     decompressor->set_stream(&stream);
     decompressor->set_sink(sink);
     return decompressor->Decompress(header_.block_size);

@@ -30,19 +30,30 @@
 #include <unwindstack/Elf.h>
 #include <unwindstack/Memory.h>
 
+#include "utils/OfflineUnwindUtils.h"
+
 #include "Utils.h"
 
+std::string GetBenchmarkFilesDirectory() {
+  std::string path = android::base::GetExecutableDirectory() + "/benchmarks/files/";
+  unwindstack::DecompressFiles(path);
+  return path;
+}
+
 std::string GetElfFile() {
-  return android::base::GetExecutableDirectory() + "/benchmarks/files/libart_arm.so";
+  return GetBenchmarkFilesDirectory() + "libart_arm.so";
 }
 
 std::string GetSymbolSortedElfFile() {
-  return android::base::GetExecutableDirectory() + "/benchmarks/files/boot_arm.oat";
+  return GetBenchmarkFilesDirectory() + "boot_arm.oat";
 }
 
-std::string GetCompressedElfFile() {
-  // Both are the same right now.
-  return GetSymbolSortedElfFile();
+std::string GetLargeCompressedFrameElfFile() {
+  return GetBenchmarkFilesDirectory() + "libpac.so";
+}
+
+std::string GetLargeEhFrameElfFile() {
+  return GetBenchmarkFilesDirectory() + "libLLVM_android.so";
 }
 
 #if defined(__BIONIC__)

@@ -99,7 +99,9 @@ struct TracingCategory {
 
 /* Tracing categories */
 static const TracingCategory k_categories[] = {
-    { "gfx",        "Graphics",                 ATRACE_TAG_GRAPHICS, { } },
+    { "gfx",        "Graphics",                 ATRACE_TAG_GRAPHICS, {
+        { OPT,      "events/gpu_mem/gpu_mem_total/enable" },
+    } },
     { "input",      "Input",                    ATRACE_TAG_INPUT, { } },
     { "view",       "View System",              ATRACE_TAG_VIEW, { } },
     { "webview",    "WebView",                  ATRACE_TAG_WEBVIEW, { } },
@@ -124,7 +126,6 @@ static const TracingCategory k_categories[] = {
     { "aidl",       "AIDL calls",               ATRACE_TAG_AIDL, { } },
     { "nnapi",      "NNAPI",                    ATRACE_TAG_NNAPI, { } },
     { "rro",        "Runtime Resource Overlay", ATRACE_TAG_RRO, { } },
-    { "sysprop",    "System Property",          ATRACE_TAG_SYSPROP, { } },
     { k_coreServiceCategory, "Core services", 0, { } },
     { k_pdxServiceCategory, "PDX services", 0, { } },
     { "sched",      "CPU Scheduling",   0, {
@@ -238,12 +239,13 @@ static const TracingCategory k_categories[] = {
     } },
     { "memory",  "Memory", 0, {
         { OPT,      "events/mm_event/mm_event_record/enable" },
-        { OPT,      "events/kmem/rss_stat/enable" },
+        { OPT,      "events/synthetic/rss_stat_throttled/enable" },
         { OPT,      "events/kmem/ion_heap_grow/enable" },
         { OPT,      "events/kmem/ion_heap_shrink/enable" },
         { OPT,      "events/ion/ion_stat/enable" },
+        { OPT,      "events/gpu_mem/gpu_mem_total/enable" },
     } },
-    { "thermal",  "Thermal event", 0, {
+    { "thermal",  "Thermal event", ATRACE_TAG_THERMAL, {
         { REQ,      "events/thermal/thermal_temperature/enable" },
         { OPT,      "events/thermal/cdev_update/enable" },
     } },

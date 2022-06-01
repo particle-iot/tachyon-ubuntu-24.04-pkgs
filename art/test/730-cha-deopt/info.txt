@@ -1,2 +1,0 @@
-Test that dynamically loading a class which invalidates single implementation
-assumptions, make compiled code deoptimize.

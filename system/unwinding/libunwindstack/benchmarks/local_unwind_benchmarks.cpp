@@ -28,6 +28,7 @@
 #include <unwindstack/Regs.h>
 #include <unwindstack/RegsGetLocal.h>
 #include <unwindstack/Unwinder.h>
+#include "MemoryLocalUnsafe.h"
 
 constexpr size_t kMaxFrames = 32;
 
@@ -199,3 +200,15 @@ static void BM_local_unwind_local_updatable_maps_cached_no_func_names(benchmark:
   Run(state, Unwind, &data);
 }
 BENCHMARK(BM_local_unwind_local_updatable_maps_cached_no_func_names);
+
+static void BM_local_unwind_uncached_process_memory_unsafe_reads(benchmark::State& state) {
+  std::shared_ptr<unwindstack::Memory> process_memory(new unwindstack::MemoryLocalUnsafe());
+  unwindstack::LocalMaps maps;
+  if (!maps.Parse()) {
+    state.SkipWithError("Failed to parse local maps.");
+  }
+
+  UnwindData data = {.process_memory = process_memory, .maps = &maps, .resolve_names = true};
+  Run(state, Unwind, &data);
+}
+BENCHMARK(BM_local_unwind_uncached_process_memory_unsafe_reads);

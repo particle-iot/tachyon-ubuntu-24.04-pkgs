@@ -1,3 +1,0 @@
-JNI_OnLoad called
-Starting up!
-This is my object!

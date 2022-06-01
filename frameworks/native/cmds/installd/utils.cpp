@@ -19,17 +19,21 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fts.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <sys/capability.h>
+#include <sys/pidfd.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
-#include <sys/statvfs.h>
+#include <unistd.h>
+#include <uuid/uuid.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
-#include <android-base/strings.h>
 #include <android-base/stringprintf.h>
+#include <android-base/strings.h>
 #include <android-base/unique_fd.h>
 #include <cutils/fs.h>
 #include <cutils/properties.h>
@@ -47,6 +51,7 @@
 
 #define DEBUG_XATTRS 0
 
+using android::base::Dirname;
 using android::base::EndsWith;
 using android::base::Fdopendir;
 using android::base::StringPrintf;
@@ -54,6 +59,10 @@ using android::base::unique_fd;
 
 namespace android {
 namespace installd {
+
+using namespace std::literals;
+
+static constexpr auto deletedSuffix = "==deleted=="sv;
 
 /**
  * Check that given string is valid filename, and that it attempts no
@@ -595,6 +604,97 @@ int delete_dir_contents(const char *pathname,
     return res;
 }
 
+static std::string make_unique_name(std::string_view suffix) {
+    static constexpr auto uuidStringSize = 36;
+
+    uuid_t guid;
+    uuid_generate(guid);
+
+    std::string name;
+    const auto suffixSize = suffix.size();
+    name.reserve(uuidStringSize + suffixSize);
+
+    name.resize(uuidStringSize);
+    uuid_unparse(guid, name.data());
+    name.append(suffix);
+
+    return name;
+}
+
+static int rename_delete_dir_contents(const std::string& pathname,
+                                      int (*exclusion_predicate)(const char*, const int),
+                                      bool ignore_if_missing) {
+    auto temp_dir_name = make_unique_name(deletedSuffix);
+    auto temp_dir_path =
+            base::StringPrintf("%s/%s", Dirname(pathname).c_str(), temp_dir_name.c_str());
+
+    if (::rename(pathname.c_str(), temp_dir_path.c_str())) {
+        if (ignore_if_missing && (errno == ENOENT)) {
+            return 0;
+        }
+        ALOGE("Couldn't rename %s -> %s: %s \n", pathname.c_str(), temp_dir_path.c_str(),
+              strerror(errno));
+        return -errno;
+    }
+
+    return delete_dir_contents(temp_dir_path.c_str(), 1, exclusion_predicate, ignore_if_missing);
+}
+
+bool is_renamed_deleted_dir(const std::string& path) {
+    if (path.size() < deletedSuffix.size()) {
+        return false;
+    }
+    std::string_view pathSuffix{path.c_str() + path.size() - deletedSuffix.size()};
+    return pathSuffix == deletedSuffix;
+}
+
+int rename_delete_dir_contents_and_dir(const std::string& pathname, bool ignore_if_missing) {
+    return rename_delete_dir_contents(pathname, nullptr, ignore_if_missing);
+}
+
+static auto open_dir(const char* dir) {
+    struct DirCloser {
+        void operator()(DIR* d) const noexcept { ::closedir(d); }
+    };
+    return std::unique_ptr<DIR, DirCloser>(::opendir(dir));
+}
+
+void cleanup_invalid_package_dirs_under_path(const std::string& pathname) {
+    auto dir = open_dir(pathname.c_str());
+    if (!dir) {
+        return;
+    }
+    int dfd = dirfd(dir.get());
+    if (dfd < 0) {
+        ALOGE("Couldn't dirfd %s: %s\n", pathname.c_str(), strerror(errno));
+        return;
+    }
+
+    struct dirent* de;
+    while ((de = readdir(dir.get()))) {
+        if (de->d_type != DT_DIR) {
+            continue;
+        }
+
+        std::string name{de->d_name};
+        // always skip "." and ".."
+        if (name == "." || name == "..") {
+            continue;
+        }
+
+        if (is_renamed_deleted_dir(name) || !is_valid_filename(name) ||
+            !is_valid_package_name(name)) {
+            ALOGI("Deleting renamed or invalid data directory: %s\n", name.c_str());
+            // Deleting the content.
+            delete_dir_contents_fd(dfd, name.c_str());
+            // Deleting the directory
+            if (unlinkat(dfd, name.c_str(), AT_REMOVEDIR) < 0) {
+                ALOGE("Couldn't unlinkat %s: %s\n", name.c_str(), strerror(errno));
+            }
+        }
+    }
+}
+
 int delete_dir_contents_fd(int dfd, const char *name)
 {
     int fd, res;
@@ -829,7 +929,7 @@ void remove_path_xattr(const std::string& path, const char* inode_xattr) {
  * to top level directories (i.e. have "..").
  */
 static int validate_path(const std::string& dir, const std::string& path, int maxSubdirs) {
-    // Argument sanity checking
+    // Argument check
     if (dir.find('/') != 0 || dir.rfind('/') != dir.size() - 1
             || dir.find("..") != std::string::npos) {
         LOG(ERROR) << "Invalid directory " << dir;
@@ -962,30 +1062,45 @@ int ensure_config_user_dirs(userid_t userid) {
     return fs_prepare_dir(path.c_str(), 0750, uid, gid);
 }
 
-int wait_child(pid_t pid)
-{
+static int wait_child(pid_t pid) {
     int status;
-    pid_t got_pid;
+    pid_t got_pid = TEMP_FAILURE_RETRY(waitpid(pid, &status, /*options=*/0));
 
-    while (1) {
-        got_pid = waitpid(pid, &status, 0);
-        if (got_pid == -1 && errno == EINTR) {
-            printf("waitpid interrupted, retrying\n");
-        } else {
-            break;
-        }
-    }
     if (got_pid != pid) {
-        ALOGW("waitpid failed: wanted %d, got %d: %s\n",
-            (int) pid, (int) got_pid, strerror(errno));
-        return 1;
+        PLOG(ERROR) << "waitpid failed: wanted " << pid << ", got " << got_pid;
+        return W_EXITCODE(/*exit_code=*/255, /*signal_number=*/0);
     }
 
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-        return 0;
-    } else {
-        return status;      /* always nonzero */
+    return status;
+}
+
+int wait_child_with_timeout(pid_t pid, int timeout_ms) {
+    int pidfd = pidfd_open(pid, /*flags=*/0);
+    if (pidfd < 0) {
+        PLOG(ERROR) << "pidfd_open failed for pid " << pid;
+        kill(pid, SIGKILL);
+        return wait_child(pid);
     }
+
+    struct pollfd pfd;
+    pfd.fd = pidfd;
+    pfd.events = POLLIN;
+    int poll_ret = TEMP_FAILURE_RETRY(poll(&pfd, /*nfds=*/1, timeout_ms));
+
+    close(pidfd);
+
+    if (poll_ret < 0) {
+        PLOG(ERROR) << "poll failed for pid " << pid;
+        kill(pid, SIGKILL);
+        return wait_child(pid);
+    }
+    if (poll_ret == 0) {
+        LOG(WARNING) << "Child process " << pid << " timed out after " << timeout_ms
+                     << "ms. Killing it";
+        kill(pid, SIGKILL);
+        return wait_child(pid);
+    }
+    return wait_child(pid);
 }
 
 /**
@@ -1196,6 +1311,28 @@ void drop_capabilities(uid_t uid) {
         PLOG(ERROR) << "capset failed";
         exit(DexoptReturnCodes::kCapSet);
     }
+}
+
+bool remove_file_at_fd(int fd, /*out*/ std::string* path) {
+    char path_buffer[PATH_MAX + 1];
+    std::string proc_path = android::base::StringPrintf("/proc/self/fd/%d", fd);
+    ssize_t len = readlink(proc_path.c_str(), path_buffer, PATH_MAX);
+    if (len < 0) {
+        PLOG(WARNING) << "Could not remove file at fd " << fd << ": Failed to get file path";
+        return false;
+    }
+    path_buffer[len] = '\0';
+    if (path != nullptr) {
+        *path = path_buffer;
+    }
+    if (unlink(path_buffer) != 0) {
+        if (errno == ENOENT) {
+            return true;
+        }
+        PLOG(WARNING) << "Could not remove file at path " << path_buffer;
+        return false;
+    }
+    return true;
 }
 
 }  // namespace installd

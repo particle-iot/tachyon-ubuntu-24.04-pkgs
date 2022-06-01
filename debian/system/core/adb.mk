@@ -1,5 +1,6 @@
 NAME = adb
 
+# packages/modules/adb/Android.bp
 SOURCES = \
   client/adb_client.cpp \
   client/bugreport.cpp \
@@ -9,6 +10,7 @@ SOURCES = \
   client/console.cpp \
   client/adb_install.cpp \
   client/line_printer.cpp \
+  client/fastdeploycallbacks.cpp \
   client/incremental.cpp \
   client/incremental_server.cpp \
   client/incremental_utils.cpp \
@@ -19,6 +21,7 @@ SOURCES = \
   proto/key_type.pb.cc \
   proto/pairing.pb.cc \
 #  fastdeploy/proto/ApkEntry.pb.cc \
+#  client/fastdeploy.cpp \
 
 SOURCES := $(foreach source, $(SOURCES), packages/modules/adb/$(source))
 SOURCES_CPP = $(filter %.cpp,$(SOURCES))
@@ -31,8 +34,6 @@ CPPFLAGS += \
   -D_GNU_SOURCE \
   -DADB_HOST=1 \
   -DADB_VERSION='"$(DEB_VERSION)"' \
-  -I/usr/include \
-  -I/usr/include/android \
   -Ifastdeploy/proto \
   -Ipackages/modules/adb \
   -Ipackages/modules/adb/proto \
@@ -40,10 +41,13 @@ CPPFLAGS += \
   -Isystem/core/include \
   -Isystem/libbase/include \
   -Isystem/libziparchive/include \
+  \
+  -I/usr/include/android \
 
 LDFLAGS += \
-  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Ldebian/out/external \
   -Ldebian/out/system/core \
+  -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -fuse-ld=gold \
   -lbase \

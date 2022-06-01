@@ -7,7 +7,7 @@ SOURCES = \
 SOURCES := $(foreach source, $(SOURCES), system/core/libsparse/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++17 -fpermissive
+CXXFLAGS += -std=gnu++2a -fpermissive
 CPPFLAGS += \
   -Isystem/core/libsparse/include \
 

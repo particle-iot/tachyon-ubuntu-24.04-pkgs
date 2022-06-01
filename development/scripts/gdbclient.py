@@ -35,23 +35,11 @@ g_temp_dirs = []
 
 
 def read_toolchain_config(root):
-    """Finds out current toolchain path and version."""
-    def get_value(str):
-        return str[str.index('"') + 1:str.rindex('"')]
-
-    config_path = os.path.join(root, 'build', 'soong', 'cc', 'config',
-                               'global.go')
-    with open(config_path) as f:
-        contents = f.readlines()
-    clang_base = ""
-    clang_version = ""
-    for line in contents:
-        line = line.strip()
-        if line.startswith('ClangDefaultBase'):
-            clang_base = get_value(line)
-        elif line.startswith('ClangDefaultVersion'):
-            clang_version = get_value(line)
-    return (clang_base, clang_version)
+    """Finds out current toolchain version."""
+    version_output = subprocess.check_output(
+        f'{root}/build/soong/scripts/get_clang_version.py',
+        text=True)
+    return version_output.strip()
 
 
 def get_lldb_path(toolchain_path):
@@ -114,6 +102,9 @@ def parse_args():
     parser.add_argument(
         "--env", nargs=1, action="append", metavar="VAR=VALUE",
         help="set environment variable when running a binary")
+    parser.add_argument(
+        "--chroot", nargs='?', default="", metavar="PATH",
+        help="run command in a chroot in the given directory")
 
     return parser.parse_args()
 
@@ -327,7 +318,10 @@ def do_main():
     sysroot = os.path.join(os.environ["ANDROID_PRODUCT_OUT"], "symbols")
 
     # Make sure the environment matches the attached device.
-    verify_device(root, device)
+    # Skip when running in a chroot because the chroot lunch target may not
+    # match the device's lunch target.
+    if not args.chroot:
+        verify_device(root, device)
 
     debug_socket = "/data/local/tmp/debug_socket"
     pid = None
@@ -348,7 +342,8 @@ def do_main():
         is64bit = arch.endswith("64")
 
         # Make sure we have the linker
-        clang_base, clang_version = read_toolchain_config(root)
+        clang_base = 'prebuilts/clang/host'
+        clang_version = read_toolchain_config(root)
         toolchain_path = os.path.join(root, clang_base, platform_name,
                                       clang_version)
         llvm_readobj_path = os.path.join(toolchain_path, "bin", "llvm-readobj")
@@ -367,7 +362,7 @@ def do_main():
             gdbrunner.start_gdbserver(
                 device, server_local_path, server_remote_path,
                 target_pid=pid, run_cmd=run_cmd, debug_socket=debug_socket,
-                port=args.port, run_as_cmd=cmd_prefix, lldb=True)
+                port=args.port, run_as_cmd=cmd_prefix, lldb=True, chroot=args.chroot)
         else:
             print(
                 "Connecting to tracing pid {} using local port {}".format(
@@ -408,7 +403,7 @@ def do_main():
                         lldb-server connection. Press enter in this terminal once debugging is
                         finished to shut lldb-server down and close all the ports."""))
             print("")
-            raw_input("Press enter to shut down lldb-server")
+            input("Press enter to shut down lldb-server")
 
 
 def main():
