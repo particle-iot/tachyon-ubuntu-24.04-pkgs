@@ -1,3 +1,11 @@
+android-platform-tools (33.0.1-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * Build libutils and libbacktrace for mipsel mips64el ppc64el riscv64.
+  * Build adb and fastboot for ppc64el riscv64.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 03 Jun 2022 01:29:42 +0900
+
 android-platform-tools (33.0.1-1~exp2) experimental; urgency=medium
 
   * Team upload.

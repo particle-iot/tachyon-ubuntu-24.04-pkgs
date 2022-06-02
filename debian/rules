@@ -73,6 +73,8 @@ s/append2simg: debian/system/append2simg.mk s/simg2img
 COMPONENTS = \
   e/libcpu_features.so \
   e/liblzma.so \
+  s/append2simg \
+  s/img2simg \
   s/libbacktrace.so \
   s/libbase.so \
   s/libcutils.so \
@@ -81,13 +83,11 @@ COMPONENTS = \
   s/libutils.so \
   s/libziparchive.so \
   s/simg2img \
-  s/img2simg \
-  s/append2simg \
   s/simg2simg \
 
 # Whatever depends on BoringSSL must be disabled on MIPS
 NON_MIPS_COMPONENTS = s/adb s/fastboot
-ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
   COMPONENTS += $(NON_MIPS_COMPONENTS)
 endif
 
@@ -104,7 +104,7 @@ COMPONENTS_ANY_ARCH = \
   s/simg2img \
   s/simg2simg \
 
-ifeq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
+ifeq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
   COMPONENTS := $(filter $(COMPONENTS_ANY_ARCH), $(COMPONENTS))
 endif
 
@@ -154,7 +154,7 @@ override_dh_auto_build-arch: $(COMPONENTS)
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test-arch:
 	debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.png --encode && debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.pkm --decode
-ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb help
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb keygen key.txt && ls -l key.txt* && rm key.txt*
@@ -168,7 +168,7 @@ override_dh_auto_install:
 
 override_dh_auto_configure:
 	rm -rf external/dlmalloc development/[a-s]* development/v* development/testrunner
-ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
 	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
 		(cd $$proto && \
 			find . -name '*.proto' -printf 'Regenerate %p\n' \

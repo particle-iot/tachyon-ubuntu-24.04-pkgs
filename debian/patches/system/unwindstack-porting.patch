@@ -1,0 +1,13 @@
+Description: unwindstack porting
+Forwarded: not-needed
+--- a/system/unwinding/libunwindstack/include/unwindstack/RegsGetLocal.h
++++ b/system/unwinding/libunwindstack/include/unwindstack/RegsGetLocal.h
+@@ -81,7 +81,7 @@ inline __attribute__((__always_inline__)) void AsmGetRegs(void* reg_data) {
+       : "x12", "x13", "memory");
+ }
+ 
+-#elif defined(__i386__) || defined(__x86_64__)
++#else
+ 
+ extern "C" void AsmGetRegs(void* regs);
+ 

@@ -4,25 +4,23 @@ Priority: optional
 Maintainer: Android Tools Maintainers <android-tools-devel@lists.alioth.debian.org>
 Uploaders: Chirayu Desai <chirayudesai1@gmail.com>
 Build-Depends:
- android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64],
+ android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 ppc64el mipsel mips64el riscv64],
  bash-completion,
  clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x powerpc ppc64 sparc64 riscv64],
  debhelper-compat (= 13),
  dh-exec,
- libbrotli-dev [amd64 i386 armel armhf arm64],
+ libbrotli-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
  libgtest-dev,
- libicu-dev [amd64 i386 armel armhf arm64],
- liblz4-dev [amd64 i386 armel armhf arm64],
+ liblz4-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
  libpcre3-dev,
  libpng-dev,
- libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64],
- libsquashfuse-dev [amd64 i386 armel armhf arm64],
- libusb-1.0-0-dev [amd64 i386 armel armhf arm64],
- libzstd-dev [amd64 i386 armel armhf arm64],
+ libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ libsquashfuse-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ libusb-1.0-0-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ libzstd-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
  pandoc,
- protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64],
+ protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 ppc64el riscv64],
  python3 [amd64 i386 arm64],
- zlib1g-dev [amd64 i386 armel armhf arm64],
 Standards-Version: 4.5.0
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/android-tools-team/android-platform-tools.git
@@ -104,7 +102,7 @@ Description: Android utils library for C - Development files
 
 Package: adb
 Section: utils
-Architecture: amd64 i386 armel armhf arm64
+Architecture: amd64 i386 armel armhf arm64 ppc64el riscv64
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libcutils (= ${binary:Version}),
@@ -148,7 +146,7 @@ Description: Library for sparse files - Development files
 
 Package: android-libutils
 Section: libs
-Architecture: amd64 i386 armel armhf arm64
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbacktrace (= ${binary:Version}),
@@ -212,7 +210,7 @@ Description: Shared headers in AOSP repository platform/system/core
 
 Package: android-libbacktrace
 Section: libs
-Architecture: amd64 i386 armel armhf arm64
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
@@ -294,7 +292,7 @@ Description: Creates Android boot images
 
 Package: fastboot
 Section: utils
-Architecture: amd64 i386 armel armhf arm64
+Architecture: amd64 i386 armel armhf arm64 ppc64el riscv64
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libcutils (= ${binary:Version}),
