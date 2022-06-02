@@ -40,7 +40,7 @@ CPPFLAGS += \
   -Isystem/unwinding/libbacktrace/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -lbacktrace \
@@ -56,8 +56,8 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
 endif
 
 build: $(OBJECTS)
-	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
-	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
+	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

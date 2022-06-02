@@ -51,7 +51,7 @@ CPPFLAGS += \
   -Isystem/logging/liblog/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -lbase \
@@ -60,8 +60,8 @@ LDFLAGS += \
   -shared
 
 build: $(OBJECTS_C) $(OBJECTS_CXX)
-	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
-	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
+	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 
 $(OBJECTS_C): %.o: %.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(CPPFLAGS)

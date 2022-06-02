@@ -1,6 +1,6 @@
-NAME = img2simg
+NAME = append2simg
 
-SOURCES = img2simg.cpp
+SOURCES = append2simg.cpp
 
 SOURCES := $(foreach source, $(SOURCES), system/core/libsparse/$(source))
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -10,14 +10,14 @@ CPPFLAGS += \
   -Isystem/core/libsparse/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -lbase \
   -llog \
   -lpthread \
   -lsparse \
 
-debian/out/system/core/$(NAME): $(OBJECTS)
+debian/out/system/$(NAME): $(OBJECTS)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS): %.o: %.cpp

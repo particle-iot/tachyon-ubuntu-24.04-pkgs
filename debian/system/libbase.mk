@@ -40,7 +40,7 @@ CPPFLAGS += \
   -Isystem/logging/liblog/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -llog \
@@ -54,8 +54,8 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
 endif
 
 build: $(OBJECTS_CC) $(OBJECTS_CPP)
-	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
-	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
+	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 
 $(OBJECTS_CPP): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

@@ -1,1 +1,1 @@
-debian/out/system/core/fastboot   usr/lib/android-sdk/platform-tools/
+debian/out/system/fastboot   usr/lib/android-sdk/platform-tools/

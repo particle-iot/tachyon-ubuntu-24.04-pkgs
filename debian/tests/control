@@ -1,4 +1,4 @@
-## system-core
+## system
 
 Test-Command: adb version
 Architecture: amd64 i386 armel armhf arm64

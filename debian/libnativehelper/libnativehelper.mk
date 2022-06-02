@@ -21,7 +21,7 @@ CPPFLAGS += \
   -Isystem/logging/liblog/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -ldl \

@@ -32,9 +32,9 @@ LDFLAGS += \
   -shared
 
 build: $(OBJECTS)
-	mkdir -p debian/out/system/core
-	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
-	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
+	mkdir -p debian/out/system
+	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

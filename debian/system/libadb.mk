@@ -83,7 +83,7 @@ GEN := dummy.cpp
 SOURCES := \
   $(foreach source, $(LOCAL_SRC_FILES), packages/modules/adb/$(source)) \
   $(foreach source, $(LIBDIAGNOSE_USB_SRC_FILES), system/core/$(source)) \
-  $(foreach source, $(GEN), debian/out/system/core/$(source)) \
+  $(foreach source, $(GEN), debian/out/system/$(source)) \
 
 OBJECTS = $(SOURCES:.cpp=.o)
 
@@ -114,14 +114,14 @@ CPPFLAGS += \
   \
   -I/usr/include/android \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS)
+debian/out/system/$(NAME).a: $(OBJECTS)
 	ar -rcs $@ $^
 
 $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)
 
-debian/out/system/core/dummy.cpp:
-	mkdir --parents debian/out/system/core
+debian/out/system/dummy.cpp:
+	mkdir -p debian/out/system
 	rm -f $@
 	echo '#include <adb_wifi.h>' >> $@
 	echo '#include <adb_mdns.h>' >> $@

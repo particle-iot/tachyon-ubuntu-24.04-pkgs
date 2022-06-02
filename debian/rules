@@ -15,7 +15,7 @@ export DEB_SOURCE
 
 export DEB_HOST_MULTIARCH
 
-## system/core
+## system
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
 # https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.1/sdk/plat_tools_source.prop_template
@@ -32,61 +32,61 @@ endif
 get-orig-source:
 	debian/scripts/get-orig-source
 
-## system/core
+## system
 
-s/core/lib%.a: debian/system/core/lib%.mk
+s/lib%.a: debian/system/lib%.mk
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/lib%.so: debian/system/core/lib%.mk
+s/lib%.so: debian/system/lib%.mk
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-debian/manpages/system/core/%.1: debian/manpages/system/core/%.1.md
+debian/manpages/system/%.1: debian/manpages/system/%.1.md
 	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
 
-s/core/libbacktrace.so: debian/system/core/libbacktrace.mk s/core/libcutils.so e/liblzma.so e/libcpu_features.so
+s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so e/libcpu_features.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/libbase.so: debian/system/core/libbase.mk s/core/liblog.so
+s/libbase.so: debian/system/libbase.mk s/liblog.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/libcutils.so: debian/system/core/libcutils.mk s/core/libbase.so
+s/libcutils.so: debian/system/libcutils.mk s/libbase.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/adb: debian/system/core/adb.mk s/core/libziparchive.so s/core/libadb.a s/core/libcrypto_utils.a s/core/libcutils.so debian/manpages/system/core/adb.1
+s/adb: debian/system/adb.mk s/libziparchive.so s/libadb.a s/libcrypto_utils.a s/libcutils.so debian/manpages/system/adb.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/fastboot: debian/system/core/fastboot.mk s/core/adb s/extras/libext4_utils.a s/core/libsparse.so debian/manpages/system/core/fastboot.1
+s/fastboot: debian/system/fastboot.mk s/adb s/extras/libext4_utils.a s/libsparse.so debian/manpages/system/fastboot.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/simg2img: debian/system/core/simg2img.mk s/core/libbase.so s/core/libsparse.so
+s/simg2img: debian/system/simg2img.mk s/libbase.so s/libsparse.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/simg2simg: debian/system/core/simg2simg.mk s/core/simg2img
+s/simg2simg: debian/system/simg2simg.mk s/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/img2simg: debian/system/core/img2simg.mk s/core/simg2img
+s/img2simg: debian/system/img2simg.mk s/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/core/append2simg: debian/system/core/append2simg.mk s/core/simg2img
+s/append2simg: debian/system/append2simg.mk s/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS = \
   e/libcpu_features.so \
   e/liblzma.so \
-  s/core/libbacktrace.so \
-  s/core/libbase.so \
-  s/core/libcutils.so \
-  s/core/liblog.so \
-  s/core/libsparse.so \
-  s/core/libutils.so \
-  s/core/libziparchive.so \
-  s/core/simg2img \
-  s/core/img2simg \
-  s/core/append2simg \
-  s/core/simg2simg \
+  s/libbacktrace.so \
+  s/libbase.so \
+  s/libcutils.so \
+  s/liblog.so \
+  s/libsparse.so \
+  s/libutils.so \
+  s/libziparchive.so \
+  s/simg2img \
+  s/img2simg \
+  s/append2simg \
+  s/simg2simg \
 
 # Whatever depends on BoringSSL must be disabled on MIPS
-NON_MIPS_COMPONENTS = s/core/adb s/core/fastboot
+NON_MIPS_COMPONENTS = s/adb s/fastboot
 ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
   COMPONENTS += $(NON_MIPS_COMPONENTS)
 endif
@@ -94,15 +94,15 @@ endif
 # Most components only support ARM, x86 and MIPS, but some can be built
 # on all architectures.
 COMPONENTS_ANY_ARCH = \
-  s/core/append2simg \
-  s/core/img2simg \
-  s/core/libbase.so \
-  s/core/libcutils.so \
-  s/core/liblog.so \
-  s/core/libsparse.so \
-  s/core/libziparchive.so \
-  s/core/simg2img \
-  s/core/simg2simg \
+  s/append2simg \
+  s/img2simg \
+  s/libbase.so \
+  s/libcutils.so \
+  s/liblog.so \
+  s/libsparse.so \
+  s/libziparchive.so \
+  s/simg2img \
+  s/simg2simg \
 
 ifeq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
   COMPONENTS := $(filter $(COMPONENTS_ANY_ARCH), $(COMPONENTS))
@@ -155,11 +155,11 @@ ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test-arch:
 	debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.png --encode && debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.pkm --decode
 ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
-	LD_LIBRARY_PATH=debian/out/system/core debian/out/system/core/adb version
-	LD_LIBRARY_PATH=debian/out/system/core debian/out/system/core/adb help
-	LD_LIBRARY_PATH=debian/out/system/core debian/out/system/core/adb keygen key.txt && ls -l key.txt* && rm key.txt*
-	LD_LIBRARY_PATH=debian/out/system/core debian/out/system/core/fastboot --version
-	LD_LIBRARY_PATH=debian/out/system/core debian/out/system/core/fastboot devices
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb version
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb help
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb keygen key.txt && ls -l key.txt* && rm key.txt*
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot --version
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot devices
 endif
 endif
 
@@ -167,7 +167,7 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure:
-	rm -rf development/[a-s]* development/v* development/testrunner
+	rm -rf external/dlmalloc development/[a-s]* development/v* development/testrunner
 ifneq ($(filter amd64 i386 armel armhf arm64,$(DEB_HOST_ARCH)),)
 	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
 		(cd $$proto && \

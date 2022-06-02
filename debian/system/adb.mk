@@ -46,7 +46,7 @@ CPPFLAGS += \
 
 LDFLAGS += \
   -Ldebian/out/external \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -fuse-ld=gold \
@@ -64,8 +64,8 @@ LDFLAGS += \
   -lzstd \
 
 STATIC_LIBS = \
-  debian/out/system/core/libadb.a \
-  debian/out/system/core/libcrypto_utils.a \
+  debian/out/system/libadb.a \
+  debian/out/system/libcrypto_utils.a \
 
 # -latomic should be the last library specified
 # https://github.com/android/ndk/issues/589
@@ -73,7 +73,7 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
   LDFLAGS += -latomic
 endif
 
-debian/out/system/core/$(NAME): $(OBJECTS_CC) $(OBJECTS_CPP) $(STATIC_LIBS)
+debian/out/system/$(NAME): $(OBJECTS_CC) $(OBJECTS_CPP) $(STATIC_LIBS)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS_CPP): %.o: %.cpp

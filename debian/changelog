@@ -1,3 +1,16 @@
+android-platform-tools (33.0.1-1~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches:
+    - Use 2 patches from master branch to fix GCC ftbfs.
+    - Add 2 patches to fix GCC ftbfs.
+  * debian/rules: Remove external/dlmalloc
+  * *.mk and debian/rules: Rename d/system/core to d/system
+  * Remove debian/README.Debian.boringssl
+  * debian/copyright: Update based on d/orig.excludes
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 02 Jun 2022 19:06:12 +0900
+
 android-platform-tools (33.0.1-1~exp1) experimental; urgency=medium
 
   * Team upload.

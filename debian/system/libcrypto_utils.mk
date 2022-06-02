@@ -10,7 +10,7 @@ CPPFLAGS += \
   \
   -I/usr/include/android \
 
-debian/out/system/core/$(NAME).a: $(OBJECTS)
+debian/out/system/$(NAME).a: $(OBJECTS)
 	ar -rcs $@ $^
 
 $(OBJECTS): %.o: %.cpp

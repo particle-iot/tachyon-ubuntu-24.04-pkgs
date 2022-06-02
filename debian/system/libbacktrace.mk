@@ -70,7 +70,7 @@ CPPFLAGS += \
   -Isystem/unwinding/libunwindstack/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -lbase \
@@ -85,8 +85,8 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
 endif
 
 build: $(OBJECTS_CXX) $(OBJECTS_ASSEMBLY)
-	$(CXX) $^ -o debian/out/system/core/$(NAME).so.0 $(LDFLAGS)
-	ln -sf $(NAME).so.0 debian/out/system/core/$(NAME).so
+	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
+	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 
 $(OBJECTS_CXX): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

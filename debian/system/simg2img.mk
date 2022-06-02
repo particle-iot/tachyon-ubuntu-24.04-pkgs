@@ -12,14 +12,14 @@ CPPFLAGS += \
   -Isystem/core/libsparse/include \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -lbase \
   -llog \
   -lpthread \
   -lsparse \
 
-debian/out/system/core/$(NAME): $(OBJECTS)
+debian/out/system/$(NAME): $(OBJECTS)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS): %.o: %.cpp

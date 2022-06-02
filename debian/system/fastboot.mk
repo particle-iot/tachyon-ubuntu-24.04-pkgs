@@ -51,7 +51,7 @@ CPPFLAGS += \
   -I/usr/include/android \
 
 LDFLAGS += \
-  -Ldebian/out/system/core \
+  -Ldebian/out/system \
   -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -fuse-ld=gold \
@@ -65,7 +65,7 @@ LDFLAGS += \
   -lziparchive \
 
 STATIC_LIBS = \
-  debian/out/system/core/libadb.a \
+  debian/out/system/libadb.a \
   debian/out/system/extras/libext4_utils.a \
 
 # -latomic should be the last library specified
@@ -74,7 +74,7 @@ ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
   LDFLAGS += -latomic
 endif
 
-debian/out/system/core/$(NAME): $(OBJECTS) $(STATIC_LIBS)
+debian/out/system/$(NAME): $(OBJECTS) $(STATIC_LIBS)
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 $(OBJECTS): %.o: %.cpp
