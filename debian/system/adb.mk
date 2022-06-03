@@ -45,16 +45,15 @@ CPPFLAGS += \
   -I/usr/include/android \
 
 LDFLAGS += \
-  -Ldebian/out/external \
   -Ldebian/out/system \
   -L/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
-  -fuse-ld=gold \
   -lbase \
   -lbrotlidec \
   -lbrotlienc \
   -lcrypto \
   -lcutils \
+  -llog \
   -llz4 \
   -lprotobuf \
   -lpthread \

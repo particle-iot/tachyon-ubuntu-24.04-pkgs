@@ -1,3 +1,14 @@
+android-platform-tools (33.0.1-1~exp4) experimental; urgency=medium
+
+  * Team upload.
+  * debian/*.mk:
+    - Remove gold linker to fix ftbfs on riscv64.
+  * debian/rules:
+    - Use override_dh_auto_configure-arch to speed up "all" build.
+    - Add adb and fastboot build on mips*el.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 03 Jun 2022 18:43:20 +0900
+
 android-platform-tools (33.0.1-1~exp3) experimental; urgency=medium
 
   * Team upload.

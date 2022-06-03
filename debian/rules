@@ -87,7 +87,7 @@ COMPONENTS = \
 
 # Whatever depends on BoringSSL must be disabled on MIPS
 NON_MIPS_COMPONENTS = s/adb s/fastboot
-ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
   COMPONENTS += $(NON_MIPS_COMPONENTS)
 endif
 
@@ -154,7 +154,7 @@ override_dh_auto_build-arch: $(COMPONENTS)
 ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 override_dh_auto_test-arch:
 	debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.png --encode && debian/out/development/etc1tool development/tools/templates/ic_launcher_ldpi.pkm --decode
-ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb help
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb keygen key.txt && ls -l key.txt* && rm key.txt*
@@ -166,16 +166,15 @@ endif
 override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
-override_dh_auto_configure:
+override_dh_auto_configure-arch:
 	rm -rf external/dlmalloc development/[a-s]* development/v* development/testrunner
-ifneq ($(filter amd64 i386 armel armhf arm64 ppc64el riscv64,$(DEB_HOST_ARCH)),)
+ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
 	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
 		(cd $$proto && \
 			find . -name '*.proto' -printf 'Regenerate %p\n' \
 			-exec protoc --cpp_out=. {} \;) \
 	done
 endif
-	dh_auto_configure
 
 override_dh_gencontrol:
 	dh_gencontrol

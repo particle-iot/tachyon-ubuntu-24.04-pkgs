@@ -4,22 +4,23 @@ Priority: optional
 Maintainer: Android Tools Maintainers <android-tools-devel@lists.alioth.debian.org>
 Uploaders: Chirayu Desai <chirayudesai1@gmail.com>
 Build-Depends:
- android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 ppc64el mipsel mips64el riscv64],
  bash-completion,
- clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x powerpc ppc64 sparc64 riscv64],
  debhelper-compat (= 13),
  dh-exec,
- libbrotli-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
+Build-Depends-Arch:
+ android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 ppc64el mipsel mips64el riscv64],
+ clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x powerpc ppc64 sparc64 riscv64],
+ libbrotli-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libgtest-dev,
- liblz4-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ liblz4-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libpcre3-dev,
  libpng-dev,
- libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 ppc64el riscv64],
- libsquashfuse-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
- libusb-1.0-0-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
- libzstd-dev [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ libsquashfuse-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ libusb-1.0-0-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ libzstd-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  pandoc,
- protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 ppc64el riscv64],
+ protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  python3 [amd64 i386 arm64],
 Standards-Version: 4.5.0
 Rules-Requires-Root: no
@@ -102,7 +103,7 @@ Description: Android utils library for C - Development files
 
 Package: adb
 Section: utils
-Architecture: amd64 i386 armel armhf arm64 ppc64el riscv64
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libcutils (= ${binary:Version}),
@@ -292,7 +293,7 @@ Description: Creates Android boot images
 
 Package: fastboot
 Section: utils
-Architecture: amd64 i386 armel armhf arm64 ppc64el riscv64
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libcutils (= ${binary:Version}),
