@@ -1,3 +1,14 @@
+android-platform-tools (33.0.1-1~exp5) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control: Convert android-*-dev to Architecture: any
+    (Closes: #982326).
+  * Minor fix for lintian.
+  * debian/tests/control:
+    - Add adb/fastboot test to archs: mipsel mips64el ppc64el riscv64
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 04 Jun 2022 00:50:23 +0900
+
 android-platform-tools (33.0.1-1~exp4) experimental; urgency=medium
 
   * Team upload.

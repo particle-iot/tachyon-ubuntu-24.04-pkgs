@@ -61,10 +61,9 @@ Description: Android NDK logger interfaces
 
 Package: android-liblog-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-liblog (>= 1:${source:Upstream-Version}),
-         android-liblog (<< ${binary:Version}.0~),
+         android-liblog (= ${binary:Version}),
 Description: Android NDK logger interfaces - Development files
  liblog represents an interface to the volatile Android Logging system for NDK
  (Native) applications and libraries. Interfaces for either writing or reading
@@ -87,12 +86,11 @@ Description: Android utils library for C
 
 Package: android-libcutils-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libcutils (>= 1:${source:Upstream-Version}),
-         android-libcutils (<< ${binary:Version}.0~),
+         android-libcutils (= ${binary:Version}),
          android-libbase-dev (= ${binary:Version}),
-         android-platform-system-core-headers (= ${binary:Version}),
+         android-platform-system-core-headers (= ${source:Version}),
          libbsd-dev,
 Description: Android utils library for C - Development files
  This library provides common functionalities for android related tools.
@@ -133,10 +131,9 @@ Description: Library for sparse files
 
 Package: android-libsparse-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libsparse (>= 1:${source:Upstream-Version}),
-         android-libsparse (<< ${binary:Version}.0~),
+         android-libsparse (= ${binary:Version}),
 Description: Library for sparse files - Development files
  This library provides APIs for creating, manipulating and destroying sparse
  files.
@@ -159,13 +156,12 @@ Description: Android Utility Function Library
 
 Package: android-libutils-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
          android-libbacktrace-dev (= ${binary:Version}),
          android-libcutils-dev (= ${binary:Version}),
-         android-libutils (>= 1:${source:Upstream-Version}),
-         android-libutils (<< ${binary:Version}.0~),
-         android-platform-system-core-headers (= ${binary:Version}),
+         android-libutils (= ${binary:Version}),
+         android-platform-system-core-headers (= ${source:Version}),
 Description: Android Utility Function Library - Development files
  This library provides miscellaneous utility functions.
  .
@@ -186,10 +182,9 @@ Description: Library for ZIP archives
 
 Package: android-libziparchive-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libziparchive (>= 1:${source:Upstream-Version}),
-         android-libziparchive (<< ${binary:Version}.0~),
+         android-libziparchive (= ${binary:Version}),
          libgtest-dev,
 Description: Library for ZIP archives - Development files
  This library provides APIs for creating and manipulating ZIP archives.
@@ -201,6 +196,7 @@ Description: Library for ZIP archives - Development files
 Package: android-platform-system-core-headers
 Section: libdevel
 Architecture: all
+Multi-Arch: foreign
 Depends: ${misc:Depends}
 Breaks: android-libunwind-dev (<< 10.0.0+r36-5)
 Description: Shared headers in AOSP repository platform/system/core
@@ -221,10 +217,9 @@ Description: Android backtrace library
 
 Package: android-libbacktrace-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libbacktrace (>= 1:${source:Upstream-Version}),
-         android-libbacktrace (<< ${binary:Version}.0~),
+         android-libbacktrace (= ${binary:Version}),
 Description: Android backtrace library - Development files
  This library is only used by Android SDK currently.
  .
@@ -244,10 +239,9 @@ Description: Android base library
 
 Package: android-libbase-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libbase (>= 1:${source:Upstream-Version}),
-         android-libbase (<< ${binary:Version}.0~),
+         android-libbase (= ${binary:Version}),
          android-liblog-dev (= ${binary:Version}),
 Description: Android base library - Development files
  This library provides APIs for basic tasks like handling files, Unicode
@@ -268,10 +262,9 @@ Description: Support functions for Android's class libraries
 
 Package: android-libnativehelper-dev
 Section: libdevel
-Architecture: all
+Architecture: any
 Depends: ${misc:Depends},
-         android-libnativehelper (>= ${source:Upstream-Version}),
-         android-libnativehelper (<< ${binary:Version}.0~),
+         android-libnativehelper (= ${binary:Version}),
 Breaks: android-libnativehelper (<< 10.0.0+r36-3)
 Replaces: android-libnativehelper (<< 10.0.0+r36-3)
 Description: Support functions for Android's class libraries - Development files
@@ -307,6 +300,10 @@ Provides: android-tools-fastboot
 Description: Android fastboot tool
  A command line tool for flashing an Android device, boot an Android device to
  fastboot mode, etc..
+ .
+ This package recommends "android-sdk-platform-tools-common" which contains
+ the udev rules for Android devices. Without this package, adb and fastboot need
+ to be running with root permission.
 
 Package: etc1tool
 Architecture: any

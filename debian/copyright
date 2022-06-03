@@ -73,7 +73,7 @@ Files: system/core/*
 Copyright: 2005-2014, The Android Open Source Project
 License: Apache-2.0
 
-Files: debian/bash-completion/system/core/*
+Files: debian/bash-completion/*
 Copyright: 2009, Matt Brubeck
 License: MIT
 
