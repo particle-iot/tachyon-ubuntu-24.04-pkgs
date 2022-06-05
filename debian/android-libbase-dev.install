@@ -1,1 +1,2 @@
 system/libbase/include/android-base usr/include/android
+external/fmtlib/include/fmt         usr/include/android

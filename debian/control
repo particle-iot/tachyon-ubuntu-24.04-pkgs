@@ -90,7 +90,7 @@ Architecture: any
 Depends: ${misc:Depends},
          android-libcutils (= ${binary:Version}),
          android-libbase-dev (= ${binary:Version}),
-         android-platform-system-core-headers (= ${source:Version}),
+         android-platform-system-core-headers (= 1:${source:Version}),
          libbsd-dev,
 Description: Android utils library for C - Development files
  This library provides common functionalities for android related tools.
@@ -106,8 +106,6 @@ Multi-Arch: foreign
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libcutils (= ${binary:Version}),
 Recommends: android-sdk-platform-tools-common (>= 28.0.2~)
-Breaks: android-tools-adb (<< 6.0~)
-Replaces: android-tools-adb (<< 6.0~)
 Provides: android-tools-adb
 Description: Android Debug Bridge
  A versatile command line tool that lets you communicate with an emulator
@@ -161,7 +159,7 @@ Depends: ${misc:Depends},
          android-libbacktrace-dev (= ${binary:Version}),
          android-libcutils-dev (= ${binary:Version}),
          android-libutils (= ${binary:Version}),
-         android-platform-system-core-headers (= ${source:Version}),
+         android-platform-system-core-headers (= 1:${source:Version}),
 Description: Android Utility Function Library - Development files
  This library provides miscellaneous utility functions.
  .
@@ -294,8 +292,6 @@ Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libziparchive (= ${binary:Version}),
 Recommends: android-sdk-platform-tools-common (>= 28.0.2~)
 Suggests: android-sdk-platform-tools
-Breaks: android-tools-fastboot (<< 6.0~)
-Replaces: android-tools-fastboot (<< 6.0~)
 Provides: android-tools-fastboot
 Description: Android fastboot tool
  A command line tool for flashing an Android device, boot an Android device to

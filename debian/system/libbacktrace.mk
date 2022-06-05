@@ -43,6 +43,8 @@ libunwindstack_SOURCES := \
   ThreadEntry.cpp \
   ThreadUnwinder.cpp \
   Unwinder.cpp \
+  \
+  LogStdout.cpp \
 
 ifeq ($(DEB_HOST_ARCH), amd64)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsX86_64.S
