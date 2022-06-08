@@ -48,9 +48,12 @@ libunwindstack_SOURCES := \
 
 ifeq ($(DEB_HOST_ARCH), amd64)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsX86_64.S
-endif
-ifeq ($(DEB_HOST_ARCH), i386)
+else ifeq ($(DEB_HOST_ARCH), i386)
   SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsX86.S
+else ifeq ($(DEB_HOST_ARCH), mips64el)
+  SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips64.S
+else ifeq ($(DEB_HOST_ARCH), mipsel)
+  SOURCES_ASSEMBLY = libunwindstack/AsmGetRegsMips.S
 endif
 
 SOURCES = \

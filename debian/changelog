@@ -1,3 +1,13 @@
+android-platform-tools (33.0.1-1~exp7) experimental; urgency=medium
+
+  * Team upload.
+  * Revert 1 upstream patch to restore mips support for libbacktrace.
+  * debian/control:
+    - Remove Depends on p7zip-full, since we already switched to
+      external/lzma.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 08 Jun 2022 20:15:50 +0900
+
 android-platform-tools (33.0.1-1~exp6) experimental; urgency=medium
 
   * Team upload.

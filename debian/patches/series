@@ -13,5 +13,6 @@ system/fix-standard-namespace-errors.patch
 system/workaround__builtin_available.patch
 system/unwindstack-porting.patch
 system/support-mips.patch
+system/Revert-Remove-mips-build.patch
 development/typos.patch
 libnativehelper/Nullable.patch

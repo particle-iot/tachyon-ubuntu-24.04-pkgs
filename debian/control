@@ -209,7 +209,6 @@ Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
-         p7zip-full,
 Description: Android backtrace library
  This library is only used by Android SDK currently.
 
