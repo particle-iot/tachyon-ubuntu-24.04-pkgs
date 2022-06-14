@@ -61,6 +61,7 @@ LDFLAGS += \
   -lusb-1.0 \
   -lziparchive \
   -lzstd \
+  -pie \
 
 STATIC_LIBS = \
   debian/out/system/libadb.a \

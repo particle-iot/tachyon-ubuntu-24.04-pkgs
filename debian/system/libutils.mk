@@ -43,14 +43,12 @@ CPPFLAGS += \
   -Idebian/extra/incremental_delivery/incfs/util/include \
 
 LDFLAGS += \
-  -Ldebian/out/external \
   -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
   -Wl,-soname,$(NAME).so.0 \
   -lbacktrace \
   -lcutils \
   -llog \
-  -llzma \
   -lpthread \
   -shared
 

@@ -21,7 +21,7 @@ OBJECTS_C = $(SOURCES_C:.c=.o)
 SOURCES_CXX = $(filter %.cpp,$(SOURCES))
 OBJECTS_CXX = $(SOURCES_CXX:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a -fno-strict-aliasing
+CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -D_GNU_SOURCE \
   -D_LARGEFILE64_SOURCE \
@@ -36,7 +36,6 @@ CPPFLAGS += \
   -Isystem/libbase/include \
 
 debian/out/system/extras/libext4_utils.a: $(OBJECTS_C) $(OBJECTS_CXX)
-	mkdir -p debian/out/system/extras
 	ar -rcs $@ $^
 
 $(OBJECTS_C): %.o: %.c

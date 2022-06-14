@@ -46,13 +46,16 @@ OBJECTS := $(SOURCES:.c=.o)
 CPPFLAGS += \
   -D_7ZIP_ST \
   -Iexternal/lzma/C \
+  -Wno-empty-body \
+  -Wno-enum-conversion \
+  -Wno-logical-op-parentheses \
+  -Wno-self-assign \
 
 LDFLAGS += \
   -Wl,-soname,$(NAME).so.0 \
   -shared
 
 build: $(OBJECTS)
-	mkdir -p debian/out/external
 	$(CXX) $^ -o debian/out/external/$(NAME).so.0 $(LDFLAGS)
 	ln -sf $(NAME).so.0 debian/out/external/$(NAME).so
 

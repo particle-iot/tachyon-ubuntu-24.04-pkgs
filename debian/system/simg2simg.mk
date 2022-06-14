@@ -18,6 +18,7 @@ LDFLAGS += \
   -llog \
   -lpthread \
   -lsparse \
+  -pie \
 
 # force GCC, clang fails on:
 # libsparse/simg2simg.cpp:75:11: error: assigning to 'struct sparse_file **' from incompatible type 'void *'

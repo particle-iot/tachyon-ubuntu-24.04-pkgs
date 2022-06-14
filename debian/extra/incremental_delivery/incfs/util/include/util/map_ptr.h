@@ -180,6 +180,11 @@ public:
             return *this;
         }
 
+        const const_iterator& operator--() {
+            safe_ptr_--;
+            return *this;
+        }
+
         const_iterator& operator+=(int n) {
             safe_ptr_ = safe_ptr_ + n;
             return *this;
@@ -188,6 +193,12 @@ public:
         const const_iterator operator++(int) {
             const_iterator temp(*this);
             safe_ptr_++;
+            return temp;
+        }
+
+        const const_iterator operator--(int) {
+            const_iterator temp(*this);
+            safe_ptr_--;
             return temp;
         }
 
@@ -318,6 +329,21 @@ public:
         map_ptr<T1> temp = *this;
         LIBINCFS_MAP_PTR_DEBUG_CODE(verified_ = false);
         ++ptr_;
+        return temp;
+    }
+
+    template <typename T1 = T, NotVoid<T1> = 0>
+    const map_ptr<T1>& operator--() {
+        LIBINCFS_MAP_PTR_DEBUG_CODE(verified_ = false);
+        --ptr_;
+        return *this;
+    }
+
+    template <typename T1 = T, NotVoid<T1> = 0>
+    const map_ptr<T1> operator--(int) {
+        map_ptr<T1> temp = *this;
+        LIBINCFS_MAP_PTR_DEBUG_CODE(verified_ = false);
+        --ptr_;
         return temp;
     }
 

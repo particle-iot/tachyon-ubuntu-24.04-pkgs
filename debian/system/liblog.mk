@@ -32,7 +32,6 @@ LDFLAGS += \
   -shared
 
 build: $(OBJECTS)
-	mkdir -p debian/out/system
 	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
 	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so
 

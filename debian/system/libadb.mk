@@ -93,7 +93,6 @@ CXXFLAGS += -std=gnu++2a \
   -Wno-unused-parameter \
   -Wno-missing-field-initializers \
   -Wvla \
-  -fno-exceptions \
 
 CPPFLAGS += \
   -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
@@ -121,7 +120,6 @@ $(OBJECTS): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)
 
 debian/out/system/dummy.cpp:
-	mkdir -p debian/out/system
 	rm -f $@
 	echo '#include <adb_wifi.h>' >> $@
 	echo '#include <adb_mdns.h>' >> $@

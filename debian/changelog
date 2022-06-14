@@ -1,3 +1,19 @@
+android-platform-tools (33.0.1-1~exp8) experimental; urgency=medium
+
+  * Team upload.
+  * debian/extra/incremental_delivery:
+    - Patch map_ptr.h to support operator-- for libstdc++.
+  * debian/*.mk:
+    - Remove -pie from common LDFLAGS and only apply to LDFLAGS for
+      non-library build.
+  * debian/*.install: Move symbolic link library to -dev package.
+  * debian/rules:
+    - mkdir debian/out folder instead of in d/*.mk
+    - Add common CPPFLAGS.
+  * debian/control: Fix -dev package Arch support list.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 14 Jun 2022 23:02:26 +0900
+
 android-platform-tools (33.0.1-1~exp7) experimental; urgency=medium
 
   * Team upload.

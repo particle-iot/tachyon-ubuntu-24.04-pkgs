@@ -34,7 +34,6 @@ LDFLAGS += \
   -shared
 
 build: $(OBJECTS)
-	mkdir -p debian/out/external
 	$(CXX) $^ -o debian/out/external/$(NAME).so.0 $(LDFLAGS)
 	ln -sf $(NAME).so.0 debian/out/external/$(NAME).so
 
