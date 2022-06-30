@@ -191,6 +191,15 @@ Description: Library for ZIP archives - Development files
  .
  This package contains the development files.
 
+Package: android-platform-frameworks-native-headers
+Section: libdevel
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: Headers of android-platform-frameworks-native
+ This package contains headers in include/android in platform/frameworks/native
+ Consists of all the header files ranging from asset_manager.h to window.h.
+
 Package: android-platform-system-core-headers
 Section: libdevel
 Architecture: all
@@ -210,7 +219,8 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
 Description: Android backtrace library
- This library is only used by Android SDK currently.
+ Android backtrace library produce symbolic backtraces for making
+ debugging easier.
 
 Package: android-libbacktrace-dev
 Section: libdevel
@@ -218,7 +228,8 @@ Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Depends: ${misc:Depends},
          android-libbacktrace (= ${binary:Version}),
 Description: Android backtrace library - Development files
- This library is only used by Android SDK currently.
+ Android backtrace library produce symbolic backtraces for making
+ debugging easier.
  .
  This package contains the development files.
 
@@ -255,7 +266,15 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-liblog (= 1:${binary:Version}),
 Description: Support functions for Android's class libraries
- This library is only used by Android SDK currently.
+ libnativehelper is a collection of JNI related utilities used in
+ Android.
+ .
+ There are several header and binary libraries here and not all of the
+ functionality fits together well. The header libraries are mostly C++
+ based. The binary libraries are entirely written in C with no C++
+ dependencies. This is by design as the code here can be distributed in
+ multiple ways, including mainline modules, so keeping the size down
+ benefits everyone with smaller downloads and a stable ABI.
 
 Package: android-libnativehelper-dev
 Section: libdevel
@@ -265,7 +284,15 @@ Depends: ${misc:Depends},
 Breaks: android-libnativehelper (<< 10.0.0+r36-3)
 Replaces: android-libnativehelper (<< 10.0.0+r36-3)
 Description: Support functions for Android's class libraries - Development files
- This library is only used by Android SDK currently.
+ libnativehelper is a collection of JNI related utilities used in
+ Android.
+ .
+ There are several header and binary libraries here and not all of the
+ functionality fits together well. The header libraries are mostly C++
+ based. The binary libraries are entirely written in C with no C++
+ dependencies. This is by design as the code here can be distributed in
+ multiple ways, including mainline modules, so keeping the size down
+ benefits everyone with smaller downloads and a stable ABI.
  .
  This package contains the development files.
 

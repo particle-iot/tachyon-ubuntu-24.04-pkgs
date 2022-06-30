@@ -1,3 +1,15 @@
+android-platform-tools (33.0.1-1~exp9) experimental; urgency=medium
+
+  * Team upload.
+  * debian/upstream/metadata:
+    - Update link for reporting and checking issues.
+  * debian/control: Make pkg description in more detail.
+  * debian/copyright: Update to list new source files.
+  * Remove e/libcpu_features.so since it's not necessary.
+  * Add pkg android-platform-frameworks-native-headers.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 01 Jul 2022 01:49:46 +0900
+
 android-platform-tools (33.0.1-1~exp8) experimental; urgency=medium
 
   * Team upload.

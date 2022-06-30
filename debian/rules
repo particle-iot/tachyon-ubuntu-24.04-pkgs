@@ -53,7 +53,7 @@ s/lib%.so: debian/system/lib%.mk
 debian/manpages/system/%.1: debian/manpages/system/%.1.md
 	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
 
-s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so e/libcpu_features.so
+s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/libbase.so: debian/system/libbase.mk s/liblog.so
@@ -81,7 +81,6 @@ s/append2simg: debian/system/append2simg.mk s/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS = \
-  e/libcpu_features.so \
   e/liblzma.so \
   s/append2simg \
   s/img2simg \
@@ -177,7 +176,7 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure-arch:
-	rm -rf external/dlmalloc development/[a-s]* development/v* development/testrunner
+	rm -rf external/cpu_features external/dlmalloc development/[a-s]* development/v* development/testrunner
 	mkdir -p debian/out/dalvik/tools debian/out/development debian/out/external \
 		debian/out/frameworks/native debian/out/system/extras debian/out/libnativehelper
 ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
@@ -205,6 +204,7 @@ override_dh_gencontrol:
 	dh_gencontrol -pandroid-libutils-dev -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pandroid-libziparchive -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pandroid-libziparchive-dev -- -v1:$(DEB_VERSION)
+	dh_gencontrol -pandroid-platform-frameworks-native-headers -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pandroid-platform-system-core-headers -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pandroid-sdk-libsparse-utils -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pfastboot -- -v1:$(DEB_VERSION)
