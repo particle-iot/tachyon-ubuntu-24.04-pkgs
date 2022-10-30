@@ -95,16 +95,19 @@ bool Backtrace::Unwind(unwindstack::Regs* regs, BacktraceMap* back_map,
         error->error_code = BACKTRACE_UNWIND_ERROR_INVALID_ELF;
         break;
 
-      case unwindstack::ERROR_SYSTEM_CALL:
-        error->error_code = BACKTRACE_UNWIND_ERROR_INTERNAL;
-        break;
-
       case unwindstack::ERROR_THREAD_DOES_NOT_EXIST:
         error->error_code = BACKTRACE_UNWIND_ERROR_THREAD_DOESNT_EXIST;
         break;
 
       case unwindstack::ERROR_THREAD_TIMEOUT:
         error->error_code = BACKTRACE_UNWIND_ERROR_THREAD_TIMEOUT;
+        break;
+
+      case unwindstack::ERROR_SYSTEM_CALL:
+      case unwindstack::ERROR_MAPS_PARSE:
+      case unwindstack::ERROR_BAD_ARCH:
+      case unwindstack::ERROR_INVALID_PARAMETER:
+        error->error_code = BACKTRACE_UNWIND_ERROR_INTERNAL;
         break;
     }
   }

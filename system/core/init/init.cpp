@@ -33,7 +33,6 @@
 #define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
 #include <sys/_system_properties.h>
 
-#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -47,19 +46,19 @@
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/properties.h>
-#include <android-base/scopeguard.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
-#include <backtrace/Backtrace.h>
 #include <fs_avb/fs_avb.h>
 #include <fs_mgr_vendor_overlay.h>
 #include <keyutils.h>
 #include <libavb/libavb.h>
 #include <libgsi/libgsi.h>
 #include <libsnapshot/snapshot.h>
+#include <logwrap/logwrap.h>
 #include <processgroup/processgroup.h>
 #include <processgroup/setup.h>
 #include <selinux/android.h>
+#include <unwindstack/AndroidUnwinder.h>
 
 #include "action_parser.h"
 #include "builtins.h"
@@ -86,6 +85,10 @@
 #include "subcontext.h"
 #include "system/core/init/property_service.pb.h"
 #include "util.h"
+
+#ifndef RECOVERY
+#include "com_android_apex.h"
+#endif  // RECOVERY
 
 using namespace std::chrono_literals;
 using namespace std::string_literals;
@@ -255,12 +258,14 @@ static class ShutdownState {
 } shutdown_state;
 
 static void UnwindMainThreadStack() {
-    std::unique_ptr<Backtrace> backtrace(Backtrace::Create(BACKTRACE_CURRENT_PROCESS, 1));
-    if (!backtrace->Unwind(0)) {
-        LOG(ERROR) << __FUNCTION__ << "sys.powerctl: Failed to unwind callstack.";
+    unwindstack::AndroidLocalUnwinder unwinder;
+    unwindstack::AndroidUnwinderData data;
+    if (!unwinder.Unwind(data)) {
+        LOG(ERROR) << __FUNCTION__
+                   << "sys.powerctl: Failed to unwind callstack: " << data.GetErrorString();
     }
-    for (size_t i = 0; i < backtrace->NumFrames(); i++) {
-        LOG(ERROR) << "sys.powerctl: " << backtrace->FormatFrameData(i);
+    for (const auto& frame : data.frames) {
+        LOG(ERROR) << "sys.powerctl: " << unwinder.FormatFrame(frame);
     }
 }
 
@@ -293,13 +298,59 @@ Parser CreateParser(ActionManager& action_manager, ServiceList& service_list) {
     return parser;
 }
 
-// parser that only accepts new services
-Parser CreateServiceOnlyParser(ServiceList& service_list, bool from_apex) {
-    Parser parser;
+#ifndef RECOVERY
+template <typename T>
+struct LibXmlErrorHandler {
+    T handler_;
+    template <typename Handler>
+    LibXmlErrorHandler(Handler&& handler) : handler_(std::move(handler)) {
+        xmlSetGenericErrorFunc(nullptr, &ErrorHandler);
+    }
+    ~LibXmlErrorHandler() { xmlSetGenericErrorFunc(nullptr, nullptr); }
+    static void ErrorHandler(void*, const char* msg, ...) {
+        va_list args;
+        va_start(args, msg);
+        char* formatted;
+        if (vasprintf(&formatted, msg, args) >= 0) {
+            LOG(ERROR) << formatted;
+        }
+        free(formatted);
+        va_end(args);
+    }
+};
 
-    parser.AddSectionParser(
-            "service", std::make_unique<ServiceParser>(&service_list, GetSubcontext(), std::nullopt,
-                                                       from_apex));
+template <typename Handler>
+LibXmlErrorHandler(Handler&&) -> LibXmlErrorHandler<Handler>;
+#endif  // RECOVERY
+
+// Returns a Parser that accepts scripts from APEX modules. It supports `service` and `on`.
+Parser CreateApexConfigParser(ActionManager& action_manager, ServiceList& service_list) {
+    Parser parser;
+    auto subcontext = GetSubcontext();
+#ifndef RECOVERY
+    if (subcontext) {
+        const auto apex_info_list_file = "/apex/apex-info-list.xml";
+        auto error_handler = LibXmlErrorHandler([&](const auto& error_message) {
+            LOG(ERROR) << "Failed to read " << apex_info_list_file << ":" << error_message;
+        });
+        const auto apex_info_list = com::android::apex::readApexInfoList(apex_info_list_file);
+        if (apex_info_list.has_value()) {
+            std::vector<std::string> subcontext_apexes;
+            for (const auto& info : apex_info_list->getApexInfo()) {
+                if (info.hasPreinstalledModulePath() &&
+                    subcontext->PathMatchesSubcontext(info.getPreinstalledModulePath())) {
+                    subcontext_apexes.push_back(info.getModuleName());
+                }
+            }
+            subcontext->SetApexList(std::move(subcontext_apexes));
+        }
+    }
+#endif  // RECOVERY
+    parser.AddSectionParser("service",
+                            std::make_unique<ServiceParser>(&service_list, subcontext,
+                            std::nullopt));
+    parser.AddSectionParser("on", std::make_unique<ActionParser>(&action_manager, subcontext));
+
     return parser;
 }
 
@@ -392,6 +443,45 @@ static Result<void> DoControlRestart(Service* service) {
     return {};
 }
 
+static Result<void> DoUnloadApex(const std::string& apex_name) {
+    std::string prop_name = "init.apex." + apex_name;
+    // TODO(b/232114573) remove services and actions read from the apex
+    // TODO(b/232799709) kill services from the apex
+    SetProperty(prop_name, "unloaded");
+    return {};
+}
+
+static Result<void> UpdateApexLinkerConfig(const std::string& apex_name) {
+    // Do not invoke linkerconfig when there's no bin/ in the apex.
+    const std::string bin_path = "/apex/" + apex_name + "/bin";
+    if (access(bin_path.c_str(), R_OK) != 0) {
+        return {};
+    }
+    const char* linkerconfig_binary = "/apex/com.android.runtime/bin/linkerconfig";
+    const char* linkerconfig_target = "/linkerconfig";
+    const char* arguments[] = {linkerconfig_binary, "--target", linkerconfig_target, "--apex",
+                               apex_name.c_str(),   "--strict"};
+
+    if (logwrap_fork_execvp(arraysize(arguments), arguments, nullptr, false, LOG_KLOG, false,
+                            nullptr) != 0) {
+        return ErrnoError() << "failed to execute linkerconfig";
+    }
+    LOG(INFO) << "Generated linker configuration for " << apex_name;
+    return {};
+}
+
+static Result<void> DoLoadApex(const std::string& apex_name) {
+    std::string prop_name = "init.apex." + apex_name;
+    // TODO(b/232799709) read .rc files from the apex
+
+    if (auto result = UpdateApexLinkerConfig(apex_name); !result.ok()) {
+        return result.error();
+    }
+
+    SetProperty(prop_name, "loaded");
+    return {};
+}
+
 enum class ControlTarget {
     SERVICE,    // function gets called for the named service
     INTERFACE,  // action gets called for every service that holds this interface
@@ -415,6 +505,17 @@ static const std::map<std::string, ControlMessageFunction, std::less<>>& GetCont
     return control_message_functions;
 }
 
+static Result<void> HandleApexControlMessage(std::string_view action, const std::string& name,
+                                             std::string_view message) {
+    if (action == "load") {
+        return DoLoadApex(name);
+    } else if (action == "unload") {
+        return DoUnloadApex(name);
+    } else {
+        return Error() << "Unknown control msg '" << message << "'";
+    }
+}
+
 static bool HandleControlMessage(std::string_view message, const std::string& name,
                                  pid_t from_pid) {
     std::string cmdline_path = StringPrintf("proc/%d/cmdline", from_pid);
@@ -426,8 +527,20 @@ static bool HandleControlMessage(std::string_view message, const std::string& na
         process_cmdline = "unknown process";
     }
 
-    Service* service = nullptr;
     auto action = message;
+    if (ConsumePrefix(&action, "apex_")) {
+        if (auto result = HandleApexControlMessage(action, name, message); !result.ok()) {
+            LOG(ERROR) << "Control message: Could not ctl." << message << " for '" << name
+                       << "' from pid: " << from_pid << " (" << process_cmdline
+                       << "): " << result.error();
+            return false;
+        }
+        LOG(INFO) << "Control message: Processed ctl." << message << " for '" << name
+                  << "' from pid: " << from_pid << " (" << process_cmdline << ")";
+        return true;
+    }
+
+    Service* service = nullptr;
     if (ConsumePrefix(&action, "interface_")) {
         service = ServiceList::GetInstance().FindInterface(name);
     } else {
@@ -580,12 +693,29 @@ static void HandleSigtermSignal(const signalfd_siginfo& siginfo) {
     HandlePowerctlMessage("shutdown,container");
 }
 
+static constexpr std::chrono::milliseconds kDiagnosticTimeout = 10s;
+
 static void HandleSignalFd() {
     signalfd_siginfo siginfo;
-    ssize_t bytes_read = TEMP_FAILURE_RETRY(read(signal_fd, &siginfo, sizeof(siginfo)));
-    if (bytes_read != sizeof(siginfo)) {
-        PLOG(ERROR) << "Failed to read siginfo from signal_fd";
-        return;
+    auto started = std::chrono::steady_clock::now();
+    for (;;) {
+        ssize_t bytes_read = TEMP_FAILURE_RETRY(read(signal_fd, &siginfo, sizeof(siginfo)));
+        if (bytes_read < 0 && errno == EAGAIN) {
+            auto now = std::chrono::steady_clock::now();
+            std::chrono::duration<double> waited = now - started;
+            if (waited >= kDiagnosticTimeout) {
+                LOG(ERROR) << "epoll() woke us up, but we waited with no SIGCHLD!";
+                started = now;
+            }
+
+            std::this_thread::sleep_for(100ms);
+            continue;
+        }
+        if (bytes_read != sizeof(siginfo)) {
+            PLOG(ERROR) << "Failed to read siginfo from signal_fd";
+            return;
+        }
+        break;
     }
 
     switch (siginfo.ssi_signo) {
@@ -641,7 +771,7 @@ static void InstallSignalFdHandler(Epoll* epoll) {
         LOG(FATAL) << "Failed to register a fork handler: " << strerror(result);
     }
 
-    signal_fd = signalfd(-1, &mask, SFD_CLOEXEC);
+    signal_fd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
     if (signal_fd == -1) {
         PLOG(FATAL) << "failed to create signalfd";
     }
@@ -775,87 +905,15 @@ static Result<void> ConnectEarlyStageSnapuserdAction(const BuiltinArguments& arg
     return {};
 }
 
-static bool SystemReadSmokeTest() {
-    std::string dev = "/dev/block/mapper/system"s + fs_mgr_get_slot_suffix();
-    android::base::unique_fd fd(open(dev.c_str(), O_RDONLY));
-    if (fd < 0) {
-        PLOG(ERROR) << "open " << dev << " failed, will not diangose snapuserd hangs";
-        return false;
-    }
-
-    for (size_t i = 1; i <= 100; i++) {
-        // Skip around the partition a bit.
-        size_t offset = i * 4096 * 512;
-
-        char b;
-        ssize_t n = TEMP_FAILURE_RETRY(pread(fd.get(), &b, 1, offset));
-        if (n < 0) {
-            PLOG(ERROR) << "snapuserd smoke test read failed";
-            return false;
-        }
-    }
-    return true;
-}
-
-static void DiagnoseSnapuserdHang(pid_t pid) {
-    bool succeeded = false;
-
-    std::mutex m;
-    std::condition_variable cv;
-
-    // Enforce an ordering between this and the thread startup, by taking the
-    // lock before we lanuch the thread.
-    std::unique_lock<std::mutex> cv_lock(m);
-
-    std::thread t([&]() -> void {
-        std::lock_guard<std::mutex> lock(m);
-        succeeded = SystemReadSmokeTest();
-        cv.notify_all();
-    });
-
-    auto join = android::base::make_scope_guard([&]() -> void {
-        // If the smoke test is hung, then this will too. We expect the device to
-        // automatically reboot once the watchdog kicks in.
-        t.join();
-    });
-
-    auto now = std::chrono::system_clock::now();
-    auto deadline = now + 10s;
-    auto status = cv.wait_until(cv_lock, deadline);
-    if (status == std::cv_status::timeout) {
-        LOG(ERROR) << "snapuserd smoke test timed out";
-    } else if (!succeeded) {
-        LOG(ERROR) << "snapuserd smoke test failed";
-    }
-
-    if (succeeded) {
-        LOG(INFO) << "snapuserd smoke test succeeded";
-        return;
-    }
-
-    while (true) {
-        LOG(ERROR) << "snapuserd problem detected, printing open fds";
-
-        std::error_code ec;
-        std::string proc_dir = "/proc/" + std::to_string(pid) + "/fd";
-        for (const auto& entry : std::filesystem::directory_iterator(proc_dir)) {
-            std::string target;
-            if (android::base::Readlink(entry.path(), &target)) {
-                LOG(ERROR) << "snapuserd opened: " << target;
-            } else {
-                LOG(ERROR) << "snapuserd opened: " << entry.path();
-            }
-        }
-
-        std::this_thread::sleep_for(10s);
-    }
-}
-
 int SecondStageMain(int argc, char** argv) {
     if (REBOOT_BOOTLOADER_ON_PANIC) {
         InstallRebootSignalHandlers();
     }
 
+    // No threads should be spin up until signalfd
+    // is registered. If the threads are indeed required,
+    // each of these threads _should_ make sure SIGCHLD signal
+    // is blocked. See b/223076262
     boot_clock::time_point start_time = boot_clock::now();
 
     trigger_shutdown = [](const std::string& command) { shutdown_state.TriggerShutdown(command); };
@@ -863,11 +921,6 @@ int SecondStageMain(int argc, char** argv) {
     SetStdioToDevNull(argv);
     InitKernelLogging(argv);
     LOG(INFO) << "init second stage started!";
-
-    if (auto pid = GetSnapuserdFirstStagePid()) {
-        std::thread t(DiagnoseSnapuserdHang, *pid);
-        t.detach();
-    }
 
     // Update $PATH in the case the second stage init is newer than first stage init, where it is
     // first set.
@@ -1020,7 +1073,7 @@ int SecondStageMain(int argc, char** argv) {
     setpriority(PRIO_PROCESS, 0, 0);
     while (true) {
         // By default, sleep until something happens.
-        auto epoll_timeout = std::optional<std::chrono::milliseconds>{};
+        auto epoll_timeout = std::optional<std::chrono::milliseconds>{kDiagnosticTimeout};
 
         auto shutdown_command = shutdown_state.CheckShutdown();
         if (shutdown_command) {
@@ -1059,6 +1112,13 @@ int SecondStageMain(int argc, char** argv) {
             ReapAnyOutstandingChildren();
             for (const auto& function : *pending_functions) {
                 (*function)();
+            }
+        } else if (Service::is_exec_service_running()) {
+            std::chrono::duration<double> waited =
+                    std::chrono::steady_clock::now() - Service::exec_service_started();
+            if (waited >= kDiagnosticTimeout) {
+                LOG(ERROR) << "Exec service is hung? Waited " << waited.count()
+                           << " without SIGCHLD";
             }
         }
         if (!IsShuttingDown()) {

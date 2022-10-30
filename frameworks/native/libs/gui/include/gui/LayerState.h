@@ -26,14 +26,13 @@
 #include <gui/ITransactionCompletedListener.h>
 #include <math/mat4.h>
 
-#ifndef NO_INPUT
-#include <android/FocusRequest.h>
-#include <input/InputWindow.h>
-#endif
+#include <android/gui/DropInputMode.h>
+#include <android/gui/FocusRequest.h>
 
 #include <gui/ISurfaceComposer.h>
 #include <gui/LayerMetadata.h>
 #include <gui/SurfaceControl.h>
+#include <gui/WindowInfo.h>
 #include <math/vec3.h>
 #include <ui/BlurRegion.h>
 #include <ui/GraphicTypes.h>
@@ -62,6 +61,12 @@ struct client_cache_t {
  * Used to communicate layer information between SurfaceFlinger and its clients.
  */
 struct layer_state_t {
+    enum Permission {
+        ACCESS_SURFACE_FLINGER = 0x1,
+        ROTATE_SURFACE_FLINGER = 0x2,
+        INTERNAL_SYSTEM_WINDOW = 0x4,
+    };
+
     enum {
         eLayerHidden = 0x01,         // SURFACE_HIDDEN in SurfaceControl.java
         eLayerOpaque = 0x02,         // SURFACE_OPAQUE
@@ -119,6 +124,7 @@ struct layer_state_t {
         eAutoRefreshChanged = 0x1000'00000000,
         eStretchChanged = 0x2000'00000000,
         eTrustedOverlayChanged = 0x4000'00000000,
+        eDropInputModeChanged = 0x8000'00000000,
     };
 
     layer_state_t();
@@ -128,6 +134,7 @@ struct layer_state_t {
     status_t read(const Parcel& input);
     bool hasBufferChanges() const;
     bool hasValidBuffer() const;
+    void sanitize(int32_t permissions);
 
     struct matrix22_t {
         float dsdx{0};
@@ -178,9 +185,7 @@ struct layer_state_t {
     mat4 colorTransform;
     std::vector<BlurRegion> blurRegions;
 
-#ifndef NO_INPUT
-    sp<InputWindowHandle> inputHandle = new InputWindowHandle();
-#endif
+    sp<gui::WindowInfoHandle> windowInfoHandle = new gui::WindowInfoHandle();
 
     client_cache_t cachedBuffer;
 
@@ -246,6 +251,14 @@ struct layer_state_t {
     // is used to remove the old callback from the client process map if it is
     // overwritten by another setBuffer call.
     ReleaseCallbackId releaseCallbackId;
+
+    // Stores which endpoint the release information should be sent to. We don't want to send the
+    // releaseCallbackId and release fence to all listeners so we store which listener the setBuffer
+    // was called with.
+    sp<IBinder> releaseBufferEndpoint;
+
+    // Force inputflinger to drop all input events for the layer and its children.
+    gui::DropInputMode dropInputMode;
 };
 
 struct ComposerState {
@@ -259,7 +272,8 @@ struct DisplayState {
         eSurfaceChanged = 0x01,
         eLayerStackChanged = 0x02,
         eDisplayProjectionChanged = 0x04,
-        eDisplaySizeChanged = 0x08
+        eDisplaySizeChanged = 0x08,
+        eFlagsChanged = 0x10
     };
 
     DisplayState();
@@ -269,6 +283,7 @@ struct DisplayState {
     sp<IBinder> token;
     sp<IGraphicBufferProducer> surface;
     uint32_t layerStack;
+    uint32_t flags;
 
     // These states define how layers are projected onto the physical display.
     //
@@ -292,9 +307,7 @@ struct DisplayState {
 };
 
 struct InputWindowCommands {
-#ifndef NO_INPUT
-    std::vector<FocusRequest> focusRequests;
-#endif
+    std::vector<gui::FocusRequest> focusRequests;
     bool syncInputWindows{false};
 
     // Merges the passed in commands and returns true if there were any changes.

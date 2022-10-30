@@ -43,10 +43,12 @@
 namespace ndk {
 
 /**
- * analog using std::shared_ptr for internally held refcount
+ * Binder analog to using std::shared_ptr for an internally held refcount.
  *
  * ref must be called at least one time during the lifetime of this object. The recommended way to
  * construct this object is with SharedRefBase::make.
+ *
+ * If you need a "this" shared reference analogous to shared_from_this, use this->ref().
  */
 class SharedRefBase {
    public:
@@ -256,7 +258,11 @@ AIBinder_Class* ICInterface::defineClass(const char* interfaceDescriptor,
     // ourselves. The defaults are harmless.
     AIBinder_Class_setOnDump(clazz, ICInterfaceData::onDump);
 #ifdef HAS_BINDER_SHELL_COMMAND
+#ifdef __ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__
     if (__builtin_available(android 30, *)) {
+#else
+    if (__ANDROID_API__ >= 30) {
+#endif
         AIBinder_Class_setHandleShellCommand(clazz, ICInterfaceData::handleShellCommand);
     }
 #endif

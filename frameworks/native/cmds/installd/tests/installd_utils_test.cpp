@@ -21,6 +21,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/scopeguard.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "InstalldNativeService.h"
@@ -46,6 +47,8 @@
 
 namespace android {
 namespace installd {
+
+using ::testing::UnorderedElementsAre;
 
 class UtilsTest : public testing::Test {
 protected:
@@ -656,6 +659,59 @@ TEST_F(UtilsTest, TestCreateDirIfNeeded) {
 
     // Check that call fails if parent doesn't exist.
     ASSERT_NE(0, create_dir_if_needed("/data/local/tmp/user/0/bar/baz", 0700));
+}
+
+TEST_F(UtilsTest, TestForEachSubdir) {
+    auto deleter = [&]() {
+        delete_dir_contents_and_dir("/data/local/tmp/user/0", true /* ignore_if_missing */);
+    };
+    auto scope_guard = android::base::make_scope_guard(deleter);
+
+    system("mkdir -p /data/local/tmp/user/0/com.foo");
+    system("mkdir -p /data/local/tmp/user/0/com.bar");
+    system("touch /data/local/tmp/user/0/some-file");
+
+    std::vector<std::string> result;
+    foreach_subdir("/data/local/tmp/user/0",
+                   [&](const std::string &filename) { result.push_back(filename); });
+
+    EXPECT_THAT(result, UnorderedElementsAre("com.foo", "com.bar"));
+}
+
+TEST_F(UtilsTest, TestSdkSandboxDataPaths) {
+    // Ce data paths
+    EXPECT_EQ("/data/misc_ce/0/sdksandbox",
+              create_data_misc_sdk_sandbox_path(nullptr, /*isCeData=*/true, 0));
+    EXPECT_EQ("/data/misc_ce/10/sdksandbox", create_data_misc_sdk_sandbox_path(nullptr, true, 10));
+
+    EXPECT_EQ("/data/misc_ce/0/sdksandbox/com.foo",
+              create_data_misc_sdk_sandbox_package_path(nullptr, true, 0, "com.foo"));
+    EXPECT_EQ("/data/misc_ce/10/sdksandbox/com.foo",
+              create_data_misc_sdk_sandbox_package_path(nullptr, true, 10, "com.foo"));
+
+    EXPECT_EQ("/data/misc_ce/0/sdksandbox/com.foo/shared",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, true, 0, "com.foo", "shared"));
+    EXPECT_EQ("/data/misc_ce/10/sdksandbox/com.foo/shared",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, true, 10, "com.foo", "shared"));
+    EXPECT_EQ("/data/misc_ce/10/sdksandbox/com.foo/bar@random",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, true, 10, "com.foo", "bar@random"));
+
+    // De data paths
+    EXPECT_EQ("/data/misc_de/0/sdksandbox",
+              create_data_misc_sdk_sandbox_path(nullptr, /*isCeData=*/false, 0));
+    EXPECT_EQ("/data/misc_de/10/sdksandbox", create_data_misc_sdk_sandbox_path(nullptr, false, 10));
+
+    EXPECT_EQ("/data/misc_de/0/sdksandbox/com.foo",
+              create_data_misc_sdk_sandbox_package_path(nullptr, false, 0, "com.foo"));
+    EXPECT_EQ("/data/misc_de/10/sdksandbox/com.foo",
+              create_data_misc_sdk_sandbox_package_path(nullptr, false, 10, "com.foo"));
+
+    EXPECT_EQ("/data/misc_de/0/sdksandbox/com.foo/shared",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, false, 0, "com.foo", "shared"));
+    EXPECT_EQ("/data/misc_de/10/sdksandbox/com.foo/shared",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, false, 10, "com.foo", "shared"));
+    EXPECT_EQ("/data/misc_de/10/sdksandbox/com.foo/bar@random",
+              create_data_misc_sdk_sandbox_sdk_path(nullptr, false, 10, "com.foo", "bar@random"));
 }
 
 TEST_F(UtilsTest, WaitChild) {

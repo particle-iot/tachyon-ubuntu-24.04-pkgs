@@ -879,6 +879,11 @@ TEST_F(DexoptTest, ResolveStartupConstStrings) {
 
 TEST_F(DexoptTest, DexoptDex2oat64Enabled) {
     LOG(INFO) << "DexoptDex2oat64Enabled";
+    std::string zygote_prop = android::base::GetProperty("ro.zygote", "");
+    ASSERT_GT(zygote_prop.size(), 0);
+    if (zygote_prop != "zygote32_64" && zygote_prop != "zygote64_32") {
+        GTEST_SKIP() << "DexoptDex2oat64Enabled skipped for single-bitness Zygote.";
+    }
     const std::string property = "dalvik.vm.dex2oat64.enabled";
     const std::string previous_value = android::base::GetProperty(property, "");
     auto restore_property = android::base::make_scope_guard([=]() {
@@ -1288,6 +1293,58 @@ TEST_F(ProfileTest, ProfilePrepareFailProfileChangedUid) {
     preparePackageProfile(package_name_, "primary.prof", /*expected_result*/ false);
 }
 
+TEST_F(ProfileTest, ClearAppProfilesOk) {
+    LOG(INFO) << "ClearAppProfilesOk";
+
+    ASSERT_BINDER_SUCCESS(service_->clearAppProfiles(package_name_, "primary.prof"));
+    ASSERT_BINDER_SUCCESS(service_->clearAppProfiles(package_name_, "image_editor.split.prof"));
+}
+
+TEST_F(ProfileTest, ClearAppProfilesFailWrongProfileName) {
+    LOG(INFO) << "ClearAppProfilesFailWrongProfileName";
+
+    ASSERT_BINDER_FAIL(
+            service_->clearAppProfiles(package_name_,
+                                       "../../../../dalvik-cache/arm64/"
+                                       "system@app@SecureElement@SecureElement.apk@classes.vdex"));
+    ASSERT_BINDER_FAIL(service_->clearAppProfiles(package_name_, "image_editor.split.apk"));
+}
+
+TEST_F(ProfileTest, CopySystemProfileOk) {
+    LOG(INFO) << "CopySystemProfileOk";
+
+    bool result;
+    ASSERT_BINDER_SUCCESS(
+            service_->copySystemProfile("/data/app/random.string/package.name.random/base.apk.prof",
+                                        kTestAppUid, package_name_, "primary.prof", &result));
+}
+
+TEST_F(ProfileTest, CopySystemProfileFailWrongSystemProfilePath) {
+    LOG(INFO) << "CopySystemProfileFailWrongSystemProfilePath";
+
+    bool result;
+    ASSERT_BINDER_FAIL(service_->copySystemProfile("../../secret.dat", kTestAppUid, package_name_,
+                                                   "primary.prof", &result));
+    ASSERT_BINDER_FAIL(service_->copySystemProfile("/data/user/package.name/secret.data",
+                                                   kTestAppUid, package_name_, "primary.prof",
+                                                   &result));
+}
+
+TEST_F(ProfileTest, CopySystemProfileFailWrongProfileName) {
+    LOG(INFO) << "CopySystemProfileFailWrongProfileName";
+
+    bool result;
+    ASSERT_BINDER_FAIL(
+            service_->copySystemProfile("/data/app/random.string/package.name.random/base.apk.prof",
+                                        kTestAppUid, package_name_,
+                                        "../../../../dalvik-cache/arm64/test.vdex", &result));
+    ASSERT_BINDER_FAIL(
+            service_->copySystemProfile("/data/app/random.string/package.name.random/base.apk.prof",
+                                        kTestAppUid, package_name_, "/test.prof", &result));
+    ASSERT_BINDER_FAIL(
+            service_->copySystemProfile("/data/app/random.string/package.name.random/base.apk.prof",
+                                        kTestAppUid, package_name_, "base.apk", &result));
+}
 
 class BootProfileTest : public ProfileTest {
   public:

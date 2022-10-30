@@ -449,8 +449,7 @@ bool EventHub::Device::hasKeycodeLocked(int keycode) const {
         return false;
     }
 
-    std::vector<int32_t> scanCodes;
-    keyMap.keyLayoutMap->findScanCodesForKey(keycode, &scanCodes);
+    std::vector<int32_t> scanCodes = keyMap.keyLayoutMap->findScanCodesForKey(keycode);
     const size_t N = scanCodes.size();
     for (size_t i = 0; i < N && i <= KEY_MAX; i++) {
         int32_t sc = scanCodes[i];
@@ -545,10 +544,10 @@ status_t EventHub::Device::mapLed(int32_t led, int32_t* outScanCode) const {
         return NAME_NOT_FOUND;
     }
 
-    int32_t scanCode;
-    if (keyMap.keyLayoutMap->findScanCodeForLed(led, &scanCode) != NAME_NOT_FOUND) {
-        if (scanCode >= 0 && scanCode <= LED_MAX && ledBitmask.test(scanCode)) {
-            *outScanCode = scanCode;
+    std::optional<int32_t> scanCode = keyMap.keyLayoutMap->findScanCodeForLed(led);
+    if (scanCode.has_value()) {
+        if (*scanCode >= 0 && *scanCode <= LED_MAX && ledBitmask.test(*scanCode)) {
+            *outScanCode = *scanCode;
             return NO_ERROR;
         }
     }
@@ -862,8 +861,7 @@ int32_t EventHub::getKeyCodeState(int32_t deviceId, int32_t keyCode) const {
 
     Device* device = getDeviceLocked(deviceId);
     if (device != nullptr && device->hasValidFd() && device->keyMap.haveKeyLayout()) {
-        std::vector<int32_t> scanCodes;
-        device->keyMap.keyLayoutMap->findScanCodesForKey(keyCode, &scanCodes);
+        std::vector<int32_t> scanCodes = device->keyMap.keyLayoutMap->findScanCodesForKey(keyCode);
         if (scanCodes.size() != 0) {
             if (device->readDeviceBitMask(EVIOCGKEY(0), device->keyState) >= 0) {
                 for (size_t i = 0; i < scanCodes.size(); i++) {
@@ -921,20 +919,16 @@ bool EventHub::markSupportedKeyCodes(int32_t deviceId, size_t numCodes, const in
 
     Device* device = getDeviceLocked(deviceId);
     if (device != nullptr && device->keyMap.haveKeyLayout()) {
-        std::vector<int32_t> scanCodes;
         for (size_t codeIndex = 0; codeIndex < numCodes; codeIndex++) {
-            scanCodes.clear();
+            std::vector<int32_t> scanCodes =
+                    device->keyMap.keyLayoutMap->findScanCodesForKey(keyCodes[codeIndex]);
 
-            status_t err = device->keyMap.keyLayoutMap->findScanCodesForKey(keyCodes[codeIndex],
-                                                                            &scanCodes);
-            if (!err) {
-                // check the possible scan codes identified by the layout map against the
-                // map of codes actually emitted by the driver
-                for (size_t sc = 0; sc < scanCodes.size(); sc++) {
-                    if (device->keyBitmask.test(scanCodes[sc])) {
-                        outFlags[codeIndex] = 1;
-                        break;
-                    }
+            // check the possible scan codes identified by the layout map against the
+            // map of codes actually emitted by the driver
+            for (size_t sc = 0; sc < scanCodes.size(); sc++) {
+                if (device->keyBitmask.test(scanCodes[sc])) {
+                    outFlags[codeIndex] = 1;
+                    break;
                 }
             }
         }
@@ -988,14 +982,15 @@ status_t EventHub::mapAxis(int32_t deviceId, int32_t scanCode, AxisInfo* outAxis
     std::scoped_lock _l(mLock);
     Device* device = getDeviceLocked(deviceId);
 
-    if (device != nullptr && device->keyMap.haveKeyLayout()) {
-        status_t err = device->keyMap.keyLayoutMap->mapAxis(scanCode, outAxisInfo);
-        if (err == NO_ERROR) {
-            return NO_ERROR;
-        }
+    if (device == nullptr || !device->keyMap.haveKeyLayout()) {
+        return NAME_NOT_FOUND;
     }
-
-    return NAME_NOT_FOUND;
+    std::optional<AxisInfo> info = device->keyMap.keyLayoutMap->mapAxis(scanCode);
+    if (!info.has_value()) {
+        return NAME_NOT_FOUND;
+    }
+    *outAxisInfo = *info;
+    return NO_ERROR;
 }
 
 base::Result<std::pair<InputDeviceSensorType, int32_t>> EventHub::mapSensor(int32_t deviceId,
@@ -1252,12 +1247,11 @@ const std::shared_ptr<KeyCharacterMap> EventHub::getKeyCharacterMap(int32_t devi
 bool EventHub::setKeyboardLayoutOverlay(int32_t deviceId, std::shared_ptr<KeyCharacterMap> map) {
     std::scoped_lock _l(mLock);
     Device* device = getDeviceLocked(deviceId);
-    if (device != nullptr && map != nullptr && device->keyMap.keyCharacterMap != nullptr) {
-        device->keyMap.keyCharacterMap->combine(*map);
-        device->keyMap.keyCharacterMapFile = device->keyMap.keyCharacterMap->getLoadFileName();
-        return true;
+    if (device == nullptr || map == nullptr || device->keyMap.keyCharacterMap == nullptr) {
+        return false;
     }
-    return false;
+    device->keyMap.keyCharacterMap->combine(*map);
+    return true;
 }
 
 static std::string generateDescriptor(InputDeviceIdentifier& identifier) {
@@ -1267,7 +1261,8 @@ static std::string generateDescriptor(InputDeviceIdentifier& identifier) {
     if (!identifier.uniqueId.empty()) {
         rawDescriptor += "uniqueId:";
         rawDescriptor += identifier.uniqueId;
-    } else if (identifier.nonce != 0) {
+    }
+    if (identifier.nonce != 0) {
         rawDescriptor += StringPrintf("nonce:%04x", identifier.nonce);
     }
 
@@ -1295,16 +1290,20 @@ void EventHub::assignDescriptorLocked(InputDeviceIdentifier& identifier) {
     // of Android. In practice we sometimes get devices that cannot be uniquely
     // identified. In this case we enforce uniqueness between connected devices.
     // Ideally, we also want the descriptor to be short and relatively opaque.
+    // Note that we explicitly do not use the path or location for external devices
+    // as their path or location will change as they are plugged/unplugged or moved
+    // to different ports. We do fallback to using name and location in the case of
+    // internal devices which are detected by the vendor and product being 0 in
+    // generateDescriptor. If two identical descriptors are detected we will fallback
+    // to using a 'nonce' and incrementing it until the new descriptor no longer has
+    // a match with any existing descriptors.
 
     identifier.nonce = 0;
     std::string rawDescriptor = generateDescriptor(identifier);
-    if (identifier.uniqueId.empty()) {
-        // If it didn't have a unique id check for conflicts and enforce
-        // uniqueness if necessary.
-        while (getDeviceByDescriptorLocked(identifier.descriptor) != nullptr) {
-            identifier.nonce++;
-            rawDescriptor = generateDescriptor(identifier);
-        }
+    // Enforce that the generated descriptor is unique.
+    while (hasDeviceWithDescriptorLocked(identifier.descriptor)) {
+        identifier.nonce++;
+        rawDescriptor = generateDescriptor(identifier);
     }
     ALOGV("Created descriptor: raw=%s, cooked=%s", rawDescriptor.c_str(),
           identifier.descriptor.c_str());
@@ -1379,13 +1378,22 @@ std::vector<int32_t> EventHub::getVibratorIds(int32_t deviceId) {
     return vibrators;
 }
 
-EventHub::Device* EventHub::getDeviceByDescriptorLocked(const std::string& descriptor) const {
-    for (const auto& [id, device] : mDevices) {
+/**
+ * Checks both mDevices and mOpeningDevices for a device with the descriptor passed.
+ */
+bool EventHub::hasDeviceWithDescriptorLocked(const std::string& descriptor) const {
+    for (const auto& device : mOpeningDevices) {
         if (descriptor == device->identifier.descriptor) {
-            return device.get();
+            return true;
         }
     }
-    return nullptr;
+
+    for (const auto& [id, device] : mDevices) {
+        if (descriptor == device->identifier.descriptor) {
+            return true;
+        }
+    }
+    return false;
 }
 
 EventHub::Device* EventHub::getDeviceLocked(int32_t deviceId) const {

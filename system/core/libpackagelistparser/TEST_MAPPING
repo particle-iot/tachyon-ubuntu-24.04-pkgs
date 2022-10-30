@@ -3,5 +3,10 @@
     {
       "name": "libpackagelistparser_test"
     }
+  ],
+  "hwasan-presubmit": [
+    {
+      "name": "libpackagelistparser_test"
+    }
   ]
 }

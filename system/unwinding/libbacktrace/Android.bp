@@ -42,30 +42,6 @@ libbacktrace_sources = [
     "UnwindStackMap.cpp",
 ]
 
-cc_library_headers {
-    name: "libbacktrace_headers",
-    vendor_available: true,
-    product_available: true,
-    host_supported: true,
-    recovery_available: true,
-    vendor_ramdisk_available: true,
-    native_bridge_supported: true,
-    export_include_dirs: ["include"],
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
-    target: {
-        linux_glibc: {
-            enabled: true,
-        },
-        linux_bionic: {
-            enabled: true,
-        },
-    },
-    min_sdk_version: "apex_inherit",
-}
-
 cc_defaults {
     name: "libbacktrace_defaults",
     defaults: ["libbacktrace_common"],
@@ -115,29 +91,8 @@ cc_library {
     // TODO(b/153609531): remove when no longer needed.
     native_bridge_supported: true,
     recovery_available: true,
-    apex_available: [
-        "//apex_available:platform",
-        "//apex_available:anyapex",
-    ],
-    // This library is being deprecated in favor of libunwindstack.
-    // Therefore, only allow the current set of users, and block anyone
-    // else.
-    visibility: [
-        "//art:__subpackages__",
-        "//bionic/libc/malloc_debug",
-        "//frameworks/native/opengl/libs",
-        "//packages/modules/vndk/apex",
-        "//packages/modules/Bluetooth/system/gd",
-        "//packages/modules/Bluetooth/system/vendor_libs/test_vendor_lib",
-        "//system/core/init",
-        "//system/core/libutils",
-    ],
-    min_sdk_version: "apex_inherit",
-    vndk: {
-        enabled: true,
-        support_system_process: true,
-        private: true,
-    },
+    // Deprecated, use libunwindstack.
+    visibility: ["//visibility:private"],
     host_supported: true,
     defaults: ["libbacktrace_defaults"],
 
@@ -166,10 +121,8 @@ cc_library {
 cc_library_static {
     name: "libbacktrace_no_dex",
     ramdisk_available: true,
-    visibility: [
-        "//system/core/debuggerd",
-        "//system/core/init",
-    ],
+    // Deprecated, use libunwindstack.
+    visibility: ["//visibility:private"],
     defaults: ["libbacktrace_defaults"],
     cflags: ["-DNO_LIBDEXFILE_SUPPORT"],
     target: {
@@ -196,7 +149,7 @@ cc_test_library {
     ],
 
     target: {
-        linux_glibc: {
+        host_linux: {
             // This forces the creation of eh_frame with unwind information
             // for host.
             cflags: [

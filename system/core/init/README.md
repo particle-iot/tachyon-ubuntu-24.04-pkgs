@@ -606,8 +606,12 @@ provides the `aidl_lazy_test_1` interface.
   group. If not provided, the directory is created with permissions 755 and
   owned by the root user and root group. If provided, the mode, owner and group
   will be updated if the directory exists already.
+  If the directory does not exist, it will receive the security context from
+  the current SELinux policy or its parent if not specified in the policy. If
+  the directory exists, its security context will not be changed (even if
+  different from the policy).
 
- > _action_ can be one of:
+  > _action_ can be one of:
   * `None`: take no encryption action; directory will be encrypted if parent is.
   * `Require`: encrypt directory, abort boot process if encryption fails
   * `Attempt`: try to set an encryption policy, but continue if it fails
@@ -804,13 +808,18 @@ Init provides state information with the following properties.
 `init.svc.<name>`
 > State of a named service ("stopped", "stopping", "running", "restarting")
 
-`dev.mnt.blk.<mount_point>`
+`dev.mnt.dev.<mount_point>`, `dev.mnt.blk.<mount_point>`, `dev.mnt.rootdisk.<mount_point>`
 > Block device base name associated with a *mount_point*.
   The *mount_point* has / replaced by . and if referencing the root mount point
-  "/", it will use "/root", specifically `dev.mnt.blk.root`.
-  Meant for references to `/sys/device/block/${dev.mnt.blk.<mount_point>}/` and
-  `/sys/fs/ext4/${dev.mnt.blk.<mount_point>}/` to tune the block device
-  characteristics in a device agnostic manner.
+  "/", it will use "/root".
+  `dev.mnt.dev.<mount_point>` indicates a block device attached to filesystems.
+    (e.g., dm-N or sdaN/mmcblk0pN to access `/sys/fs/ext4/${dev.mnt.dev.<mount_point>}/`)
+
+  `dev.mnt.blk.<mount_point>` indicates the disk partition to the above block device.
+    (e.g., sdaN / mmcblk0pN to access `/sys/class/block/${dev.mnt.blk.<mount_point>}/`)
+
+  `dev.mnt.rootdisk.<mount_point>` indicates the root disk to contain the above disk partition.
+    (e.g., sda / mmcblk0 to access `/sys/class/block/${dev.mnt.rootdisk.<mount_point>}/queue`)
 
 Init responds to properties that begin with `ctl.`.  These properties take the format of
 `ctl.[<target>_]<command>` and the _value_ of the system property is used as a parameter.  The

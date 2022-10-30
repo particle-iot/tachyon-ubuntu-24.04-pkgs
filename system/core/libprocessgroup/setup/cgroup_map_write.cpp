@@ -147,12 +147,17 @@ static bool Mkdir(const std::string& path, mode_t mode, const std::string& uid,
 static void MergeCgroupToDescriptors(std::map<std::string, CgroupDescriptor>* descriptors,
                                      const Json::Value& cgroup, const std::string& name,
                                      const std::string& root_path, int cgroups_version) {
+    const std::string cgroup_path = cgroup["Path"].asString();
     std::string path;
 
     if (!root_path.empty()) {
-        path = root_path + "/" + cgroup["Path"].asString();
+        path = root_path;
+        if (cgroup_path != ".") {
+            path += "/";
+            path += cgroup_path;
+        }
     } else {
-        path = cgroup["Path"].asString();
+        path = cgroup_path;
     }
 
     uint32_t controller_flags = 0;
@@ -263,8 +268,18 @@ static bool SetupCgroup(const CgroupDescriptor& descriptor) {
                 return false;
             }
 
-            result = mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
-                           nullptr);
+            // The memory_recursiveprot mount option has been introduced by kernel commit
+            // 8a931f801340 ("mm: memcontrol: recursive memory.low protection"; v5.7). Try first to
+            // mount with that option enabled. If mounting fails because the kernel is too old,
+            // retry without that mount option.
+            if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
+                      "memory_recursiveprot") < 0) {
+                LOG(INFO) << "Mounting memcg with memory_recursiveprot failed. Retrying without.";
+                if (mount("none", controller->path(), "cgroup2", MS_NODEV | MS_NOEXEC | MS_NOSUID,
+                          nullptr) < 0) {
+                    PLOG(ERROR) << "Failed to mount cgroup v2";
+                }
+            }
 
             // selinux permissions change after mounting, so it's ok to change mode and owner now
             if (!ChangeDirModeAndOwner(controller->path(), descriptor.mode(), descriptor.uid(),
@@ -395,7 +410,7 @@ bool CgroupSetup() {
     // Make sure we do this only one time. No need for std::call_once because
     // init is a single-threaded process
     if (access(CGROUPS_RC_PATH, F_OK) == 0) {
-        LOG(WARNING) << "Attempt to call SetupCgroups more than once";
+        LOG(WARNING) << "Attempt to call CgroupSetup() more than once";
         return true;
     }
 

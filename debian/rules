@@ -4,10 +4,10 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 ## Security Hardening
-export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-33.0.1/cc/config/global.go#283
-export DEB_CFLAGS_MAINT_APPEND = -fPIC
-export DEB_CXXFLAGS_MAINT_APPEND = -fPIC
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
+# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-33.0.3/cc/config/global.go#299
+export DEB_CFLAGS_MAINT_APPEND = -fPIC -gdwarf-4
+export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -gdwarf-4
 export DEB_LDFLAGS_MAINT_APPEND = -fPIC
 export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -fmessage-length=0 \
@@ -23,8 +23,8 @@ export DEB_HOST_MULTIARCH
 ## system
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.1/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 33.0.1
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.3/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 33.0.3
 
 ifneq (, $(shell which clang))
   export CC=clang

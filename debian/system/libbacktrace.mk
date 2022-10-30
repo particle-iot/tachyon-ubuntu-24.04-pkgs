@@ -14,6 +14,7 @@ libbacktrace_SOURCES = \
 
 # system/unwinding/libunwindstack/Android.bp
 libunwindstack_SOURCES := \
+  AndroidUnwinder.cpp \
   ArmExidx.cpp \
   DexFiles.cpp \
   DwarfCfa.cpp \
@@ -31,7 +32,6 @@ libunwindstack_SOURCES := \
   Memory.cpp \
   MemoryMte.cpp \
   MemoryXz.cpp \
-  LocalUnwinder.cpp \
   Regs.cpp \
   RegsArm.cpp \
   RegsArm64.cpp \

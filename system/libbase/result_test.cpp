@@ -16,6 +16,7 @@
 
 #include "android-base/result.h"
 #include <utils/ErrorsMacros.h>
+#include "android-base/errors.h"
 #include "errno.h"
 
 #include <istream>
@@ -424,9 +425,11 @@ struct MyData {
   const int data;
   static int copy_constructed;
   static int move_constructed;
-  MyData(int d) : data(d) {}
+  explicit MyData(int d) : data(d) {}
   MyData(const MyData& other) : data(other.data) { copy_constructed++; }
   MyData(MyData&& other) : data(other.data) { move_constructed++; }
+  MyData& operator=(const MyData&) = delete;
+  MyData& operator=(MyData&&) = delete;
 };
 
 int MyData::copy_constructed = 0;
@@ -467,6 +470,34 @@ TEST(result, supports_move_only_type) {
   auto t = g(false);
   EXPECT_FALSE(t.ok());
   EXPECT_EQ("error", t.error().message());
+}
+
+TEST(result, unique_ptr) {
+  using testing::Ok;
+
+  auto return_unique_ptr = [](bool success) -> Result<std::unique_ptr<int>> {
+    auto result = OR_RETURN(Result<std::unique_ptr<int>>(std::make_unique<int>(3)));
+    if (!success) {
+      return Error() << __func__ << " failed.";
+    }
+    return result;
+  };
+  Result<std::unique_ptr<int>> result1 = return_unique_ptr(false);
+  ASSERT_THAT(result1, Not(Ok()));
+  Result<std::unique_ptr<int>> result2 = return_unique_ptr(true);
+  ASSERT_THAT(result2, Ok());
+  EXPECT_EQ(**result2, 3);
+}
+
+TEST(result, void) {
+  using testing::Ok;
+
+  auto return_void = []() -> Result<void> {
+    OR_RETURN(Result<void>());
+    return {};
+  };
+
+  ASSERT_THAT(return_void(), Ok());
 }
 
 struct ConstructorTracker {

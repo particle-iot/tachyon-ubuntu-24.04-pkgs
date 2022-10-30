@@ -15,9 +15,10 @@ rust_library {
         "libutils",
     ],
     rustlibs: [
-        "liblibc",
         "libbinder_ndk_sys",
         "libdowncast_rs",
+        "liblazy_static",
+        "liblibc",
     ],
     host_supported: true,
     vendor_available: true,
@@ -148,6 +149,7 @@ rust_bindgen {
     name: "libbinder_rpc_unstable_bindgen",
     wrapper_src: ":libbinder_rpc_unstable_header",
     crate_name: "binder_rpc_unstable_bindgen",
+    visibility: ["//packages/modules/Virtualization:__subpackages__"],
     source_stem: "bindings",
     shared_libs: [
         "libutils",
@@ -170,9 +172,10 @@ rust_test {
         "libbinder_ndk",
     ],
     rustlibs: [
-        "liblibc",
         "libbinder_ndk_sys",
         "libdowncast_rs",
+        "liblazy_static",
+        "liblibc",
     ],
 }
 

@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef _LIBUNWINDSTACK_MAPS_H
-#define _LIBUNWINDSTACK_MAPS_H
+#pragma once
 
 #include <pthread.h>
 #include <sys/types.h>
@@ -138,5 +137,3 @@ class FileMaps : public Maps {
 };
 
 }  // namespace unwindstack
-
-#endif  // _LIBUNWINDSTACK_MAPS_H

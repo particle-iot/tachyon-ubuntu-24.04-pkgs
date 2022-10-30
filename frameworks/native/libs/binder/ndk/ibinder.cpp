@@ -36,6 +36,7 @@ using ::android::IResultReceiver;
 using ::android::Parcel;
 using ::android::sp;
 using ::android::status_t;
+using ::android::statusToString;
 using ::android::String16;
 using ::android::String8;
 using ::android::wp;
@@ -63,6 +64,9 @@ struct Value {
     wp<ABpBinder> binder;
 };
 void clean(const void* id, void* obj, void* cookie) {
+    // be weary of leaks!
+    // LOG(INFO) << "Deleting an ABpBinder";
+
     CHECK(id == kId) << id << " " << obj << " " << cookie;
 
     delete static_cast<Value*>(obj);
@@ -133,7 +137,8 @@ bool AIBinder::associateClass(const AIBinder_Class* clazz) {
         } else {
             // b/155793159
             LOG(ERROR) << __func__ << ": Cannot associate class '" << newDescriptor
-                       << "' to dead binder.";
+                       << "' to dead binder with cached descriptor '" << SanitizeString(descriptor)
+                       << "'.";
         }
         return false;
     }
@@ -237,25 +242,10 @@ status_t ABBinder::onTransact(transaction_code_t code, const Parcel& data, Parce
 }
 
 ABpBinder::ABpBinder(const ::android::sp<::android::IBinder>& binder)
-    : AIBinder(nullptr /*clazz*/), BpRefBase(binder) {
+    : AIBinder(nullptr /*clazz*/), mRemote(binder) {
     CHECK(binder != nullptr);
 }
 ABpBinder::~ABpBinder() {}
-
-void ABpBinder::onLastStrongRef(const void* id) {
-    // Since ABpBinder is OBJECT_LIFETIME_WEAK, we must remove this weak reference in order for
-    // the ABpBinder to be deleted. Even though we have no more references on the ABpBinder
-    // (BpRefBase), the remote object may still exist (for instance, if we
-    // receive it from another process, before the ABpBinder is attached).
-
-    ABpBinderTag::Value* value =
-            static_cast<ABpBinderTag::Value*>(remote()->findObject(ABpBinderTag::kId));
-    CHECK_NE(nullptr, value) << "ABpBinder must always be attached";
-
-    remote()->withLock([&]() { value->binder = nullptr; });
-
-    BpRefBase::onLastStrongRef(id);
-}
 
 sp<AIBinder> ABpBinder::lookupOrCreateFromBinder(const ::android::sp<::android::IBinder>& binder) {
     if (binder == nullptr) {
@@ -458,7 +448,8 @@ binder_status_t AIBinder_DeathRecipient::unlinkToDeath(const sp<IBinder>& binder
             status_t status = binder->unlinkToDeath(recipient, cookie, 0 /*flags*/);
             if (status != ::android::OK) {
                 LOG(ERROR) << __func__
-                           << ": removed reference to death recipient but unlink failed.";
+                           << ": removed reference to death recipient but unlink failed: "
+                           << statusToString(status);
             }
             return PruneStatusT(status);
         }
@@ -539,7 +530,8 @@ binder_status_t AIBinder_dump(AIBinder* binder, int fd, const char** args, uint3
 binder_status_t AIBinder_linkToDeath(AIBinder* binder, AIBinder_DeathRecipient* recipient,
                                      void* cookie) {
     if (binder == nullptr || recipient == nullptr) {
-        LOG(ERROR) << __func__ << ": Must provide binder and recipient.";
+        LOG(ERROR) << __func__ << ": Must provide binder (" << binder << ") and recipient ("
+                   << recipient << ")";
         return STATUS_UNEXPECTED_NULL;
     }
 
@@ -550,7 +542,8 @@ binder_status_t AIBinder_linkToDeath(AIBinder* binder, AIBinder_DeathRecipient* 
 binder_status_t AIBinder_unlinkToDeath(AIBinder* binder, AIBinder_DeathRecipient* recipient,
                                        void* cookie) {
     if (binder == nullptr || recipient == nullptr) {
-        LOG(ERROR) << __func__ << ": Must provide binder and recipient.";
+        LOG(ERROR) << __func__ << ": Must provide binder (" << binder << ") and recipient ("
+                   << recipient << ")";
         return STATUS_UNEXPECTED_NULL;
     }
 
@@ -625,7 +618,8 @@ void* AIBinder_getUserData(AIBinder* binder) {
 
 binder_status_t AIBinder_prepareTransaction(AIBinder* binder, AParcel** in) {
     if (binder == nullptr || in == nullptr) {
-        LOG(ERROR) << __func__ << ": requires non-null parameters.";
+        LOG(ERROR) << __func__ << ": requires non-null parameters binder (" << binder
+                   << ") and in (" << in << ").";
         return STATUS_UNEXPECTED_NULL;
     }
     const AIBinder_Class* clazz = binder->getClass();
@@ -671,7 +665,9 @@ binder_status_t AIBinder_transact(AIBinder* binder, transaction_code_t code, APa
     AutoParcelDestroyer forIn(in, DestroyParcel);
 
     if (!isUserCommand(code)) {
-        LOG(ERROR) << __func__ << ": Only user-defined transactions can be made from the NDK.";
+        LOG(ERROR) << __func__
+                   << ": Only user-defined transactions can be made from the NDK, but requested: "
+                   << code;
         return STATUS_UNKNOWN_TRANSACTION;
     }
 
@@ -682,7 +678,8 @@ binder_status_t AIBinder_transact(AIBinder* binder, transaction_code_t code, APa
     }
 
     if (binder == nullptr || *in == nullptr || out == nullptr) {
-        LOG(ERROR) << __func__ << ": requires non-null parameters.";
+        LOG(ERROR) << __func__ << ": requires non-null parameters binder (" << binder << "), in ("
+                   << in << "), and out (" << out << ").";
         return STATUS_UNEXPECTED_NULL;
     }
 

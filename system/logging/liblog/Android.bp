@@ -180,6 +180,7 @@ rust_bindgen {
     name: "liblog_event_list_bindgen",
     wrapper_src: "rust/liblog_wrapper.h",
     crate_name: "log_event_list_bindgen",
+    visibility: ["//system/logging/rust"],
     source_stem: "bindings",
 
     bindgen_flags: [

@@ -15,6 +15,7 @@
  */
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <binder/IPCThreadState.h>
 #include <binder/ProcessState.h>
 #include <binder/Status.h>
@@ -26,15 +27,14 @@
 #include "ServiceManager.h"
 
 using ::android::Access;
-using ::android::sp;
+using ::android::IPCThreadState;
 using ::android::Looper;
 using ::android::LooperCallback;
 using ::android::ProcessState;
-using ::android::IPCThreadState;
-using ::android::ProcessState;
 using ::android::ServiceManager;
-using ::android::os::IServiceManager;
 using ::android::sp;
+using ::android::base::SetProperty;
+using ::android::os::IServiceManager;
 
 class BinderCallback : public LooperCallback {
 public:
@@ -121,6 +121,8 @@ int main(int argc, char** argv) {
 
     const char* driver = argc == 2 ? argv[1] : "/dev/binder";
 
+    LOG(INFO) << "Starting sm instance on " << driver;
+
     sp<ProcessState> ps = ProcessState::initWithDriver(driver);
     ps->setThreadPoolMaxThreadCount(0);
     ps->setCallRestriction(ProcessState::CallRestriction::FATAL_IF_NOT_ONEWAY);
@@ -137,6 +139,12 @@ int main(int argc, char** argv) {
 
     BinderCallback::setupTo(looper);
     ClientCallbackCallback::setupTo(looper, manager);
+
+#ifndef VENDORSERVICEMANAGER
+    if (!SetProperty("servicemanager.ready", "true")) {
+        LOG(ERROR) << "Failed to set servicemanager ready property";
+    }
+#endif
 
     while(true) {
         looper->pollAll(-1);

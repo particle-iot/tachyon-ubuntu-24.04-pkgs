@@ -1,3 +1,11 @@
+android-platform-tools (33.0.3-1~exp1) experimental; urgency=medium
+
+  * New upstream release 33.0.3
+  * debian/patches: Amend patch to add more includes to header files.
+  * debian/rules: Export gdwarf-4.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Oct 2022 15:03:25 -0700
+
 android-platform-tools (33.0.1-1~exp9) experimental; urgency=medium
 
   * Team upload.

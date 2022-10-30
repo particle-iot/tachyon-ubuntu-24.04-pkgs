@@ -15,7 +15,6 @@ cc_test {
     name: "libgui_test",
     test_suites: ["device-tests"],
 
-    clang: true,
     cflags: [
         "-Wall",
         "-Werror",
@@ -43,6 +42,7 @@ cc_test {
         "SurfaceTextureMultiContextGL_test.cpp",
         "Surface_test.cpp",
         "TextureRenderer.cpp",
+        "WindowInfo_test.cpp",
     ],
 
     shared_libs: [
@@ -61,7 +61,7 @@ cc_test {
         "libinput",
         "libui",
         "libutils",
-        "libnativewindow"
+        "libnativewindow",
     ],
 
     header_libs: ["libsurfaceflinger_headers"],
@@ -72,7 +72,6 @@ cc_test {
     name: "libgui_multilib_test",
     test_suites: ["device-tests"],
 
-    clang: true,
     cflags: [
         "-Wall",
         "-Werror",
@@ -99,7 +98,6 @@ cc_test {
     name: "SurfaceParcelable_test",
     test_suites: ["device-tests"],
 
-    clang: true,
     cflags: [
         "-Wall",
         "-Werror",
@@ -116,7 +114,7 @@ cc_test {
         "libgui",
         "libui",
         "libutils",
-        "libbufferhubqueue",  // TODO(b/70046255): Remove these once BufferHub is integrated into libgui.
+        "libbufferhubqueue", // TODO(b/70046255): Remove these once BufferHub is integrated into libgui.
         "libpdx_default_transport",
     ],
 
@@ -128,7 +126,6 @@ cc_test {
 cc_test {
     name: "SamplingDemo",
 
-    clang: true,
     cflags: [
         "-Wall",
         "-Werror",
@@ -145,5 +142,5 @@ cc_test {
         "liblog",
         "libui",
         "libutils",
-    ]
+    ],
 }

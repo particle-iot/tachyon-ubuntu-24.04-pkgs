@@ -62,6 +62,7 @@ cc_defaults {
                 "-lpthread",
                 "-framework CoreFoundation",
                 "-framework IOKit",
+                "-framework Security",
                 "-lobjc",
             ],
             cflags: [
@@ -189,7 +190,7 @@ library_linking_strategy_cc_defaults {
         android: {
             shared_libs: ["libcrypto"],
         },
-        linux_glibc: {
+        host_linux: {
             static_libs: ["libcrypto_static"],
         },
         recovery: {
@@ -753,8 +754,15 @@ phony {
         "libadbd_fs",
         "abb",
         "reboot",
-        "set-verity-state",
-    ]
+    ],
+    product_variables: {
+        debuggable: {
+            required: [
+                "remount",
+                "set-verity-state",
+            ],
+        },
+    },
 }
 
 phony {

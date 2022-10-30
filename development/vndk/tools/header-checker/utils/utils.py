@@ -53,8 +53,16 @@ class Target(object):
         self.cpu_variant = build_vars[3]
 
     def get_arch_str(self):
-        """Return a string that represents the architecture and the
-        architecture variant.
+        """Return a string that represents the architecture and the primary
+        architecture.
+        """
+        if not self.arch or self.arch == self.primary_arch:
+            return self.primary_arch
+        return self.arch + '_' + self.primary_arch
+
+    def get_arch_cpu_str(self):
+        """Return a string that represents the architecture, the architecture
+        variant, and the CPU variant.
 
         If TARGET_ARCH == TARGET_ARCH_VARIANT, soong makes targetArchVariant
         empty. This is the case for aosp_x86_64.
@@ -64,25 +72,30 @@ class Target(object):
         else:
             arch_variant = '_' + self.arch_variant
 
-        return self.arch + arch_variant
-
-    def get_arch_cpu_str(self):
-        """Return a string that represents the architecture, the architecture
-        variant, and the CPU variant."""
         if not self.cpu_variant or self.cpu_variant == 'generic':
             cpu_variant = ''
         else:
             cpu_variant = '_' + self.cpu_variant
 
-        return self.get_arch_str() + cpu_variant
+        return self.arch + arch_variant + cpu_variant
 
 
 def _validate_dump_content(dump_path):
     """Make sure that the dump contains relative source paths."""
     with open(dump_path, 'r') as f:
-        if AOSP_DIR in f.read():
-            raise ValueError(
-                dump_path + ' contains absolute path to $ANDROID_BUILD_TOP.')
+        for line_number, line in enumerate(f, 1):
+            start = 0
+            while True:
+                start = line.find(AOSP_DIR, start)
+                if start < 0:
+                    break
+                # The substring is not preceded by a common path character.
+                if start == 0 or not (line[start - 1].isalnum() or
+                                      line[start - 1] in '.-_/'):
+                    raise ValueError(f'{dump_path} contains absolute path to '
+                                     f'$ANDROID_BUILD_TOP at line '
+                                     f'{line_number}:\n{line}')
+                start += len(AOSP_DIR)
 
 
 def copy_reference_dump(lib_path, reference_dump_dir, compress):
@@ -248,9 +261,11 @@ def _read_lsdump_paths(lsdump_paths_file_path, vndk_version, targets):
 def read_lsdump_paths(product, variant, vndk_version, targets, build=True):
     """Build lsdump_paths.txt and read the paths."""
     lsdump_paths_file_path = get_lsdump_paths_file_path(product, variant)
-    if build:
-        make_targets(product, variant, [lsdump_paths_file_path])
     lsdump_paths_file_abspath = os.path.join(AOSP_DIR, lsdump_paths_file_path)
+    if build:
+        if os.path.lexists(lsdump_paths_file_abspath):
+            os.unlink(lsdump_paths_file_abspath)
+        make_targets(product, variant, [lsdump_paths_file_path])
     return _read_lsdump_paths(lsdump_paths_file_abspath, vndk_version,
                               targets)
 

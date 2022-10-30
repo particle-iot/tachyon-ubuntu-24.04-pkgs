@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#pragma once
 
 #include <memory>
 
@@ -55,7 +56,11 @@ public:
     [[nodiscard]] status_t triggerablePoll(base::borrowed_fd fd, int16_t event);
 
 private:
+#ifdef BINDER_RPC_SINGLE_THREADED
+    bool mTriggered = false;
+#else
     base::unique_fd mWrite;
     base::unique_fd mRead;
+#endif
 };
 } // namespace android

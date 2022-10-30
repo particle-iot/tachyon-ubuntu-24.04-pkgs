@@ -82,3 +82,23 @@ Forwarded: not-needed
  
  #include <backtrace/BacktraceMap.h>
  #include <unwindstack/Elf.h>
+--- a/packages/modules/adb/tls/include/adb/tls/tls_connection.h
++++ b/packages/modules/adb/tls/include/adb/tls/tls_connection.h
+@@ -21,6 +21,7 @@
+ 
+ #include <string_view>
+ #include <vector>
++#include <functional>
+ 
+ #include <android-base/unique_fd.h>
+ #include <openssl/ssl.h>
+--- a/system/core/libutils/include/utils/RefBase.h
++++ b/system/core/libutils/include/utils/RefBase.h
+@@ -211,6 +211,7 @@
+ #include <atomic>
+ #include <functional>
+ #include <type_traits>  // for common_type.
++#include <memory>
+ 
+ #include <stdint.h>
+ #include <sys/types.h>

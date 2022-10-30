@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef _LIBUNWINDSTACK_MAP_INFO_H
-#define _LIBUNWINDSTACK_MAP_INFO_H
+#pragma once
 
 #include <stdint.h>
 
@@ -101,6 +100,10 @@ class MapInfo {
     // Protect the creation of the elf object.
     std::mutex elf_mutex_;
   };
+
+  // True if the file named by this map is not actually readable and the
+  // elf is using the data in memory.
+  bool ElfFileNotReadable();
 
   // This is the previous map with the same name that is not empty and with
   // a 0 offset. For example, this set of maps:
@@ -228,5 +231,3 @@ class MapInfo {
 };
 
 }  // namespace unwindstack
-
-#endif  // _LIBUNWINDSTACK_MAP_INFO_H

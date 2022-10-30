@@ -37,6 +37,7 @@ Files-Excluded:
  development/vndk/tools/header-checker/tests
  external/fmtlib/doc/_static
  external/openscreen/third_party
+ external/mdnsresponder/mDNSWindows
  packages/modules/adb/fastdeploy/testdata
  system/extras/memory_replay/traces
  system/extras/simpleperf
@@ -93,16 +94,6 @@ Files: external/avb/libavb/sha/sha256_impl.c
        external/avb/libavb/sha/sha512_impl.c
 Copyright: 2005-2007, Olivier Gay <olivier.gay@a3.epfl.ch>
 License: BSD-3-clause
-
-Files: external/cpu_features/*
-Copyright: 2017-2020, Google LLC
-           2020, Intel Corporation
-           2018, IBM
-License: Apache-2.0
-
-Files: external/cpu_features/ndk_compat/cpu-features.h
-Copyright: 2010 The Android Open Source Project
-License: BSD-2-clause
 
 Files: external/dlmalloc/*
 Copyright: n/a

@@ -33,6 +33,7 @@ development/tools/repo_diff/service/repodiff/persistence/filesystem/testdata
 development/vndk/tools/header-checker/tests
 external/fmtlib/doc/_static
 external/openscreen/third_party
+external/mdnsresponder/mDNSWindows
 packages/modules/adb/fastdeploy/testdata
 system/extras/memory_replay/traces
 system/extras/simpleperf
