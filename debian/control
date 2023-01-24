@@ -8,7 +8,7 @@ Build-Depends:
  debhelper-compat (= 13),
  dh-exec,
 Build-Depends-Arch:
- android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 ppc64el mipsel mips64el riscv64],
+ android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x powerpc ppc64 sparc64 riscv64],
  libbrotli-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libgtest-dev,
@@ -22,7 +22,7 @@ Build-Depends-Arch:
  pandoc,
  protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  python3 [amd64 i386 arm64],
-Standards-Version: 4.5.0
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/android-tools-team/android-platform-tools.git
 Vcs-Browser: https://salsa.debian.org/android-tools-team/android-platform-tools
@@ -53,6 +53,7 @@ Section: libs
 Architecture: any
 Multi-Arch: same
 Depends: ${misc:Depends}, ${shlibs:Depends}
+Breaks: android-liblog-dev (<< 1:33)
 Description: Android NDK logger interfaces
  liblog represents an interface to the volatile Android Logging system for NDK
  (Native) applications and libraries. Interfaces for either writing or reading
@@ -62,8 +63,11 @@ Description: Android NDK logger interfaces
 Package: android-liblog-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-liblog (= ${binary:Version}),
+Breaks: android-liblog (<< 1:33)
+Replaces: android-liblog (<< 1:33)
 Description: Android NDK logger interfaces - Development files
  liblog represents an interface to the volatile Android Logging system for NDK
  (Native) applications and libraries. Interfaces for either writing or reading
@@ -79,6 +83,7 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
          libbsd0,
+Breaks: android-libcutils-dev (<< 1:33)
 Description: Android utils library for C
  This library provides common functionalities for android related tools.
  .
@@ -87,11 +92,14 @@ Description: Android utils library for C
 Package: android-libcutils-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libcutils (= ${binary:Version}),
          android-libbase-dev (= ${binary:Version}),
          android-platform-system-core-headers (= 1:${source:Version}),
          libbsd-dev,
+Breaks: android-libcutils (<< 1:33)
+Replaces: android-libcutils (<< 1:33)
 Description: Android utils library for C - Development files
  This library provides common functionalities for android related tools.
  .
@@ -121,6 +129,7 @@ Architecture: any
 Multi-Arch: same
 Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libbase (= ${binary:Version}),
+Breaks: android-libsparse-dev (<< 1:33)
 Description: Library for sparse files
  This library provides APIs for creating, manipulating and destroying sparse
  files.
@@ -130,8 +139,11 @@ Description: Library for sparse files
 Package: android-libsparse-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libsparse (= ${binary:Version}),
+Breaks: android-libsparse (<< 1:33)
+Replaces: android-libsparse (<< 1:33)
 Description: Library for sparse files - Development files
  This library provides APIs for creating, manipulating and destroying sparse
  files.
@@ -147,6 +159,7 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbacktrace (= ${binary:Version}),
          android-libcutils (= ${binary:Version}),
+Breaks: android-libutils-dev (<< 1:33)
 Description: Android Utility Function Library
  This library provides miscellaneous utility functions.
  .
@@ -155,11 +168,14 @@ Description: Android Utility Function Library
 Package: android-libutils-dev
 Section: libdevel
 Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libbacktrace-dev (= ${binary:Version}),
          android-libcutils-dev (= ${binary:Version}),
          android-libutils (= ${binary:Version}),
          android-platform-system-core-headers (= 1:${source:Version}),
+Breaks: android-libutils (<< 1:33)
+Replaces: android-libutils (<< 1:33)
 Description: Android Utility Function Library - Development files
  This library provides miscellaneous utility functions.
  .
@@ -173,6 +189,7 @@ Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
+Breaks: android-libziparchive-dev (<< 1:33)
 Description: Library for ZIP archives
  This library provides APIs for creating and manipulating ZIP archives.
  .
@@ -181,9 +198,12 @@ Description: Library for ZIP archives
 Package: android-libziparchive-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libziparchive (= ${binary:Version}),
          libgtest-dev,
+Breaks: android-libziparchive (<< 1:33)
+Replaces: android-libziparchive (<< 1:33)
 Description: Library for ZIP archives - Development files
  This library provides APIs for creating and manipulating ZIP archives.
  .
@@ -218,6 +238,7 @@ Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-libbase (= ${binary:Version}),
+Breaks: android-libbacktrace-dev (<< 1:33)
 Description: Android backtrace library
  Android backtrace library produce symbolic backtraces for making
  debugging easier.
@@ -225,8 +246,11 @@ Description: Android backtrace library
 Package: android-libbacktrace-dev
 Section: libdevel
 Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libbacktrace (= ${binary:Version}),
+Breaks: android-libbacktrace (<< 1:33)
+Replaces: android-libbacktrace (<< 1:33)
 Description: Android backtrace library - Development files
  Android backtrace library produce symbolic backtraces for making
  debugging easier.
@@ -239,6 +263,7 @@ Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-liblog (= ${binary:Version}),
+Breaks: android-libbase-dev (<< 1:33)
 Description: Android base library
  This library provides APIs for basic tasks like handling files, Unicode
  strings, logging, memory allocation, integer parsing, etc..
@@ -248,9 +273,12 @@ Description: Android base library
 Package: android-libbase-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libbase (= ${binary:Version}),
          android-liblog-dev (= ${binary:Version}),
+Breaks: android-libbase (<< 1:33)
+Replaces: android-libbase (<< 1:33)
 Description: Android base library - Development files
  This library provides APIs for basic tasks like handling files, Unicode
  strings, logging, memory allocation, integer parsing, etc..
@@ -265,6 +293,7 @@ Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-liblog (= 1:${binary:Version}),
+Breaks: android-libnativehelper-dev (<< 33)
 Description: Support functions for Android's class libraries
  libnativehelper is a collection of JNI related utilities used in
  Android.
@@ -279,10 +308,11 @@ Description: Support functions for Android's class libraries
 Package: android-libnativehelper-dev
 Section: libdevel
 Architecture: any
+Multi-Arch: same
 Depends: ${misc:Depends},
          android-libnativehelper (= ${binary:Version}),
-Breaks: android-libnativehelper (<< 10.0.0+r36-3)
-Replaces: android-libnativehelper (<< 10.0.0+r36-3)
+Breaks: android-libnativehelper (<< 33)
+Replaces: android-libnativehelper (<< 33)
 Description: Support functions for Android's class libraries - Development files
  libnativehelper is a collection of JNI related utilities used in
  Android.

@@ -1,3 +1,26 @@
+android-platform-tools (33.0.3-1~exp4) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control: Add Breaks/Replaces to pass piuparts test.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 23 Jan 2023 23:36:55 -0800
+
+android-platform-tools (33.0.3-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+
+  [ Debian Janitor ]
+  * Update standards version to 4.6.2, no changes needed.
+  * Use correct machine-readable copyright file URI.
+
+  [ Roger Shimizu ]
+  * d/control: Sync multi-arch hints with master branch
+
+  [ Jochen Sprickerhof ]
+  * Add patch to fix FTBFS (Closes: #1027653)
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 21 Jan 2023 01:14:43 -0800
+
 android-platform-tools (33.0.3-1~exp2) experimental; urgency=medium
 
   * debian/patches: Add patch to fix ftbfs for mips*.

@@ -1,0 +1,21 @@
+From: Jochen Sprickerhof <jspricke@debian.org>
+Date: Wed, 11 Jan 2023 09:06:55 +0100
+Subject: Fix include path
+
+---
+ system/extras/squashfs_utils/squashfs_utils.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/system/extras/squashfs_utils/squashfs_utils.c b/system/extras/squashfs_utils/squashfs_utils.c
+index 1db424b..9fc3066 100644
+--- a/system/extras/squashfs_utils/squashfs_utils.c
++++ b/system/extras/squashfs_utils/squashfs_utils.c
+@@ -24,7 +24,7 @@
+ #include <string.h>
+ #include <unistd.h>
+ 
+-#include "squashfs_fs.h"
++#include <squashfuse/squashfs_fs.h>
+ 
+ #ifdef SQUASHFS_NO_KLOG
+ #include <stdio.h>
