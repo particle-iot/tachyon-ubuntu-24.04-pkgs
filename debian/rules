@@ -15,10 +15,12 @@ export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -fno-strict-aliasing \
   -no-canonical-prefixes \
 
+ifneq (, $(shell which lld))
+  export DEB_LDFLAGS_MAINT_APPEND += -fuse-ld=lld -Wl,--build-id=sha1
+endif
+
 ## For get-orig-source
 export DEB_SOURCE
-
-export DEB_HOST_MULTIARCH
 
 ## system
 export DEB_HOST_MULTIARCH
@@ -51,7 +53,11 @@ s/lib%.so: debian/system/lib%.mk
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 debian/manpages/system/%.1: debian/manpages/system/%.1.md
+ifneq (, $(shell which pandoc))
 	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
+else
+	ronn -r $<
+endif
 
 s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
@@ -120,7 +126,11 @@ endif
 ## development
 
 debian/manpages/development/%.1: debian/manpages/development/%.1.md
+ifneq (, $(shell which pandoc))
 	pandoc --standalone --from=markdown-smart --to=man --output=$@ $<
+else
+	ronn -r $<
+endif
 
 development/etc1tool: debian/development/etc1tool.mk debian/manpages/development/etc1tool.1 f/native/libETC1.a
 	dh_auto_build --buildsystem=makefile -- --file=$<
