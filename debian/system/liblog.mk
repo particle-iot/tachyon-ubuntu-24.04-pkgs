@@ -31,6 +31,12 @@ LDFLAGS += \
   -lpthread \
   -shared
 
+# -latomic should be the last library specified
+# https://github.com/android/ndk/issues/589
+ifneq ($(filter armel mipsel,$(DEB_HOST_ARCH)),)
+  LDFLAGS += -latomic
+endif
+
 build: $(OBJECTS)
 	$(CXX) $^ -o debian/out/system/$(NAME).so.0 $(LDFLAGS)
 	ln -sf $(NAME).so.0 debian/out/system/$(NAME).so

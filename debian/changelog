@@ -1,3 +1,11 @@
+android-platform-tools (33.0.3-1~exp6) experimental; urgency=medium
+
+  * Team upload.
+  * Fix ftbfs on armel.
+  * debian folder: Cleanup.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 08 Feb 2023 00:06:09 -0800
+
 android-platform-tools (33.0.3-1~exp5) experimental; urgency=medium
 
   * Team upload.

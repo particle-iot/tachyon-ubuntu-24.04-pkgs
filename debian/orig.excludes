@@ -20,7 +20,6 @@ debian
 *.tar.gz
 *.vdex
 *.zip
-external/avb/examples
 development/apps
 development/gki/kmi_abi_chk/prebuilts
 development/host/windows/prebuilt
@@ -31,6 +30,7 @@ development/host/windows/usb/winusb/Resource.h
 development/samples
 development/tools/repo_diff/service/repodiff/persistence/filesystem/testdata
 development/vndk/tools/header-checker/tests
+external/avb/examples
 external/fmtlib/doc/_static
 external/openscreen/third_party
 external/mdnsresponder/mDNSWindows
