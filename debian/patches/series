@@ -2,10 +2,7 @@ system/move-log-file-to-proper-dir.patch
 system/Added-missing-headers.patch
 system/libusb-header-path.patch
 system/stdatomic.patch
-system/Nonnull.patch
 system/throw-exception-on-unknown-os.patch
-system/fix-attribute-issue-with-gcc.patch
-system/fix-gettid-exception-declaration.patch
 system/add-missing-headers.patch
 system/hard-code-build-number.patch
 system/stub-out-fastdeploy.patch

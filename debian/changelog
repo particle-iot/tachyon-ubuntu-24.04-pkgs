@@ -1,3 +1,11 @@
+android-platform-tools (33.0.3-1~exp7) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches: Cleanup, remove no longer necessary patches.
+  * debian/rules: Add target "update" to gbp import new release.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 09 Feb 2023 23:07:22 -0800
+
 android-platform-tools (33.0.3-1~exp6) experimental; urgency=medium
 
   * Team upload.

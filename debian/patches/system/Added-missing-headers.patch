@@ -42,46 +42,6 @@ Forwarded: not-needed
  #include <deque>
  #include <iomanip>
  #include <mutex>
---- a/packages/modules/adb/sysdeps/posix/network.cpp
-+++ b/packages/modules/adb/sysdeps/posix/network.cpp
-@@ -22,6 +22,7 @@
- #include <sys/socket.h>
- 
- #include <string>
-+#include <cstring>
- 
- #include <android-base/logging.h>
- #include <android-base/stringprintf.h>
---- a/system/libbase/file.cpp
-+++ b/system/libbase/file.cpp
-@@ -26,6 +26,7 @@
- #include <sys/stat.h>
- #include <sys/types.h>
- #include <unistd.h>
-+#include <cstring>
- 
- #include <memory>
- #include <mutex>
---- a/system/unwinding/libbacktrace/BacktraceMap.cpp
-+++ b/system/unwinding/libbacktrace/BacktraceMap.cpp
-@@ -21,6 +21,7 @@
- #include <stdint.h>
- #include <sys/types.h>
- #include <unistd.h>
-+#include <algorithm>
- 
- #include <log/log.h>
- 
---- a/system/unwinding/libbacktrace/UnwindStackMap.cpp
-+++ b/system/unwinding/libbacktrace/UnwindStackMap.cpp
-@@ -20,6 +20,7 @@
- 
- #include <string>
- #include <vector>
-+#include <algorithm>
- 
- #include <backtrace/BacktraceMap.h>
- #include <unwindstack/Elf.h>
 --- a/packages/modules/adb/tls/include/adb/tls/tls_connection.h
 +++ b/packages/modules/adb/tls/include/adb/tls/tls_connection.h
 @@ -21,6 +21,7 @@

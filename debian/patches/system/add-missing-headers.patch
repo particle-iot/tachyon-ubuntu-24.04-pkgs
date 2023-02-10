@@ -1,24 +1,4 @@
 Forwarded: not-needed
---- a/system/core/fs_mgr/liblp/reader.cpp
-+++ b/system/core/fs_mgr/liblp/reader.cpp
-@@ -22,6 +22,7 @@
- #include <unistd.h>
- 
- #include <functional>
-+#include <cstring>
- 
- #include <android-base/file.h>
- #include <android-base/unique_fd.h>
---- a/system/core/fs_mgr/liblp/writer.cpp
-+++ b/system/core/fs_mgr/liblp/writer.cpp
-@@ -21,6 +21,7 @@
- #include <unistd.h>
- 
- #include <string>
-+#include <cstring>
- 
- #include <android-base/file.h>
- #include <android-base/unique_fd.h>
 --- a/system/core/libutils/String8.cpp
 +++ b/system/core/libutils/String8.cpp
 @@ -26,6 +26,7 @@
@@ -39,13 +19,3 @@ Forwarded: not-needed
  #include <memory>
  #include <vector>
  
---- a/system/libziparchive/zip_cd_entry_map.h
-+++ b/system/libziparchive/zip_cd_entry_map.h
-@@ -17,6 +17,7 @@
- #pragma once
- 
- #include <stdint.h>
-+#include <stdlib.h>
- 
- #include <map>
- #include <memory>

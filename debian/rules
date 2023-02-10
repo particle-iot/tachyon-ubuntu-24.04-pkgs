@@ -41,8 +41,21 @@ endif
 %:
 	dh $@ --with bash-completion
 
+# Depends: git-buildpackage repo
 get-orig-source:
 	debian/scripts/get-orig-source
+
+ifeq ("$(wildcard ../$(DEB_SOURCE)_$(PLATFORM_TOOLS_VERSION).orig.tar.xz)","")
+update: get-orig-source
+else
+update:
+endif
+	gbp import-orig ../$(DEB_SOURCE)_$(PLATFORM_TOOLS_VERSION).orig.tar.xz \
+		--no-interactive --debian-branch=$(shell git symbolic-ref --short HEAD) \
+		--postimport="\
+		dch -b -v\$$GBP_DEBIAN_VERSION \"New upstream release \$$GBP_UPSTREAM_VERSION\"; \
+		git add debian/changelog; \
+		git commit -m\"dch: Note new upstream version \$$GBP_UPSTREAM_VERSION\""
 
 ## system
 
