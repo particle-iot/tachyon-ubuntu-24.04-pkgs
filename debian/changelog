@@ -1,3 +1,11 @@
+android-platform-tools (33.0.3-1~exp8) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches: Add patch to fix ftbfs issue for
+    src:android-platform-frameworks-base.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 11 Feb 2023 02:12:23 -0800
+
 android-platform-tools (33.0.3-1~exp7) experimental; urgency=medium
 
   * Team upload.

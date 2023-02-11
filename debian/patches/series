@@ -13,5 +13,6 @@ system/support-mips.patch
 system/Revert-Remove-mips-build.patch
 system/Revert-Remove-mips-support-fr.patch
 system/Fix-include-path.patch
+system/Implement-const_iterator-operator.patch
 development/typos.patch
 libnativehelper/Nullable.patch
