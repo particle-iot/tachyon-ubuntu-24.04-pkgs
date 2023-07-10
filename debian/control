@@ -2,7 +2,8 @@ Source: android-platform-tools
 Section: devel
 Priority: optional
 Maintainer: Android Tools Maintainers <android-tools-devel@lists.alioth.debian.org>
-Uploaders: Chirayu Desai <chirayudesai1@gmail.com>
+Uploaders:
+ Roger Shimizu <rosh@debian.org>,
 Build-Depends:
  bash-completion,
  debhelper-compat (= 13),
@@ -13,7 +14,6 @@ Build-Depends-Arch:
  libbrotli-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libgtest-dev,
  liblz4-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
- libpcre3-dev,
  libpng-dev,
  libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libsquashfuse-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
@@ -296,6 +296,7 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
          android-liblog (= 1:${binary:Version}),
 Breaks: android-libnativehelper-dev (<< 33)
+Replaces: android-libnativehelper-dev (<< 33)
 Description: Support functions for Android's class libraries
  libnativehelper is a collection of JNI related utilities used in
  Android.
