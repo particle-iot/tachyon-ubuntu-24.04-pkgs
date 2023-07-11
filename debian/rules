@@ -59,6 +59,9 @@ endif
 
 ## system
 
+e/lib%.so: debian/external/lib%.mk
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
 s/lib%.a: debian/system/lib%.mk
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
@@ -72,7 +75,7 @@ else
 	ronn -r $<
 endif
 
-s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so
+s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so e/libcpu_features.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/libbase.so: debian/system/libbase.mk s/liblog.so
@@ -100,6 +103,7 @@ s/append2simg: debian/system/append2simg.mk s/simg2img
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 COMPONENTS = \
+  e/libcpu_features.so \
   e/liblzma.so \
   s/append2simg \
   s/img2simg \
