@@ -1,3 +1,14 @@
+android-platform-tools (33.0.3-2) unstable; urgency=medium
+
+  * Upload to unstable.
+  * debian/include:
+    - Add chrono header from libstdc++-13-dev to fix ftbfs for gcc-13
+      (Closes: #1037576).
+  * debian/patches:
+    - Add a missing header to fix ftbfs for gcc-13.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 22 Jul 2023 21:50:37 -0700
+
 android-platform-tools (33.0.3-2~exp1) experimental; urgency=medium
 
   * Add e/libcpu_features.so for android-platform-art/13.

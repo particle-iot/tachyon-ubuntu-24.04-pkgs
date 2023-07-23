@@ -12,6 +12,16 @@ Forwarded: not-needed
  
  namespace adb {
  namespace crypto {
+--- a/packages/modules/adb/file_sync_protocol.h
++++ b/packages/modules/adb/file_sync_protocol.h
+@@ -16,6 +16,7 @@
+ 
+ #pragma once
+ 
++#include <stdint.h>
+ #define MKID(a, b, c, d) ((a) | ((b) << 8) | ((c) << 16) | ((d) << 24))
+ 
+ #define ID_LSTAT_V1 MKID('S', 'T', 'A', 'T')
 --- a/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
 +++ b/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
 @@ -22,6 +22,7 @@

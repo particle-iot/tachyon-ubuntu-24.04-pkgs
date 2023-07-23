@@ -14,6 +14,8 @@ export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -fno-exceptions \
   -fno-strict-aliasing \
   -no-canonical-prefixes \
+  \
+  -Idebian/include # Workaround for #1037576 \
 
 ifneq (, $(shell which lld))
   export DEB_LDFLAGS_MAINT_APPEND += -fuse-ld=lld -Wl,--build-id=sha1
