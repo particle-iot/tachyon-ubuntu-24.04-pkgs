@@ -5,7 +5,7 @@ include /usr/share/dpkg/pkg-info.mk
 
 ## Security Hardening
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
-# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-33.0.3/cc/config/global.go#299
+# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-33.0.4/cc/config/global.go#307
 export DEB_CFLAGS_MAINT_APPEND = -fPIC -gdwarf-4
 export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -gdwarf-4
 export DEB_LDFLAGS_MAINT_APPEND = -fPIC
@@ -27,8 +27,8 @@ export DEB_SOURCE
 ## system
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.3/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 33.0.3
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.4/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 33.0.4
 
 ifneq (, $(shell which clang))
   export CC=clang
@@ -43,7 +43,7 @@ endif
 %:
 	dh $@ --with bash-completion
 
-# Depends: git-buildpackage repo
+# Depends: git-buildpackage repo ssh
 get-orig-source:
 	debian/scripts/get-orig-source
 
@@ -60,9 +60,6 @@ endif
 		git commit -m\"dch: Note new upstream version \$$GBP_UPSTREAM_VERSION\""
 
 ## system
-
-e/lib%.so: debian/external/lib%.mk
-	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/lib%.a: debian/system/lib%.mk
 	dh_auto_build --buildsystem=makefile -- --file=$<

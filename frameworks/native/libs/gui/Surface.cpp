@@ -27,13 +27,13 @@
 
 #include <inttypes.h>
 
+#include <android/gui/DisplayStatInfo.h>
 #include <android/native_window.h>
 
 #include <utils/Log.h>
 #include <utils/Trace.h>
 #include <utils/NativeHandle.h>
 
-#include <ui/DisplayStatInfo.h>
 #include <ui/DynamicDisplayInfo.h>
 #include <ui/Fence.h>
 #include <ui/GraphicBuffer.h>
@@ -45,6 +45,7 @@
 #include <gui/ISurfaceComposer.h>
 #include <gui/LayerState.h>
 #include <private/gui/ComposerService.h>
+#include <private/gui/ComposerServiceAIDL.h>
 
 namespace android {
 
@@ -125,6 +126,10 @@ sp<ISurfaceComposer> Surface::composerService() const {
     return ComposerService::getComposerService();
 }
 
+sp<gui::ISurfaceComposer> Surface::composerServiceAIDL() const {
+    return ComposerServiceAIDL::getComposerService();
+}
+
 nsecs_t Surface::now() const {
     return systemTime();
 }
@@ -174,10 +179,10 @@ status_t Surface::getLastQueuedBuffer(sp<GraphicBuffer>* outBuffer,
 status_t Surface::getDisplayRefreshCycleDuration(nsecs_t* outRefreshDuration) {
     ATRACE_CALL();
 
-    DisplayStatInfo stats;
-    status_t result = composerService()->getDisplayStats(nullptr, &stats);
-    if (result != NO_ERROR) {
-        return result;
+    gui::DisplayStatInfo stats;
+    binder::Status status = composerServiceAIDL()->getDisplayStats(nullptr, &stats);
+    if (!status.isOk()) {
+        return status.transactionError();
     }
 
     *outRefreshDuration = stats.vsyncPeriod;
@@ -343,20 +348,20 @@ status_t Surface::getFrameTimestamps(uint64_t frameNumber,
 status_t Surface::getWideColorSupport(bool* supported) {
     ATRACE_CALL();
 
-    const sp<IBinder> display = composerService()->getInternalDisplayToken();
+    const sp<IBinder> display = ComposerServiceAIDL::getInstance().getInternalDisplayToken();
     if (display == nullptr) {
         return NAME_NOT_FOUND;
     }
 
     *supported = false;
-    status_t error = composerService()->isWideColorDisplay(display, supported);
-    return error;
+    binder::Status status = composerServiceAIDL()->isWideColorDisplay(display, supported);
+    return status.transactionError();
 }
 
 status_t Surface::getHdrSupport(bool* supported) {
     ATRACE_CALL();
 
-    const sp<IBinder> display = composerService()->getInternalDisplayToken();
+    const sp<IBinder> display = ComposerServiceAIDL::getInstance().getInternalDisplayToken();
     if (display == nullptr) {
         return NAME_NOT_FOUND;
     }
@@ -1096,6 +1101,20 @@ void Surface::getQueueBufferInputLocked(android_native_buffer_t* buffer, int fen
     *out = input;
 }
 
+void Surface::applyGrallocMetadataLocked(
+        android_native_buffer_t* buffer,
+        const IGraphicBufferProducer::QueueBufferInput& queueBufferInput) {
+    ATRACE_CALL();
+    auto& mapper = GraphicBufferMapper::get();
+    mapper.setDataspace(buffer->handle, static_cast<ui::Dataspace>(queueBufferInput.dataSpace));
+    if (mHdrMetadataIsSet & HdrMetadata::SMPTE2086)
+        mapper.setSmpte2086(buffer->handle, queueBufferInput.getHdrMetadata().getSmpte2086());
+    if (mHdrMetadataIsSet & HdrMetadata::CTA861_3)
+        mapper.setCta861_3(buffer->handle, queueBufferInput.getHdrMetadata().getCta8613());
+    if (mHdrMetadataIsSet & HdrMetadata::HDR10PLUS)
+        mapper.setSmpte2094_40(buffer->handle, queueBufferInput.getHdrMetadata().getHdr10Plus());
+}
+
 void Surface::onBufferQueuedLocked(int slot, sp<Fence> fence,
         const IGraphicBufferProducer::QueueBufferOutput& output) {
     mDequeuedSlots.erase(slot);
@@ -1166,9 +1185,11 @@ int Surface::queueBuffer(android_native_buffer_t* buffer, int fenceFd) {
     IGraphicBufferProducer::QueueBufferOutput output;
     IGraphicBufferProducer::QueueBufferInput input;
     getQueueBufferInputLocked(buffer, fenceFd, mTimestamp, &input);
+    applyGrallocMetadataLocked(buffer, input);
     sp<Fence> fence = input.fence;
 
     nsecs_t now = systemTime();
+
     status_t err = mGraphicBufferProducer->queueBuffer(i, input, &output);
     mLastQueueDuration = systemTime() - now;
     if (err != OK)  {
@@ -1846,9 +1867,10 @@ int Surface::dispatchSetFrameTimelineInfo(va_list args) {
     ATRACE_CALL();
     auto frameTimelineVsyncId = static_cast<int64_t>(va_arg(args, int64_t));
     auto inputEventId = static_cast<int32_t>(va_arg(args, int32_t));
+    auto startTimeNanos = static_cast<int64_t>(va_arg(args, int64_t));
 
     ALOGV("Surface::%s", __func__);
-    return setFrameTimelineInfo({frameTimelineVsyncId, inputEventId});
+    return setFrameTimelineInfo({frameTimelineVsyncId, inputEventId, startTimeNanos});
 }
 
 bool Surface::transformToDisplayInverse() const {
@@ -2231,6 +2253,7 @@ int Surface::setBuffersDataSpace(Dataspace dataSpace)
 int Surface::setBuffersSmpte2086Metadata(const android_smpte2086_metadata* metadata) {
     ALOGV("Surface::setBuffersSmpte2086Metadata");
     Mutex::Autolock lock(mMutex);
+    mHdrMetadataIsSet |= HdrMetadata::SMPTE2086;
     if (metadata) {
         mHdrMetadata.smpte2086 = *metadata;
         mHdrMetadata.validTypes |= HdrMetadata::SMPTE2086;
@@ -2243,6 +2266,7 @@ int Surface::setBuffersSmpte2086Metadata(const android_smpte2086_metadata* metad
 int Surface::setBuffersCta8613Metadata(const android_cta861_3_metadata* metadata) {
     ALOGV("Surface::setBuffersCta8613Metadata");
     Mutex::Autolock lock(mMutex);
+    mHdrMetadataIsSet |= HdrMetadata::CTA861_3;
     if (metadata) {
         mHdrMetadata.cta8613 = *metadata;
         mHdrMetadata.validTypes |= HdrMetadata::CTA861_3;
@@ -2255,6 +2279,7 @@ int Surface::setBuffersCta8613Metadata(const android_cta861_3_metadata* metadata
 int Surface::setBuffersHdr10PlusMetadata(const size_t size, const uint8_t* metadata) {
     ALOGV("Surface::setBuffersBlobMetadata");
     Mutex::Autolock lock(mMutex);
+    mHdrMetadataIsSet |= HdrMetadata::HDR10PLUS;
     if (size > 0) {
         mHdrMetadata.hdr10plus.assign(metadata, metadata + size);
         mHdrMetadata.validTypes |= HdrMetadata::HDR10PLUS;

@@ -104,6 +104,7 @@ bool Backtrace::Unwind(unwindstack::Regs* regs, BacktraceMap* back_map,
         break;
 
       case unwindstack::ERROR_SYSTEM_CALL:
+      case unwindstack::ERROR_PTRACE_CALL:
       case unwindstack::ERROR_MAPS_PARSE:
       case unwindstack::ERROR_BAD_ARCH:
       case unwindstack::ERROR_INVALID_PARAMETER:

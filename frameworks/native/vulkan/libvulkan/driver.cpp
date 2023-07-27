@@ -365,7 +365,7 @@ CreateInfoWrapper::CreateInfoWrapper(const VkInstanceCreateInfo& create_info,
                                      const VkAllocationCallbacks& allocator)
     : is_instance_(true),
       allocator_(allocator),
-      loader_api_version_(VK_API_VERSION_1_1),
+      loader_api_version_(VK_API_VERSION_1_3),
       icd_api_version_(icd_api_version),
       physical_dev_(VK_NULL_HANDLE),
       instance_info_(create_info),
@@ -377,7 +377,7 @@ CreateInfoWrapper::CreateInfoWrapper(VkPhysicalDevice physical_dev,
                                      const VkAllocationCallbacks& allocator)
     : is_instance_(false),
       allocator_(allocator),
-      loader_api_version_(VK_API_VERSION_1_1),
+      loader_api_version_(VK_API_VERSION_1_3),
       icd_api_version_(icd_api_version),
       physical_dev_(physical_dev),
       dev_info_(create_info),
@@ -519,6 +519,14 @@ VkResult CreateInfoWrapper::SanitizeExtensions() {
         is_instance_ ? loader_api_version_
                      : std::min(icd_api_version_, loader_api_version_);
     switch (api_version) {
+        case VK_API_VERSION_1_3:
+            hook_extensions_.set(ProcHook::EXTENSION_CORE_1_3);
+            hal_extensions_.set(ProcHook::EXTENSION_CORE_1_3);
+            [[clang::fallthrough]];
+        case VK_API_VERSION_1_2:
+            hook_extensions_.set(ProcHook::EXTENSION_CORE_1_2);
+            hal_extensions_.set(ProcHook::EXTENSION_CORE_1_2);
+            [[clang::fallthrough]];
         case VK_API_VERSION_1_1:
             hook_extensions_.set(ProcHook::EXTENSION_CORE_1_1);
             hal_extensions_.set(ProcHook::EXTENSION_CORE_1_1);
@@ -655,6 +663,7 @@ void CreateInfoWrapper::FilterExtension(const char* name) {
             case ProcHook::EXTENSION_CORE_1_0:
             case ProcHook::EXTENSION_CORE_1_1:
             case ProcHook::EXTENSION_CORE_1_2:
+            case ProcHook::EXTENSION_CORE_1_3:
             case ProcHook::EXTENSION_COUNT:
                 // Device and meta extensions. If we ever get here it's a bug in
                 // our code. But enumerating them lets us avoid having a default
@@ -711,6 +720,7 @@ void CreateInfoWrapper::FilterExtension(const char* name) {
             case ProcHook::EXTENSION_CORE_1_0:
             case ProcHook::EXTENSION_CORE_1_1:
             case ProcHook::EXTENSION_CORE_1_2:
+            case ProcHook::EXTENSION_CORE_1_3:
             case ProcHook::EXTENSION_COUNT:
                 // Instance and meta extensions. If we ever get here it's a bug
                 // in our code. But enumerating them lets us avoid having a
@@ -914,9 +924,8 @@ VkResult EnumerateInstanceExtensionProperties(
     uint32_t* pPropertyCount,
     VkExtensionProperties* pProperties) {
     std::vector<VkExtensionProperties> loader_extensions;
-    loader_extensions.push_back({
-        VK_KHR_SURFACE_EXTENSION_NAME,
-        VK_KHR_SURFACE_SPEC_VERSION});
+    loader_extensions.push_back(
+        {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION});
     loader_extensions.push_back(
         {VK_KHR_SURFACE_PROTECTED_CAPABILITIES_EXTENSION_NAME,
          VK_KHR_SURFACE_PROTECTED_CAPABILITIES_SPEC_VERSION});
@@ -926,9 +935,9 @@ VkResult EnumerateInstanceExtensionProperties(
     loader_extensions.push_back({
         VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME,
         VK_EXT_SWAPCHAIN_COLOR_SPACE_SPEC_VERSION});
-    loader_extensions.push_back({
-        VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,
-        VK_KHR_GET_SURFACE_CAPABILITIES_2_SPEC_VERSION});
+    loader_extensions.push_back(
+        {VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,
+         VK_KHR_GET_SURFACE_CAPABILITIES_2_SPEC_VERSION});
     loader_extensions.push_back({VK_GOOGLE_SURFACELESS_QUERY_EXTENSION_NAME,
                                  VK_GOOGLE_SURFACELESS_QUERY_SPEC_VERSION});
 
@@ -1018,6 +1027,51 @@ void QueryPresentationProperties(
     }
 }
 
+VkResult GetAndroidNativeBufferSpecVersion9Support(
+    VkPhysicalDevice physicalDevice,
+    bool& support) {
+    support = false;
+
+    const InstanceData& data = GetData(physicalDevice);
+
+    // Call to get propertyCount
+    uint32_t propertyCount = 0;
+    ATRACE_BEGIN("driver.EnumerateDeviceExtensionProperties");
+    VkResult result = data.driver.EnumerateDeviceExtensionProperties(
+        physicalDevice, nullptr, &propertyCount, nullptr);
+    ATRACE_END();
+
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        return result;
+    }
+
+    // Call to enumerate properties
+    std::vector<VkExtensionProperties> properties(propertyCount);
+    ATRACE_BEGIN("driver.EnumerateDeviceExtensionProperties");
+    result = data.driver.EnumerateDeviceExtensionProperties(
+        physicalDevice, nullptr, &propertyCount, properties.data());
+    ATRACE_END();
+
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        return result;
+    }
+
+    for (uint32_t i = 0; i < propertyCount; i++) {
+        auto& prop = properties[i];
+
+        if (strcmp(prop.extensionName,
+                   VK_ANDROID_NATIVE_BUFFER_EXTENSION_NAME) != 0)
+            continue;
+
+        if (prop.specVersion >= 9) {
+            support = true;
+            return result;
+        }
+    }
+
+    return result;
+}
+
 VkResult EnumerateDeviceExtensionProperties(
     VkPhysicalDevice physicalDevice,
     const char* pLayerName,
@@ -1052,6 +1106,49 @@ VkResult EnumerateDeviceExtensionProperties(
                 VK_GOOGLE_DISPLAY_TIMING_SPEC_VERSION});
     }
 
+    // Conditionally add VK_EXT_IMAGE_COMPRESSION_CONTROL* if feature and ANB
+    // support is provided by the driver
+    VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT
+        swapchainCompFeats = {};
+    swapchainCompFeats.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT;
+    swapchainCompFeats.pNext = nullptr;
+    swapchainCompFeats.imageCompressionControlSwapchain = false;
+    VkPhysicalDeviceImageCompressionControlFeaturesEXT imageCompFeats = {};
+    imageCompFeats.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT;
+    imageCompFeats.pNext = &swapchainCompFeats;
+    imageCompFeats.imageCompressionControl = false;
+
+    VkPhysicalDeviceFeatures2 feats2 = {};
+    feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    feats2.pNext = &imageCompFeats;
+
+    const auto& driver = GetData(physicalDevice).driver;
+    if (driver.GetPhysicalDeviceFeatures2 ||
+        driver.GetPhysicalDeviceFeatures2KHR) {
+        GetPhysicalDeviceFeatures2(physicalDevice, &feats2);
+    }
+
+    bool anb9 = false;
+    VkResult result =
+        GetAndroidNativeBufferSpecVersion9Support(physicalDevice, anb9);
+
+    if (result != VK_SUCCESS && result != VK_INCOMPLETE) {
+        return result;
+    }
+
+    if (anb9 && imageCompFeats.imageCompressionControl) {
+        loader_extensions.push_back(
+            {VK_EXT_IMAGE_COMPRESSION_CONTROL_EXTENSION_NAME,
+             VK_EXT_IMAGE_COMPRESSION_CONTROL_SPEC_VERSION});
+    }
+    if (anb9 && swapchainCompFeats.imageCompressionControlSwapchain) {
+        loader_extensions.push_back(
+            {VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_EXTENSION_NAME,
+             VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_SPEC_VERSION});
+    }
+
     // enumerate our extensions first
     if (!pLayerName && pProperties) {
         uint32_t count = std::min(
@@ -1069,7 +1166,7 @@ VkResult EnumerateDeviceExtensionProperties(
     }
 
     ATRACE_BEGIN("driver.EnumerateDeviceExtensionProperties");
-    VkResult result = data.driver.EnumerateDeviceExtensionProperties(
+    result = data.driver.EnumerateDeviceExtensionProperties(
         physicalDevice, pLayerName, pPropertyCount, pProperties);
     ATRACE_END();
 
@@ -1120,7 +1217,7 @@ VkResult CreateInstance(const VkInstanceCreateInfo* pCreateInfo,
         if (result != VK_SUCCESS)
             return result;
 
-        icd_api_version ^= VK_VERSION_PATCH(icd_api_version);
+        icd_api_version ^= VK_API_VERSION_PATCH(icd_api_version);
     }
 
     CreateInfoWrapper wrapper(*pCreateInfo, icd_api_version, data_allocator);
@@ -1204,7 +1301,7 @@ VkResult CreateDevice(VkPhysicalDevice physicalDevice,
 
     CreateInfoWrapper wrapper(
         physicalDevice, *pCreateInfo,
-        properties.apiVersion ^ VK_VERSION_PATCH(properties.apiVersion),
+        properties.apiVersion ^ VK_API_VERSION_PATCH(properties.apiVersion),
         data_allocator);
     VkResult result = wrapper.Validate();
     if (result != VK_SUCCESS)
@@ -1245,15 +1342,18 @@ VkResult CreateDevice(VkPhysicalDevice physicalDevice,
         return VK_ERROR_INCOMPATIBLE_DRIVER;
     }
 
-    // sanity check ANDROID_native_buffer implementation, whose set of
+    // Confirming ANDROID_native_buffer implementation, whose set of
     // entrypoints varies according to the spec version.
     if ((wrapper.GetHalExtensions()[ProcHook::ANDROID_native_buffer]) &&
         !data->driver.GetSwapchainGrallocUsageANDROID &&
-        !data->driver.GetSwapchainGrallocUsage2ANDROID) {
-        ALOGE("Driver's implementation of ANDROID_native_buffer is broken;"
-              " must expose at least one of "
-              "vkGetSwapchainGrallocUsageANDROID or "
-              "vkGetSwapchainGrallocUsage2ANDROID");
+        !data->driver.GetSwapchainGrallocUsage2ANDROID &&
+        !data->driver.GetSwapchainGrallocUsage3ANDROID) {
+        ALOGE(
+            "Driver's implementation of ANDROID_native_buffer is broken;"
+            " must expose at least one of "
+            "vkGetSwapchainGrallocUsageANDROID or "
+            "vkGetSwapchainGrallocUsage2ANDROID or "
+            "vkGetSwapchainGrallocUsage3ANDROID");
 
         data->driver.DestroyDevice(dev, pAllocator);
         FreeDeviceData(data, data_allocator);
@@ -1432,10 +1532,89 @@ void GetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice,
 
     if (driver.GetPhysicalDeviceFeatures2) {
         driver.GetPhysicalDeviceFeatures2(physicalDevice, pFeatures);
+    } else {
+        driver.GetPhysicalDeviceFeatures2KHR(physicalDevice, pFeatures);
+    }
+
+    // Conditionally add imageCompressionControlSwapchain if
+    // imageCompressionControl is supported Check for imageCompressionControl in
+    // the pChain
+    bool imageCompressionControl = false;
+    bool imageCompressionControlInChain = false;
+    bool imageCompressionControlSwapchainInChain = false;
+    VkPhysicalDeviceFeatures2* pFeats = pFeatures;
+    while (pFeats) {
+        switch (pFeats->sType) {
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT: {
+                const VkPhysicalDeviceImageCompressionControlFeaturesEXT*
+                    compressionFeat = reinterpret_cast<
+                        const VkPhysicalDeviceImageCompressionControlFeaturesEXT*>(
+                        pFeats);
+                imageCompressionControl =
+                    compressionFeat->imageCompressionControl;
+                imageCompressionControlInChain = true;
+            } break;
+
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT: {
+                VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT*
+                    compressionFeat = reinterpret_cast<
+                        VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT*>(
+                        pFeats);
+                compressionFeat->imageCompressionControlSwapchain = false;
+                imageCompressionControlSwapchainInChain = true;
+            } break;
+
+            default:
+                break;
+        }
+        pFeats = reinterpret_cast<VkPhysicalDeviceFeatures2*>(pFeats->pNext);
+    }
+
+    if (!imageCompressionControlSwapchainInChain) {
         return;
     }
 
-    driver.GetPhysicalDeviceFeatures2KHR(physicalDevice, pFeatures);
+    // If not in pchain, explicitly query for imageCompressionControl
+    if (!imageCompressionControlInChain) {
+        VkPhysicalDeviceImageCompressionControlFeaturesEXT imageCompFeats = {};
+        imageCompFeats.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT;
+        imageCompFeats.pNext = nullptr;
+        imageCompFeats.imageCompressionControl = false;
+
+        VkPhysicalDeviceFeatures2 feats2 = {};
+        feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        feats2.pNext = &imageCompFeats;
+
+        if (driver.GetPhysicalDeviceFeatures2) {
+            driver.GetPhysicalDeviceFeatures2(physicalDevice, &feats2);
+        } else {
+            driver.GetPhysicalDeviceFeatures2KHR(physicalDevice, &feats2);
+        }
+
+        imageCompressionControl = imageCompFeats.imageCompressionControl;
+    }
+
+    // Only enumerate imageCompressionControlSwapchin if imageCompressionControl
+    if (imageCompressionControl) {
+        pFeats = pFeatures;
+        while (pFeats) {
+            switch (pFeats->sType) {
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT: {
+                    VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT*
+                        compressionFeat = reinterpret_cast<
+                            VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT*>(
+                            pFeats);
+                    compressionFeat->imageCompressionControlSwapchain = true;
+                } break;
+
+                default:
+                    break;
+            }
+            pFeats =
+                reinterpret_cast<VkPhysicalDeviceFeatures2*>(pFeats->pNext);
+        }
+    }
 }
 
 void GetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice,

@@ -23,7 +23,7 @@
 #include <backtrace/Backtrace.h>
 
 // The signal used to cause a thread to dump the stack.
-#if defined(__GLIBC__)
+#if !defined(__BIONIC__)
 // In order to run the backtrace_tests on the host, we can't use
 // the internal real time signals used by GLIBC. To avoid this,
 // use SIGRTMIN for the signal to dump the stack.

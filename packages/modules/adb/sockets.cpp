@@ -158,7 +158,7 @@ static SocketFlushResult local_socket_flush_incoming(asocket* s) {
     }
 
     // If we sent the last packet of a closing socket, we can now destroy it.
-    if (s->closing) {
+    if (s->closing && !fd_full) {
         s->close(s);
         return SocketFlushResult::Destroyed;
     }
@@ -200,8 +200,7 @@ static bool local_socket_flush_outgoing(asocket* s) {
         is_eof = 1;
         break;
     }
-    D("LS(%d): fd=%d post avail loop. r=%d is_eof=%d forced_eof=%d", s->id, s->fd, r, is_eof,
-      s->fde->force_eof);
+    D("LS(%d): fd=%d post avail loop. r=%d is_eof=%d", s->id, s->fd, r, is_eof);
 
     if (avail != max_payload && s->peer) {
         data.resize(max_payload - avail);
@@ -241,9 +240,8 @@ static bool local_socket_flush_outgoing(asocket* s) {
         }
     }
 
-    // Don't allow a forced eof if data is still there.
-    if ((s->fde->force_eof && !r) || is_eof) {
-        D(" closing because is_eof=%d r=%d s->fde.force_eof=%d", is_eof, r, s->fde->force_eof);
+    if (is_eof) {
+        D(" closing because is_eof=%d", is_eof);
         s->close(s);
         return false;
     }
@@ -373,7 +371,7 @@ static void local_socket_close(asocket* s) {
     /* otherwise, put on the closing list
     */
     D("LS(%d): closing", s->id);
-    s->closing = 1;
+    s->closing = true;
     fdevent_del(s->fde, FDE_READ);
     remove_socket(s);
     D("LS(%d): put on socket_closing_list fd=%d", s->id, s->fd);

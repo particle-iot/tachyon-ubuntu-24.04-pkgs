@@ -499,6 +499,9 @@ class Dumpstate {
     // List of open ANR dump files.
     std::vector<DumpData> anr_data_;
 
+    // List of open shutdown checkpoint files.
+    std::vector<DumpData> shutdown_checkpoints_;
+
     // A thread pool to execute dump tasks simultaneously if the parallel run is enabled.
     std::unique_ptr<android::os::dumpstate::DumpPool> dump_pool_;
 
@@ -618,9 +621,6 @@ void show_wchan(int pid, int tid, const char *name);
 
 /* Displays a processes times */
 void show_showtime(int pid, const char *name);
-
-/* Runs "showmap" for a process */
-void do_showmap(int pid, const char *name);
 
 /* Gets the dmesg output for the kernel */
 void do_dmesg();

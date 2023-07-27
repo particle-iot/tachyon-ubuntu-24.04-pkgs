@@ -1,8 +1,13 @@
 LIBBINDER_RPC_UNSTABLE_SHIM { # platform-only
   global:
-    RunRpcServer;
-    RunRpcServerCallback;
-    RpcClient;
+    ARpcServer_free;
+    ARpcServer_join;
+    ARpcServer_newInitUnixDomain;
+    ARpcServer_newVsock;
+    ARpcServer_shutdown;
+    ARpcServer_start;
+    VsockRpcClient;
+    UnixDomainRpcClient;
     RpcPreconnectedClient;
   local:
     *;

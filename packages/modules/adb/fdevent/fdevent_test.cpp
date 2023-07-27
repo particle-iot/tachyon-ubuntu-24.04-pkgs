@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include <unistd.h>
 #include <chrono>
 #include <limits>
 #include <memory>
@@ -25,6 +26,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <android-base/threads.h>
 
 #include "adb_io.h"
 #include "fdevent_test.h"
@@ -135,7 +138,7 @@ TEST_F(FdeventTest, smoke) {
         PrepareThread();
 
         std::vector<std::unique_ptr<FdHandler>> fd_handlers;
-        fdevent_run_on_main_thread([&thread_arg, &fd_handlers, use_new_callback]() {
+        fdevent_run_on_looper([&thread_arg, &fd_handlers, use_new_callback]() {
             std::vector<int> read_fds;
             std::vector<int> write_fds;
 
@@ -163,7 +166,7 @@ TEST_F(FdeventTest, smoke) {
             ASSERT_EQ(read_buffer, write_buffer);
         }
 
-        fdevent_run_on_main_thread([&fd_handlers]() { fd_handlers.clear(); });
+        fdevent_run_on_looper([&fd_handlers]() { fd_handlers.clear(); });
         WaitForFdeventLoop();
 
         TerminateThread();
@@ -172,20 +175,20 @@ TEST_F(FdeventTest, smoke) {
     }
 }
 
-TEST_F(FdeventTest, run_on_main_thread) {
+TEST_F(FdeventTest, run_on_looper_thread_queued) {
     std::vector<int> vec;
 
     PrepareThread();
 
-    // Block the main thread for a long time while we queue our callbacks.
-    fdevent_run_on_main_thread([]() {
-        check_main_thread();
+    // Block the looper thread for a long time while we queue our callbacks.
+    fdevent_run_on_looper([]() {
+        fdevent_check_looper();
         std::this_thread::sleep_for(std::chrono::seconds(1));
     });
 
     for (int i = 0; i < 1000000; ++i) {
-        fdevent_run_on_main_thread([i, &vec]() {
-            check_main_thread();
+        fdevent_run_on_looper([i, &vec]() {
+            fdevent_check_looper();
             vec.push_back(i);
         });
     }
@@ -198,29 +201,22 @@ TEST_F(FdeventTest, run_on_main_thread) {
     }
 }
 
-static std::function<void()> make_appender(std::vector<int>* vec, int value) {
-    return [vec, value]() {
-        check_main_thread();
-        if (value == 100) {
-            return;
-        }
-
-        vec->push_back(value);
-        fdevent_run_on_main_thread(make_appender(vec, value + 1));
-    };
-}
-
-TEST_F(FdeventTest, run_on_main_thread_reentrant) {
-    std::vector<int> vec;
+TEST_F(FdeventTest, run_on_looper_thread_reentrant) {
+    bool b = false;
 
     PrepareThread();
-    fdevent_run_on_main_thread(make_appender(&vec, 0));
+
+    fdevent_run_on_looper([&b]() {
+        fdevent_check_looper();
+        fdevent_run_on_looper([&b]() {
+            fdevent_check_looper();
+            b = true;
+        });
+    });
+
     TerminateThread();
 
-    ASSERT_EQ(100u, vec.size());
-    for (int i = 0; i < 100; ++i) {
-        ASSERT_EQ(i, vec[i]);
-    }
+    EXPECT_EQ(b, true);
 }
 
 TEST_F(FdeventTest, timeout) {
@@ -242,7 +238,7 @@ TEST_F(FdeventTest, timeout) {
     int fds[2];
     ASSERT_EQ(0, adb_socketpair(fds));
     static constexpr auto delta = 100ms;
-    fdevent_run_on_main_thread([&]() {
+    fdevent_run_on_looper([&]() {
         test.fde = fdevent_create(fds[0], [](fdevent* fde, unsigned events, void* arg) {
             auto test = static_cast<TimeoutTest*>(arg);
             auto now = std::chrono::steady_clock::now();

@@ -22,7 +22,6 @@ use crate::parcel::{BorrowedParcel, Serialize};
 use crate::proxy::SpIBinder;
 use crate::sys;
 
-use lazy_static::lazy_static;
 use std::convert::TryFrom;
 use std::ffi::{c_void, CStr, CString};
 use std::fs::File;
@@ -296,7 +295,7 @@ impl<T: Remotable> InterfaceClassMethods for Binder<T> {
     /// Must be called with a valid pointer to a `T` object. After this call,
     /// the pointer will be invalid and should not be dereferenced.
     unsafe extern "C" fn on_destroy(object: *mut c_void) {
-        Box::from_raw(object as *mut T);
+        drop(Box::from_raw(object as *mut T));
     }
 
     /// Called whenever a new, local `AIBinder` object is needed of a specific
@@ -508,10 +507,8 @@ pub struct LazyServiceGuard {
     _private: (),
 }
 
-lazy_static! {
-    // Count of how many LazyServiceGuard objects are in existence.
-    static ref GUARD_COUNT: Mutex<u64> = Mutex::new(0);
-}
+// Count of how many LazyServiceGuard objects are in existence.
+static GUARD_COUNT: Mutex<u64> = Mutex::new(0);
 
 impl LazyServiceGuard {
     /// Create a new LazyServiceGuard to prevent the service manager prematurely killing this

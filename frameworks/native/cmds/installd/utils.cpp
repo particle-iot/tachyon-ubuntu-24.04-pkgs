@@ -424,6 +424,7 @@ std::vector<userid_t> get_known_users(const char* volume_uuid) {
 
     return users;
 }
+
 long get_project_id(uid_t uid, long start_project_id_range) {
     return uid - AID_APP_START + start_project_id_range;
 }
@@ -462,6 +463,7 @@ int set_quota_project_id(const std::string& path, long project_id, bool set_inhe
     }
     return 0;
 }
+
 int calculate_tree_size(const std::string& path, int64_t* size,
         int32_t include_gid, int32_t exclude_gid, bool exclude_apps) {
     FTS *fts;
@@ -521,7 +523,6 @@ int calculate_tree_size(const std::string& path, int64_t* size,
  */
 bool is_valid_package_name(const std::string& packageName) {
     // This logic is borrowed from PackageParser.java
-    bool hasSep = false;
     bool front = true;
 
     auto it = packageName.begin();
@@ -537,7 +538,6 @@ bool is_valid_package_name(const std::string& packageName) {
             }
         }
         if (c == '.') {
-            hasSep = true;
             front = true;
             continue;
         }

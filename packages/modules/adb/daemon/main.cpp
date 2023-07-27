@@ -57,6 +57,7 @@
 #include "socket_spec.h"
 #include "transport.h"
 
+#include "daemon/jdwp_service.h"
 #include "daemon/mdns.h"
 #include "daemon/watchdog.h"
 
@@ -320,6 +321,7 @@ int main(int argc, char** argv) {
                 {"device_banner", required_argument, nullptr, 'b'},
                 {"version", no_argument, nullptr, 'v'},
                 {"logpostfsdata", no_argument, nullptr, 'l'},
+                {nullptr, no_argument, nullptr, 0},
         };
 
         int option_index = 0;

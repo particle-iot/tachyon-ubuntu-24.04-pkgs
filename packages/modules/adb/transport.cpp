@@ -152,12 +152,12 @@ class ReconnectHandler {
 };
 
 void ReconnectHandler::Start() {
-    check_main_thread();
+    fdevent_check_looper();
     handler_thread_ = std::thread(&ReconnectHandler::Run, this);
 }
 
 void ReconnectHandler::Stop() {
-    check_main_thread();
+    fdevent_check_looper();
     {
         std::lock_guard<std::mutex> lock(reconnect_mutex_);
         running_ = false;
@@ -175,7 +175,7 @@ void ReconnectHandler::Stop() {
 }
 
 void ReconnectHandler::TrackTransport(atransport* transport) {
-    check_main_thread();
+    fdevent_check_looper();
     {
         std::lock_guard<std::mutex> lock(reconnect_mutex_);
         if (!running_) return;
@@ -726,9 +726,27 @@ void update_transports() {
 
 #endif  // ADB_HOST
 
+// The transport listeners communicate with the transports list via fdevent. tmsg structure is a
+// container used as message unit and written to a pipe in order to communicate the transport
+// (pointer) and the action to perform.
+//
+//     Transport listener         FDEVENT          Transports list
+//     --------------------------------------------------------------
+//     (&transport,action)   ->    tmsg     ->   (&transport, action)
+//
+// TODO: Figure out if this fdevent bridge really is necessary? With the re-entrant lock to sync
+// access, what prevents us from "simply" updating the transport_list directly?
+
 struct tmsg {
     atransport* transport;
-    int action;
+
+    enum struct Action : int {
+        UNREGISTER = 0,  // Unregister the transport from transport list (typically a device has
+                         // been unplugged from USB or disconnected from TCP.
+        REGISTER = 1,  // Register the transport to the transport list (typically a device has been
+                       // plugged via USB or connected via TCP.
+    };
+    Action action;
 };
 
 static int transport_read_action(int fd, struct tmsg* m) {
@@ -791,7 +809,7 @@ static void transport_registration_func(int _fd, unsigned ev, void*) {
 
     t = m.transport;
 
-    if (m.action == 0) {
+    if (m.action == tmsg::Action::UNREGISTER) {
         D("transport: %s deleting", t->serial.c_str());
 
         {
@@ -888,7 +906,7 @@ void kick_all_transports_by_auth_key(std::string_view auth_key) {
 void register_transport(atransport* transport) {
     tmsg m;
     m.transport = transport;
-    m.action = 1;
+    m.action = tmsg::Action::REGISTER;
     D("transport: %s registered", transport->serial.c_str());
     if (transport_write_action(transport_registration_send, &m)) {
         PLOG(FATAL) << "cannot write transport registration socket";
@@ -898,7 +916,7 @@ void register_transport(atransport* transport) {
 static void remove_transport(atransport* transport) {
     tmsg m;
     m.transport = transport;
-    m.action = 0;
+    m.action = tmsg::Action::UNREGISTER;
     D("transport: %s removed", transport->serial.c_str());
     if (transport_write_action(transport_registration_send, &m)) {
         PLOG(FATAL) << "cannot write transport registration socket";
@@ -906,7 +924,7 @@ static void remove_transport(atransport* transport) {
 }
 
 static void transport_destroy(atransport* t) {
-    check_main_thread();
+    fdevent_check_looper();
     CHECK(t != nullptr);
 
     std::lock_guard<std::recursive_mutex> lock(transport_lock);
@@ -1144,7 +1162,7 @@ ConnectionState atransport::GetConnectionState() const {
 }
 
 void atransport::SetConnectionState(ConnectionState state) {
-    check_main_thread();
+    fdevent_check_looper();
     connection_state_ = state;
     update_transports();
 }
@@ -1152,7 +1170,7 @@ void atransport::SetConnectionState(ConnectionState state) {
 #if ADB_HOST
 bool atransport::Attach(std::string* error) {
     D("%s: attach", serial.c_str());
-    check_main_thread();
+    fdevent_check_looper();
 
     if (!should_use_libusb()) {
         *error = "attach/detach only implemented for libusb backend";
@@ -1179,7 +1197,7 @@ bool atransport::Attach(std::string* error) {
 
 bool atransport::Detach(std::string* error) {
     D("%s: detach", serial.c_str());
-    check_main_thread();
+    fdevent_check_looper();
 
     if (!should_use_libusb()) {
         *error = "attach/detach only implemented for libusb backend";
@@ -1219,16 +1237,16 @@ bool atransport::HandleRead(std::unique_ptr<apacket> p) {
     VLOG(TRANSPORT) << dump_packet(serial.c_str(), "from remote", p.get());
     apacket* packet = p.release();
 
-    // This needs to run on the main thread since the associated fdevent
+    // This needs to run on the looper thread since the associated fdevent
     // message pump exists in that context.
-    fdevent_run_on_main_thread([packet, this]() { handle_packet(packet, this); });
+    fdevent_run_on_looper([packet, this]() { handle_packet(packet, this); });
 
     return true;
 }
 
 void atransport::HandleError(const std::string& error) {
     LOG(INFO) << serial_name() << ": connection terminated: " << error;
-    fdevent_run_on_main_thread([this]() {
+    fdevent_run_on_looper([this]() {
         handle_offline(this);
         transport_destroy(this);
     });
@@ -1474,12 +1492,28 @@ void close_usb_devices(bool reset) {
 }
 #endif
 
+bool validate_transport_list(const std::list<atransport*>& list, const std::string& serial,
+                             atransport* t, int* error) {
+    for (const auto& transport : list) {
+        if (serial == transport->serial) {
+            const std::string list_name(&list == &pending_list ? "pending" : "transport");
+            VLOG(TRANSPORT) << "socket transport " << transport->serial << " is already in the "
+                            << list_name << " list and fails to register";
+            delete t;
+            if (error) *error = EALREADY;
+            return false;
+        }
+    }
+    return true;
+}
+
 bool register_socket_transport(unique_fd s, std::string serial, int port, int local,
                                atransport::ReconnectCallback reconnect, bool use_tls, int* error) {
     atransport* t = new atransport(std::move(reconnect), kCsOffline);
     t->use_tls = use_tls;
+    t->serial = std::move(serial);
 
-    D("transport: %s init'ing for socket %d, on port %d", serial.c_str(), s.get(), port);
+    D("transport: %s init'ing for socket %d, on port %d", t->serial.c_str(), s.get(), port);
     if (init_socket_transport(t, std::move(s), port, local) < 0) {
         delete t;
         if (error) *error = errno;
@@ -1487,27 +1521,14 @@ bool register_socket_transport(unique_fd s, std::string serial, int port, int lo
     }
 
     std::unique_lock<std::recursive_mutex> lock(transport_lock);
-    for (const auto& transport : pending_list) {
-        if (serial == transport->serial) {
-            VLOG(TRANSPORT) << "socket transport " << transport->serial
-                            << " is already in pending_list and fails to register";
-            delete t;
-            if (error) *error = EALREADY;
-            return false;
-        }
+    if (!validate_transport_list(pending_list, t->serial, t, error)) {
+        return false;
     }
 
-    for (const auto& transport : transport_list) {
-        if (serial == transport->serial) {
-            VLOG(TRANSPORT) << "socket transport " << transport->serial
-                            << " is already in transport_list and fails to register";
-            delete t;
-            if (error) *error = EALREADY;
-            return false;
-        }
+    if (!validate_transport_list(transport_list, t->serial, t, error)) {
+        return false;
     }
 
-    t->serial = std::move(serial);
     pending_list.push_front(t);
 
     lock.unlock();
@@ -1624,7 +1645,7 @@ void unregister_usb_transport(usb_handle* usb) {
 //   - adb reverse --remove tcp:<device_port> : responds OKAY
 //   - adb reverse --remove-all : responds OKAY
 void atransport::UpdateReverseConfig(std::string_view service_addr) {
-    check_main_thread();
+    fdevent_check_looper();
     if (!android::base::ConsumePrefix(&service_addr, "reverse:")) {
         return;
     }
@@ -1664,7 +1685,7 @@ void atransport::UpdateReverseConfig(std::string_view service_addr) {
 
 // Is this an authorized :connect request?
 bool atransport::IsReverseConfigured(const std::string& local_addr) {
-    check_main_thread();
+    fdevent_check_looper();
     for (const auto& [remote, local] : reverse_forwards_) {
         if (local == local_addr) {
             return true;

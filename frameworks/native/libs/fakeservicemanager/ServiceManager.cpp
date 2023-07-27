@@ -36,6 +36,9 @@ sp<IBinder> ServiceManager::checkService( const String16& name) const {
 status_t ServiceManager::addService(const String16& name, const sp<IBinder>& service,
                                 bool /*allowIsolated*/,
                                 int /*dumpsysFlags*/) {
+    if (service == nullptr) {
+        return UNEXPECTED_NULL;
+    }
     mNameToService[name] = service;
     return NO_ERROR;
 }
@@ -78,6 +81,11 @@ std::optional<String16> ServiceManager::updatableViaApex(const String16& name) {
     return std::nullopt;
 }
 
+Vector<String16> ServiceManager::getUpdatableNames(const String16& apexName) {
+    (void)apexName;
+    return {};
+}
+
 std::optional<IServiceManager::ConnectionInfo> ServiceManager::getConnectionInfo(
         const String16& name) {
     (void)name;
@@ -97,5 +105,9 @@ status_t ServiceManager::unregisterForNotifications(const String16&,
 std::vector<IServiceManager::ServiceDebugInfo> ServiceManager::getServiceDebugInfo() {
     std::vector<IServiceManager::ServiceDebugInfo> ret;
     return ret;
+}
+
+void ServiceManager::clear() {
+    mNameToService.clear();
 }
 }  // namespace android

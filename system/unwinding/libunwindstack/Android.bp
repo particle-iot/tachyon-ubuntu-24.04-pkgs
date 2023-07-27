@@ -75,6 +75,7 @@ libunwindstack_common_src_files = [
     "RegsArm64.cpp",
     "RegsX86.cpp",
     "RegsX86_64.cpp",
+    "RegsRiscv64.cpp",
     "RegsMips.cpp",
     "RegsMips64.cpp",
     "Symbols.cpp",
@@ -213,6 +214,7 @@ cc_library_static {
         "//external/gwp_asan",
         "//system/core/debuggerd",
         "//system/core/init",
+        "//system/core/libutils",
         "//system/unwinding/libbacktrace",
     ],
     apex_available: [

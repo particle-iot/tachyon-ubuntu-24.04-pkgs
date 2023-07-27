@@ -16,8 +16,6 @@
 
 #include "InstalldNativeService.h"
 
-#define ATRACE_TAG ATRACE_TAG_PACKAGE_MANAGER
-
 #include <errno.h>
 #include <fts.h>
 #include <inttypes.h>
@@ -56,7 +54,7 @@
 #include <cutils/properties.h>
 #include <cutils/sched_policy.h>
 #include <linux/quota.h>
-#include <log/log.h> // TODO: Move everything to base/logging.
+#include <log/log.h>               // TODO: Move everything to base/logging.
 #include <logwrap/logwrap.h>
 #include <private/android_filesystem_config.h>
 #include <private/android_projectid_config.h>
@@ -75,12 +73,13 @@
 #include "CrateManager.h"
 #include "MatchExtensionGen.h"
 #include "QuotaUtils.h"
+#include "SysTrace.h"
 
 #ifndef LOG_TAG
 #define LOG_TAG "installd"
 #endif
 
-// #define GRANULAR_LOCKS
+#define GRANULAR_LOCKS
 
 using android::base::ParseUint;
 using android::base::Split;
@@ -100,6 +99,8 @@ static constexpr const char* kXattrDefault = "user.default";
 
 static constexpr const char* kDataMirrorCePath = "/data_mirror/data_ce";
 static constexpr const char* kDataMirrorDePath = "/data_mirror/data_de";
+static constexpr const char* kMiscMirrorCePath = "/data_mirror/misc_ce";
+static constexpr const char* kMiscMirrorDePath = "/data_mirror/misc_de";
 
 static constexpr const int MIN_RESTRICTED_HOME_SDK_VERSION = 24; // > M
 
@@ -126,8 +127,6 @@ static std::once_flag flag;
 
 namespace {
 
-constexpr const char* kDump = "android.permission.DUMP";
-
 static binder::Status ok() {
     return binder::Status::ok();
 }
@@ -149,19 +148,6 @@ static binder::Status error(const std::string& msg) {
 static binder::Status error(uint32_t code, const std::string& msg) {
     LOG(ERROR) << msg << " (" << code << ")";
     return binder::Status::fromServiceSpecificError(code, String8(msg.c_str()));
-}
-
-binder::Status checkPermission(const char* permission) {
-    pid_t pid;
-    uid_t uid;
-
-    if (checkCallingPermission(String16(permission), reinterpret_cast<int32_t*>(&pid),
-            reinterpret_cast<int32_t*>(&uid))) {
-        return ok();
-    } else {
-        return exception(binder::Status::EX_SECURITY,
-                StringPrintf("UID %d / PID %d lacks permission %s", uid, pid, permission));
-    }
 }
 
 binder::Status checkUid(uid_t expectedUid) {
@@ -401,13 +387,7 @@ status_t InstalldNativeService::start() {
     return android::OK;
 }
 
-status_t InstalldNativeService::dump(int fd, const Vector<String16> & /* args */) {
-    const binder::Status dump_permission = checkPermission(kDump);
-    if (!dump_permission.isOk()) {
-        dprintf(fd, "%s\n", dump_permission.toString8().c_str());
-        return PERMISSION_DENIED;
-    }
-
+status_t InstalldNativeService::dump(int fd, const Vector<String16>& /* args */) {
     {
         std::lock_guard<std::recursive_mutex> lock(mMountsLock);
         dprintf(fd, "Storage mounts:\n");
@@ -485,7 +465,6 @@ done:
     free(after);
     return res;
 }
-
 static bool internal_storage_has_project_id() {
     // The following path is populated in setFirstBoot, so if this file is present
     // then project ids can be used. Using call once to cache the result of this check
@@ -495,7 +474,7 @@ static bool internal_storage_has_project_id() {
                 StringPrintf("%smisc/installd/using_project_ids", android_data_dir.c_str());
         sUsingProjectIdsFlag = access(using_project_ids.c_str(), F_OK) == 0;
     });
-    //    return sUsingProjectIdsFlag;
+    // return sUsingProjectIdsFlag;
     return false;
 }
 
@@ -522,10 +501,6 @@ static int prepare_app_cache_dir(const std::string& parent, const char* name, mo
 }
 
 static bool prepare_app_profile_dir(const std::string& packageName, int32_t appId, int32_t userId) {
-    if (!property_get_bool("dalvik.vm.usejitprofiles", false)) {
-        return true;
-    }
-
     int32_t uid = multiuser_get_uid(userId, appId);
     int shared_app_gid = multiuser_get_shared_gid(userId, appId);
     if (shared_app_gid == -1) {
@@ -1204,6 +1179,25 @@ binder::Status InstalldNativeService::destroyAppProfiles(const std::string& pack
     return res;
 }
 
+binder::Status InstalldNativeService::deleteReferenceProfile(const std::string& packageName,
+                                                             const std::string& profileName) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+    LOCK_PACKAGE();
+
+    // This function only supports primary dex'es.
+    std::string path =
+            create_reference_profile_path(packageName, profileName, /*is_secondary_dex=*/false);
+    if (unlink(path.c_str()) != 0) {
+        if (errno == ENOENT) {
+            return ok();
+        } else {
+            return error("Failed to delete profile " + profileName + " for " + packageName);
+        }
+    }
+    return ok();
+}
+
 binder::Status InstalldNativeService::destroyAppData(const std::optional<std::string>& uuid,
         const std::string& packageName, int32_t userId, int32_t flags, int64_t ceDataInode) {
     ENFORCE_UID(AID_SYSTEM);
@@ -1309,7 +1303,7 @@ binder::Status InstalldNativeService::fixupAppData(const std::optional<std::stri
     const char* uuid_ = uuid ? uuid->c_str() : nullptr;
     for (auto userId : get_known_users(uuid_)) {
         LOCK_USER();
-        ATRACE_BEGIN("fixup user");
+        atrace_pm_begin("fixup user");
         FTS* fts;
         FTSENT* p;
         auto ce_path = create_data_user_ce_path(uuid_, userId);
@@ -1399,7 +1393,7 @@ binder::Status InstalldNativeService::fixupAppData(const std::optional<std::stri
             }
         }
         fts_close(fts);
-        ATRACE_END();
+        atrace_pm_end();
     }
     return ok();
 }
@@ -1919,7 +1913,7 @@ binder::Status InstalldNativeService::destroyUserData(const std::optional<std::s
 }
 
 binder::Status InstalldNativeService::freeCache(const std::optional<std::string>& uuid,
-        int64_t targetFreeBytes, int64_t cacheReservedBytes, int32_t flags) {
+        int64_t targetFreeBytes, int32_t flags) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_UUID(uuid);
 #ifndef GRANULAR_LOCKS
@@ -1930,19 +1924,21 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
     const char* uuid_ = uuid ? uuid->c_str() : nullptr;
     auto data_path = create_data_path(uuid_);
     auto noop = (flags & FLAG_FREE_CACHE_NOOP);
+    auto defy_target = (flags & FLAG_FREE_CACHE_DEFY_TARGET_FREE_BYTES);
 
     int64_t free = data_disk_free(data_path);
     if (free < 0) {
         return error("Failed to determine free space for " + data_path);
     }
 
-    int64_t cleared = 0;
     int64_t needed = targetFreeBytes - free;
-    LOG(DEBUG) << "Device " << data_path << " has " << free << " free; requested "
-            << targetFreeBytes << "; needed " << needed;
+    if (!defy_target) {
+        LOG(DEBUG) << "Device " << data_path << " has " << free << " free; requested "
+                << targetFreeBytes << "; needed " << needed;
 
-    if (free >= targetFreeBytes) {
-        return ok();
+        if (free >= targetFreeBytes) {
+            return ok();
+        }
     }
 
     if (flags & FLAG_FREE_CACHE_V2) {
@@ -1950,7 +1946,7 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
         // files from the UIDs which are most over their allocated quota
 
         // 1. Create trackers for every known UID
-        ATRACE_BEGIN("create");
+        atrace_pm_begin("create");
         const auto users = get_known_users(uuid_);
 #ifdef GRANULAR_LOCKS
         std::vector<UserLock> userLocks;
@@ -1966,17 +1962,43 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
 #endif // GRANULAR_LOCKS
             FTS *fts;
             FTSENT *p;
+
+            // Create a list of data paths whose children have cache directories
             auto ce_path = create_data_user_ce_path(uuid_, userId);
             auto de_path = create_data_user_de_path(uuid_, userId);
             auto media_path = findDataMediaPath(uuid, userId) + "/Android/data/";
-            char *argv[] = { (char*) ce_path.c_str(), (char*) de_path.c_str(),
-                    (char*) media_path.c_str(), nullptr };
+            auto ce_sdk_path = create_data_misc_sdk_sandbox_path(uuid_, /*isCeData=*/true, userId);
+            auto de_sdk_path = create_data_misc_sdk_sandbox_path(uuid_, /*isCeData=*/false, userId);
+
+            std::vector<std::string> dataPaths = {ce_path, de_path, media_path};
+            foreach_subdir(ce_sdk_path, [&ce_sdk_path, &dataPaths](const std::string subDir) {
+                const auto fullpath = ce_sdk_path + "/" + subDir;
+                dataPaths.push_back(fullpath);
+            });
+            foreach_subdir(de_sdk_path, [&de_sdk_path, &dataPaths](const std::string subDir) {
+                const auto fullpath = de_sdk_path + "/" + subDir;
+                dataPaths.push_back((char*)fullpath.c_str());
+            });
+
+            char* argv[dataPaths.size() + 1];
+            for (unsigned int i = 0; i < dataPaths.size(); i++) {
+                argv[i] = (char*)dataPaths[i].c_str();
+            }
+            argv[dataPaths.size()] = nullptr;
+
             if (!(fts = fts_open(argv, FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, nullptr))) {
                 return error("Failed to fts_open");
             }
             while ((p = fts_read(fts)) != nullptr) {
                 if (p->fts_info == FTS_D && p->fts_level == 1) {
                     uid_t uid = p->fts_statp->st_uid;
+
+                    // If uid belongs to sdk sandbox, then the cache should be attributed to the
+                    // original client app.
+                    const auto client_uid = multiuser_convert_sdk_sandbox_to_app_uid(uid);
+                    const bool isSandboxUid = (client_uid != (uid_t)-1);
+                    if (isSandboxUid) uid = client_uid;
+
                     if (multiuser_get_app_id(uid) == AID_MEDIA_RW) {
                         uid = (multiuser_get_app_id(p->fts_statp->st_gid) - AID_EXT_GID_START)
                                 + AID_APP_START;
@@ -2005,11 +2027,10 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
             }
             fts_close(fts);
         }
-        ATRACE_END();
+        atrace_pm_end();
 
         // 2. Populate tracker stats and insert into priority queue
-        ATRACE_BEGIN("populate");
-        int64_t cacheTotal = 0;
+        atrace_pm_begin("populate");
         auto cmp = [](std::shared_ptr<CacheTracker> left, std::shared_ptr<CacheTracker> right) {
             return (left->getCacheRatio() < right->getCacheRatio());
         };
@@ -2018,13 +2039,12 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
         for (const auto& it : trackers) {
             it.second->loadStats();
             queue.push(it.second);
-            cacheTotal += it.second->cacheUsed;
         }
-        ATRACE_END();
+        atrace_pm_end();
 
         // 3. Bounce across the queue, freeing items from whichever tracker is
         // the most over their assigned quota
-        ATRACE_BEGIN("bounce");
+        atrace_pm_begin("bounce");
         std::shared_ptr<CacheTracker> active;
         while (active || !queue.empty()) {
             // Only look at apps under quota when explicitly requested
@@ -2032,12 +2052,6 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
                     && !(flags & FLAG_FREE_CACHE_V2_DEFY_QUOTA)) {
                 LOG(DEBUG) << "Active ratio " << active->getCacheRatio()
                         << " isn't over quota, and defy not requested";
-                break;
-            }
-
-            // Only keep clearing when we haven't pushed into reserved area
-            if (cacheReservedBytes > 0 && cleared >= (cacheTotal - cacheReservedBytes)) {
-                LOG(DEBUG) << "Refusing to clear cached data in reserved space";
                 break;
             }
 
@@ -2070,33 +2084,38 @@ binder::Status InstalldNativeService::freeCache(const std::optional<std::string>
                 }
                 active->cacheUsed -= item->size;
                 needed -= item->size;
-                cleared += item->size;
             }
 
-            // Verify that we're actually done before bailing, since sneaky
-            // apps might be using hardlinks
-            if (needed <= 0) {
-                free = data_disk_free(data_path);
-                needed = targetFreeBytes - free;
+            if (!defy_target) {
+                // Verify that we're actually done before bailing, since sneaky
+                // apps might be using hardlinks
                 if (needed <= 0) {
-                    break;
-                } else {
-                    LOG(WARNING) << "Expected to be done but still need " << needed;
+                    free = data_disk_free(data_path);
+                    needed = targetFreeBytes - free;
+                    if (needed <= 0) {
+                        break;
+                    } else {
+                        LOG(WARNING) << "Expected to be done but still need " << needed;
+                    }
                 }
             }
         }
-        ATRACE_END();
+        atrace_pm_end();
 
     } else {
         return error("Legacy cache logic no longer supported");
     }
 
-    free = data_disk_free(data_path);
-    if (free >= targetFreeBytes) {
-        return ok();
+    if (!defy_target) {
+        free = data_disk_free(data_path);
+        if (free >= targetFreeBytes) {
+            return ok();
+        } else {
+            return error(StringPrintf("Failed to free up %" PRId64 " on %s; final free space %" PRId64,
+                    targetFreeBytes, data_path.c_str(), free));
+        }
     } else {
-        return error(StringPrintf("Failed to free up %" PRId64 " on %s; final free space %" PRId64,
-                targetFreeBytes, data_path.c_str(), free));
+        return ok();
     }
 }
 
@@ -2149,6 +2168,7 @@ static std::string toString(std::vector<int64_t> values) {
     return res.str();
 }
 #endif
+
 // On devices without sdcardfs, if internal and external are on
 // the same volume, a uid such as u0_a123 is used for both
 // internal and external storage; therefore, subtract that
@@ -2362,6 +2382,7 @@ static bool ownsExternalStorage(int32_t appId) {
     if (internal_storage_has_project_id()) {
         return false;
     }
+
     //  Fetch external storage owner appid  and check if it is the same as the
     //  current appId whose size is calculated
     struct stat s;
@@ -2424,84 +2445,84 @@ binder::Status InstalldNativeService::getAppSize(const std::optional<std::string
         flags &= ~FLAG_USE_QUOTA;
     }
 
-    ATRACE_BEGIN("obb");
+    atrace_pm_begin("obb");
     for (const auto& packageName : packageNames) {
         auto obbCodePath = create_data_media_package_path(uuid_, userId,
                 "obb", packageName.c_str());
         calculate_tree_size(obbCodePath, &extStats.codeSize);
     }
-    ATRACE_END();
+    atrace_pm_end();
     // Calculating the app size of the external storage owning app in a manual way, since
     // calculating it through quota apis also includes external media storage in the app storage
     // numbers
     if (flags & FLAG_USE_QUOTA && appId >= AID_APP_START && !ownsExternalStorage(appId)) {
-        ATRACE_BEGIN("code");
+        atrace_pm_begin("code");
         for (const auto& codePath : codePaths) {
             calculate_tree_size(codePath, &stats.codeSize, -1,
                     multiuser_get_shared_gid(0, appId));
         }
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("quota");
+        atrace_pm_begin("quota");
         collectQuotaStats(uuidString, userId, appId, &stats, &extStats);
-        ATRACE_END();
+        atrace_pm_end();
     } else {
-        ATRACE_BEGIN("code");
+        atrace_pm_begin("code");
         for (const auto& codePath : codePaths) {
             calculate_tree_size(codePath, &stats.codeSize);
         }
-        ATRACE_END();
+        atrace_pm_end();
 
         for (size_t i = 0; i < packageNames.size(); i++) {
             const char* pkgname = packageNames[i].c_str();
 
-            ATRACE_BEGIN("data");
+            atrace_pm_begin("data");
             auto cePath = create_data_user_ce_package_path(uuid_, userId, pkgname, ceDataInodes[i]);
             collectManualStats(cePath, &stats);
             auto dePath = create_data_user_de_package_path(uuid_, userId, pkgname);
             collectManualStats(dePath, &stats);
-            ATRACE_END();
+            atrace_pm_end();
 
             // In case of sdk sandbox storage (e.g. /data/misc_ce/0/sdksandbox/<package-name>),
             // collect individual stats of each subdirectory (shared, storage of each sdk etc.)
             if (appId >= AID_APP_START && appId <= AID_APP_END) {
-                ATRACE_BEGIN("sdksandbox");
+                atrace_pm_begin("sdksandbox");
                 auto sdkSandboxCePath =
                         create_data_misc_sdk_sandbox_package_path(uuid_, true, userId, pkgname);
                 collectManualStatsForSubDirectories(sdkSandboxCePath, &stats);
                 auto sdkSandboxDePath =
                         create_data_misc_sdk_sandbox_package_path(uuid_, false, userId, pkgname);
                 collectManualStatsForSubDirectories(sdkSandboxDePath, &stats);
-                ATRACE_END();
+                atrace_pm_end();
             }
 
             if (!uuid) {
-                ATRACE_BEGIN("profiles");
+                atrace_pm_begin("profiles");
                 calculate_tree_size(
                         create_primary_current_profile_package_dir_path(userId, pkgname),
                         &stats.dataSize);
                 calculate_tree_size(
                         create_primary_reference_profile_package_dir_path(pkgname),
                         &stats.codeSize);
-                ATRACE_END();
+                atrace_pm_end();
             }
 
-            ATRACE_BEGIN("external");
+            atrace_pm_begin("external");
             auto extPath = create_data_media_package_path(uuid_, userId, "data", pkgname);
             collectManualStats(extPath, &extStats);
             auto mediaPath = create_data_media_package_path(uuid_, userId, "media", pkgname);
             calculate_tree_size(mediaPath, &extStats.dataSize);
-            ATRACE_END();
+            atrace_pm_end();
         }
 
         if (!uuid) {
-            ATRACE_BEGIN("dalvik");
+            atrace_pm_begin("dalvik");
             int32_t sharedGid = multiuser_get_shared_gid(0, appId);
             if (sharedGid != -1) {
                 calculate_tree_size(create_data_dalvik_cache_path(), &stats.codeSize,
                         sharedGid, -1);
             }
-            ATRACE_END();
+            atrace_pm_end();
         }
     }
 
@@ -2647,41 +2668,41 @@ binder::Status InstalldNativeService::getUserSize(const std::optional<std::strin
     }
 
     if (flags & FLAG_USE_QUOTA) {
-        ATRACE_BEGIN("code");
+        atrace_pm_begin("code");
         calculate_tree_size(create_data_app_path(uuid_), &stats.codeSize, -1, -1, true);
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("data");
+        atrace_pm_begin("data");
         auto cePath = create_data_user_ce_path(uuid_, userId);
         collectManualStatsForUser(cePath, &stats, true);
         auto dePath = create_data_user_de_path(uuid_, userId);
         collectManualStatsForUser(dePath, &stats, true);
-        ATRACE_END();
+        atrace_pm_end();
 
         if (!uuid) {
-            ATRACE_BEGIN("profile");
+            atrace_pm_begin("profile");
             auto userProfilePath = create_primary_cur_profile_dir_path(userId);
             calculate_tree_size(userProfilePath, &stats.dataSize, -1, -1, true);
             auto refProfilePath = create_primary_ref_profile_dir_path();
             calculate_tree_size(refProfilePath, &stats.codeSize, -1, -1, true);
-            ATRACE_END();
+            atrace_pm_end();
         }
 
-        ATRACE_BEGIN("external");
+        atrace_pm_begin("external");
         auto sizes = getExternalSizesForUserWithQuota(uuidString, userId, appIds);
         extStats.dataSize += sizes.totalSize;
         extStats.codeSize += sizes.obbSize;
-        ATRACE_END();
+        atrace_pm_end();
 
         if (!uuid) {
-            ATRACE_BEGIN("dalvik");
+            atrace_pm_begin("dalvik");
             calculate_tree_size(create_data_dalvik_cache_path(), &stats.codeSize,
                     -1, -1, true);
             calculate_tree_size(create_primary_cur_profile_dir_path(userId), &stats.dataSize,
                     -1, -1, true);
-            ATRACE_END();
+            atrace_pm_end();
         }
-        ATRACE_BEGIN("quota");
+        atrace_pm_begin("quota");
         int64_t dataSize = extStats.dataSize;
         for (auto appId : appIds) {
             if (appId >= AID_APP_START) {
@@ -2693,54 +2714,54 @@ binder::Status InstalldNativeService::getUserSize(const std::optional<std::strin
             }
         }
         extStats.dataSize = dataSize;
-        ATRACE_END();
+        atrace_pm_end();
     } else {
-        ATRACE_BEGIN("obb");
+        atrace_pm_begin("obb");
         auto obbPath = create_data_path(uuid_) + "/media/obb";
         calculate_tree_size(obbPath, &extStats.codeSize);
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("code");
+        atrace_pm_begin("code");
         calculate_tree_size(create_data_app_path(uuid_), &stats.codeSize);
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("data");
+        atrace_pm_begin("data");
         auto cePath = create_data_user_ce_path(uuid_, userId);
         collectManualStatsForUser(cePath, &stats);
         auto dePath = create_data_user_de_path(uuid_, userId);
         collectManualStatsForUser(dePath, &stats);
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("sdksandbox");
+        atrace_pm_begin("sdksandbox");
         auto sdkSandboxCePath = create_data_misc_sdk_sandbox_path(uuid_, true, userId);
         collectManualStatsForUser(sdkSandboxCePath, &stats, false, true);
         auto sdkSandboxDePath = create_data_misc_sdk_sandbox_path(uuid_, false, userId);
         collectManualStatsForUser(sdkSandboxDePath, &stats, false, true);
-        ATRACE_END();
+        atrace_pm_end();
 
         if (!uuid) {
-            ATRACE_BEGIN("profile");
+            atrace_pm_begin("profile");
             auto userProfilePath = create_primary_cur_profile_dir_path(userId);
             calculate_tree_size(userProfilePath, &stats.dataSize);
             auto refProfilePath = create_primary_ref_profile_dir_path();
             calculate_tree_size(refProfilePath, &stats.codeSize);
-            ATRACE_END();
+            atrace_pm_end();
         }
 
-        ATRACE_BEGIN("external");
+        atrace_pm_begin("external");
         auto dataMediaPath = create_data_media_path(uuid_, userId);
         collectManualExternalStatsForUser(dataMediaPath, &extStats);
 #if MEASURE_DEBUG
         LOG(DEBUG) << "Measured external data " << extStats.dataSize << " cache "
                 << extStats.cacheSize;
 #endif
-        ATRACE_END();
+        atrace_pm_end();
 
         if (!uuid) {
-            ATRACE_BEGIN("dalvik");
+            atrace_pm_begin("dalvik");
             calculate_tree_size(create_data_dalvik_cache_path(), &stats.codeSize);
             calculate_tree_size(create_primary_cur_profile_dir_path(userId), &stats.dataSize);
-            ATRACE_END();
+            atrace_pm_end();
         }
     }
 
@@ -2788,16 +2809,16 @@ binder::Status InstalldNativeService::getExternalSize(const std::optional<std::s
     }
 
     if (flags & FLAG_USE_QUOTA) {
-        ATRACE_BEGIN("quota");
+        atrace_pm_begin("quota");
         auto sizes = getExternalSizesForUserWithQuota(uuidString, userId, appIds);
         totalSize = sizes.totalSize;
         audioSize = sizes.audioSize;
         videoSize = sizes.videoSize;
         imageSize = sizes.imageSize;
         obbSize = sizes.obbSize;
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("apps");
+        atrace_pm_begin("apps");
         struct stats extStats;
         memset(&extStats, 0, sizeof(extStats));
         for (auto appId : appIds) {
@@ -2806,9 +2827,9 @@ binder::Status InstalldNativeService::getExternalSize(const std::optional<std::s
             }
         }
         appSize = extStats.dataSize;
-        ATRACE_END();
+        atrace_pm_end();
     } else {
-        ATRACE_BEGIN("manual");
+        atrace_pm_begin("manual");
         FTS *fts;
         FTSENT *p;
         auto path = create_data_media_path(uuid_, userId);
@@ -2851,16 +2872,16 @@ binder::Status InstalldNativeService::getExternalSize(const std::optional<std::s
             }
         }
         fts_close(fts);
-        ATRACE_END();
+        atrace_pm_end();
 
-        ATRACE_BEGIN("obb");
+        atrace_pm_begin("obb");
         auto obbPath = StringPrintf("%s/Android/obb",
                 create_data_media_path(uuid_, userId).c_str());
         calculate_tree_size(obbPath, &obbSize);
         if (!(flags & FLAG_USE_QUOTA)) {
             totalSize -= obbSize;
         }
-        ATRACE_END();
+        atrace_pm_end();
     }
 
     std::vector<int64_t> ret;
@@ -2986,13 +3007,15 @@ binder::Status InstalldNativeService::setAppQuota(const std::optional<std::strin
 // Dumps the contents of a profile file, using pkgname's dex files for pretty
 // printing the result.
 binder::Status InstalldNativeService::dumpProfiles(int32_t uid, const std::string& packageName,
-        const std::string& profileName, const std::string& codePath, bool* _aidl_return) {
+                                                   const std::string& profileName,
+                                                   const std::string& codePath,
+                                                   bool dumpClassesAndMethods, bool* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(codePath);
     LOCK_PACKAGE();
 
-    *_aidl_return = dump_profiles(uid, packageName, profileName, codePath);
+    *_aidl_return = dump_profiles(uid, packageName, profileName, codePath, dumpClassesAndMethods);
     return ok();
 }
 
@@ -3058,22 +3081,20 @@ static const char* getCStr(const std::optional<std::string>& data,
         const char* default_value = nullptr) {
     return data ? data->c_str() : default_value;
 }
-binder::Status InstalldNativeService::dexopt(const std::string& apkPath, int32_t uid,
-        const std::optional<std::string>& packageName, const std::string& instructionSet,
-        int32_t dexoptNeeded, const std::optional<std::string>& outputPath, int32_t dexFlags,
+binder::Status InstalldNativeService::dexopt(
+        const std::string& apkPath, int32_t uid, const std::string& packageName,
+        const std::string& instructionSet, int32_t dexoptNeeded,
+        const std::optional<std::string>& outputPath, int32_t dexFlags,
         const std::string& compilerFilter, const std::optional<std::string>& uuid,
         const std::optional<std::string>& classLoaderContext,
         const std::optional<std::string>& seInfo, bool downgrade, int32_t targetSdkVersion,
         const std::optional<std::string>& profileName,
         const std::optional<std::string>& dexMetadataPath,
-        const std::optional<std::string>& compilationReason,
-        bool* aidl_return) {
+        const std::optional<std::string>& compilationReason, bool* aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_UUID(uuid);
     CHECK_ARGUMENT_PATH(apkPath);
-    if (packageName && *packageName != "*") {
-        CHECK_ARGUMENT_PACKAGE_NAME(*packageName);
-    }
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(outputPath);
     CHECK_ARGUMENT_PATH(dexMetadataPath);
     const auto userId = multiuser_get_user_id(uid);
@@ -3081,13 +3102,13 @@ binder::Status InstalldNativeService::dexopt(const std::string& apkPath, int32_t
 
     const char* oat_dir = getCStr(outputPath);
     const char* instruction_set = instructionSet.c_str();
-    if (oat_dir != nullptr && !createOatDir(oat_dir, instruction_set).isOk()) {
+    if (oat_dir != nullptr && !createOatDir(packageName, oat_dir, instruction_set).isOk()) {
         // Can't create oat dir - let dexopt use cache dir.
         oat_dir = nullptr;
     }
 
     const char* apk_path = apkPath.c_str();
-    const char* pkgname = getCStr(packageName, "*");
+    const char* pkgname = packageName.c_str();
     const char* compiler_filter = compilerFilter.c_str();
     const char* volume_uuid = getCStr(uuid);
     const char* class_loader_context = getCStr(classLoaderContext);
@@ -3297,9 +3318,11 @@ binder::Status InstalldNativeService::restoreconSdkDataLocked(
     return res;
 }
 
-binder::Status InstalldNativeService::createOatDir(const std::string& oatDir,
-        const std::string& instructionSet) {
+binder::Status InstalldNativeService::createOatDir(const std::string& packageName,
+                                                   const std::string& oatDir,
+                                                   const std::string& instructionSet) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(oatDir);
     LOCK_PACKAGE();
 
@@ -3323,7 +3346,8 @@ binder::Status InstalldNativeService::createOatDir(const std::string& oatDir,
     return ok();
 }
 
-binder::Status InstalldNativeService::rmPackageDir(const std::string& packageDir) {
+binder::Status InstalldNativeService::rmPackageDir(const std::string& packageName,
+                                                   const std::string& packageDir) {
     ENFORCE_UID(AID_SYSTEM);
     CHECK_ARGUMENT_PATH(packageDir);
     LOCK_PACKAGE();
@@ -3337,9 +3361,12 @@ binder::Status InstalldNativeService::rmPackageDir(const std::string& packageDir
     return ok();
 }
 
-binder::Status InstalldNativeService::linkFile(const std::string& relativePath,
-        const std::string& fromBase, const std::string& toBase) {
+binder::Status InstalldNativeService::linkFile(const std::string& packageName,
+                                               const std::string& relativePath,
+                                               const std::string& fromBase,
+                                               const std::string& toBase) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(fromBase);
     CHECK_ARGUMENT_PATH(toBase);
     LOCK_PACKAGE();
@@ -3367,9 +3394,12 @@ binder::Status InstalldNativeService::linkFile(const std::string& relativePath,
     return ok();
 }
 
-binder::Status InstalldNativeService::moveAb(const std::string& apkPath,
-        const std::string& instructionSet, const std::string& outputPath) {
+binder::Status InstalldNativeService::moveAb(const std::string& packageName,
+                                             const std::string& apkPath,
+                                             const std::string& instructionSet,
+                                             const std::string& outputPath) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(apkPath);
     CHECK_ARGUMENT_PATH(outputPath);
     LOCK_PACKAGE();
@@ -3382,10 +3412,13 @@ binder::Status InstalldNativeService::moveAb(const std::string& apkPath,
     return success ? ok() : error();
 }
 
-binder::Status InstalldNativeService::deleteOdex(const std::string& apkPath,
-        const std::string& instructionSet, const std::optional<std::string>& outputPath,
-        int64_t* _aidl_return) {
+binder::Status InstalldNativeService::deleteOdex(const std::string& packageName,
+                                                 const std::string& apkPath,
+                                                 const std::string& instructionSet,
+                                                 const std::optional<std::string>& outputPath,
+                                                 int64_t* _aidl_return) {
     ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
     CHECK_ARGUMENT_PATH(apkPath);
     CHECK_ARGUMENT_PATH(outputPath);
     LOCK_PACKAGE();
@@ -3430,15 +3463,20 @@ binder::Status InstalldNativeService::hashSecondaryDexFile(
         dexPath, packageName, uid, volumeUuid, storageFlag, _aidl_return);
     return result ? ok() : error();
 }
-
+/**
+ * Returns true if ioctl feature (F2FS_IOC_FS{GET,SET}XATTR) is supported as
+ * these were introduced in Linux 4.14, so kernel versions before that will fail
+ * while setting project id attributes. Only when these features are enabled,
+ * storage calculation using project_id is enabled
+ */
 bool check_if_ioctl_feature_is_supported() {
     bool result = false;
     auto temp_path = StringPrintf("%smisc/installd/ioctl_check", android_data_dir.c_str());
     if (access(temp_path.c_str(), F_OK) != 0) {
-        open(temp_path.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC, 0644);
+        int fd = open(temp_path.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC, 0644);
         result = set_quota_project_id(temp_path, 0, false) == 0;
+        close(fd);
         // delete the temp file
-        // remove the external file
         remove(temp_path.c_str());
     }
     return result;
@@ -3452,7 +3490,7 @@ binder::Status InstalldNativeService::setFirstBoot() {
         auto first_boot_path =
                 StringPrintf("%smisc/installd/using_project_ids", android_data_dir.c_str());
         if (access(first_boot_path.c_str(), F_OK) != 0) {
-            open(first_boot_path.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC, 0644);
+            close(open(first_boot_path.c_str(), O_CREAT | O_TRUNC | O_RDWR | O_CLOEXEC, 0644));
         }
     }
     return ok();
@@ -3518,22 +3556,40 @@ binder::Status InstalldNativeService::tryMountDataMirror(
 
     std::string mirrorVolCePath(StringPrintf("%s/%s", kDataMirrorCePath, uuid_));
     if (fs_prepare_dir(mirrorVolCePath.c_str(), 0711, AID_SYSTEM, AID_SYSTEM) != 0) {
-        return error("Failed to create CE mirror");
+        return error("Failed to create CE data mirror");
     }
 
     std::string mirrorVolDePath(StringPrintf("%s/%s", kDataMirrorDePath, uuid_));
     if (fs_prepare_dir(mirrorVolDePath.c_str(), 0711, AID_SYSTEM, AID_SYSTEM) != 0) {
-        return error("Failed to create DE mirror");
+        return error("Failed to create DE data mirror");
+    }
+
+    std::string mirrorVolMiscCePath(StringPrintf("%s/%s", kMiscMirrorCePath, uuid_));
+    if (fs_prepare_dir(mirrorVolMiscCePath.c_str(), 0711, AID_SYSTEM, AID_SYSTEM) != 0) {
+        return error("Failed to create CE misc mirror");
+    }
+
+    std::string mirrorVolMiscDePath(StringPrintf("%s/%s", kMiscMirrorDePath, uuid_));
+    if (fs_prepare_dir(mirrorVolMiscDePath.c_str(), 0711, AID_SYSTEM, AID_SYSTEM) != 0) {
+        return error("Failed to create DE misc mirror");
     }
 
     auto cePath = StringPrintf("%s/user", create_data_path(uuid_).c_str());
     auto dePath = StringPrintf("%s/user_de", create_data_path(uuid_).c_str());
+    auto miscCePath = StringPrintf("%s/misc_ce", create_data_path(uuid_).c_str());
+    auto miscDePath = StringPrintf("%s/misc_de", create_data_path(uuid_).c_str());
 
     if (access(cePath.c_str(), F_OK) != 0) {
         return error("Cannot access CE path: " + cePath);
     }
     if (access(dePath.c_str(), F_OK) != 0) {
         return error("Cannot access DE path: " + dePath);
+    }
+    if (access(miscCePath.c_str(), F_OK) != 0) {
+        return error("Cannot access misc CE path: " + cePath);
+    }
+    if (access(miscDePath.c_str(), F_OK) != 0) {
+        return error("Cannot access misc DE path: " + dePath);
     }
 
     struct stat ceStat, mirrorCeStat;
@@ -3562,6 +3618,21 @@ binder::Status InstalldNativeService::tryMountDataMirror(
             MS_NOSUID | MS_NODEV | MS_NOATIME | MS_BIND | MS_NOEXEC, nullptr)) == -1) {
         return error("Failed to mount " + mirrorVolDePath);
     }
+
+    // Mount misc CE mirror
+    if (TEMP_FAILURE_RETRY(mount(miscCePath.c_str(), mirrorVolMiscCePath.c_str(), NULL,
+                                 MS_NOSUID | MS_NODEV | MS_NOATIME | MS_BIND | MS_NOEXEC,
+                                 nullptr)) == -1) {
+        return error("Failed to mount " + mirrorVolMiscCePath);
+    }
+
+    // Mount misc DE mirror
+    if (TEMP_FAILURE_RETRY(mount(miscDePath.c_str(), mirrorVolMiscDePath.c_str(), NULL,
+                                 MS_NOSUID | MS_NODEV | MS_NOATIME | MS_BIND | MS_NOEXEC,
+                                 nullptr)) == -1) {
+        return error("Failed to mount " + mirrorVolMiscDePath);
+    }
+
     return ok();
 }
 
@@ -3584,6 +3655,8 @@ binder::Status InstalldNativeService::onPrivateVolumeRemoved(
 
     std::string mirrorCeVolPath(StringPrintf("%s/%s", kDataMirrorCePath, uuid_));
     std::string mirrorDeVolPath(StringPrintf("%s/%s", kDataMirrorDePath, uuid_));
+    std::string mirrorMiscCeVolPath(StringPrintf("%s/%s", kMiscMirrorCePath, uuid_));
+    std::string mirrorMiscDeVolPath(StringPrintf("%s/%s", kMiscMirrorDePath, uuid_));
 
     std::lock_guard<std::recursive_mutex> lock(mMountsLock);
 
@@ -3608,6 +3681,29 @@ binder::Status InstalldNativeService::onPrivateVolumeRemoved(
     if (delete_dir_contents_and_dir(mirrorDeVolPath, true) != 0) {
         res = error("Failed to delete " + mirrorDeVolPath);
     }
+
+    // Unmount misc CE storage
+    if (TEMP_FAILURE_RETRY(umount(mirrorMiscCeVolPath.c_str())) != 0) {
+        if (errno != ENOENT) {
+            res = error(StringPrintf("Failed to umount %s %s", mirrorMiscCeVolPath.c_str(),
+                                     strerror(errno)));
+        }
+    }
+    if (delete_dir_contents_and_dir(mirrorMiscCeVolPath, true) != 0) {
+        res = error("Failed to delete " + mirrorMiscCeVolPath);
+    }
+
+    // Unmount misc DE storage
+    if (TEMP_FAILURE_RETRY(umount(mirrorMiscDeVolPath.c_str())) != 0) {
+        if (errno != ENOENT) {
+            res = error(StringPrintf("Failed to umount %s %s", mirrorMiscDeVolPath.c_str(),
+                                     strerror(errno)));
+        }
+    }
+    if (delete_dir_contents_and_dir(mirrorMiscDeVolPath, true) != 0) {
+        res = error("Failed to delete " + mirrorMiscDeVolPath);
+    }
+
     return res;
 }
 
@@ -3647,7 +3743,7 @@ binder::Status InstalldNativeService::migrateLegacyObbData() {
     ENFORCE_UID(AID_SYSTEM);
     // NOTE: The lint warning doesn't apply to the use of system(3) with
     // absolute parse and no command line arguments.
-    if (system("/system/bin/migrate_legacy_obb_data.sh") != 0) { // NOLINT(cert-env33-c)
+    if (system("/system/bin/migrate_legacy_obb_data") != 0) { // NOLINT(cert-env33-c)
         LOG(ERROR) << "Unable to migrate legacy obb data";
     }
 
@@ -3675,6 +3771,24 @@ binder::Status InstalldNativeService::cleanupInvalidPackageDirs(
     }
 
     return ok();
+}
+
+binder::Status InstalldNativeService::getOdexVisibility(
+        const std::string& packageName, const std::string& apkPath,
+        const std::string& instructionSet, const std::optional<std::string>& outputPath,
+        int32_t* _aidl_return) {
+    ENFORCE_UID(AID_SYSTEM);
+    CHECK_ARGUMENT_PACKAGE_NAME(packageName);
+    CHECK_ARGUMENT_PATH(apkPath);
+    CHECK_ARGUMENT_PATH(outputPath);
+    LOCK_PACKAGE();
+
+    const char* apk_path = apkPath.c_str();
+    const char* instruction_set = instructionSet.c_str();
+    const char* oat_dir = outputPath ? outputPath->c_str() : nullptr;
+
+    *_aidl_return = get_odex_visibility(apk_path, instruction_set, oat_dir);
+    return *_aidl_return == -1 ? error() : ok();
 }
 
 }  // namespace installd

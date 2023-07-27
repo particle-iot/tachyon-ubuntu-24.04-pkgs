@@ -2,46 +2,6 @@ Description: Added missing headers causing compile errors
 Author: Umang Parmar <umangjparmar@gmail.com>
 Forwarded: not-needed
 
---- a/packages/modules/adb/crypto/x509_generator.cpp
-+++ b/packages/modules/adb/crypto/x509_generator.cpp
-@@ -23,6 +23,7 @@
- #include <openssl/bn.h>
- #include <openssl/pem.h>
- #include <openssl/rsa.h>
-+#include <string.h>
- 
- namespace adb {
- namespace crypto {
---- a/packages/modules/adb/file_sync_protocol.h
-+++ b/packages/modules/adb/file_sync_protocol.h
-@@ -16,6 +16,7 @@
- 
- #pragma once
- 
-+#include <stdint.h>
- #define MKID(a, b, c, d) ((a) | ((b) << 8) | ((c) << 16) | ((d) << 24))
- 
- #define ID_LSTAT_V1 MKID('S', 'T', 'A', 'T')
---- a/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
-+++ b/packages/modules/adb/pairing_auth/aes_128_gcm.cpp
-@@ -22,6 +22,7 @@
- #include <openssl/evp.h>
- #include <openssl/hkdf.h>
- #include <openssl/rand.h>
-+#include <string.h>
- 
- namespace adb {
- namespace pairing {
---- a/packages/modules/adb/pairing_auth/pairing_auth.cpp
-+++ b/packages/modules/adb/pairing_auth/pairing_auth.cpp
-@@ -20,6 +20,7 @@
- 
- #include <openssl/curve25519.h>
- #include <openssl/mem.h>
-+#include <string.h>
- 
- #include <iomanip>
- #include <sstream>
 --- a/packages/modules/adb/pairing_connection/pairing_server.cpp
 +++ b/packages/modules/adb/pairing_connection/pairing_server.cpp
 @@ -20,6 +20,7 @@
@@ -52,23 +12,3 @@ Forwarded: not-needed
  #include <deque>
  #include <iomanip>
  #include <mutex>
---- a/packages/modules/adb/tls/include/adb/tls/tls_connection.h
-+++ b/packages/modules/adb/tls/include/adb/tls/tls_connection.h
-@@ -21,6 +21,7 @@
- 
- #include <string_view>
- #include <vector>
-+#include <functional>
- 
- #include <android-base/unique_fd.h>
- #include <openssl/ssl.h>
---- a/system/core/libutils/include/utils/RefBase.h
-+++ b/system/core/libutils/include/utils/RefBase.h
-@@ -211,6 +211,7 @@
- #include <atomic>
- #include <functional>
- #include <type_traits>  // for common_type.
-+#include <memory>
- 
- #include <stdint.h>
- #include <sys/types.h>

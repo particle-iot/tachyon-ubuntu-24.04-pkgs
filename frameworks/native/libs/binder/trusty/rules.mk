@@ -36,6 +36,7 @@ MODULE_SRCS := \
 	$(LIBBINDER_DIR)/IInterface.cpp \
 	$(LIBBINDER_DIR)/IResultReceiver.cpp \
 	$(LIBBINDER_DIR)/Parcel.cpp \
+	$(LIBBINDER_DIR)/ParcelFileDescriptor.cpp \
 	$(LIBBINDER_DIR)/RpcServer.cpp \
 	$(LIBBINDER_DIR)/RpcSession.cpp \
 	$(LIBBINDER_DIR)/RpcState.cpp \
@@ -75,9 +76,13 @@ MODULE_EXPORT_INCLUDES += \
 	$(LIBBINDER_DIR)/ndk/include_cpp \
 
 MODULE_EXPORT_COMPILEFLAGS += \
-	-DBINDER_NO_KERNEL_IPC \
 	-DBINDER_RPC_SINGLE_THREADED \
 	-D__ANDROID_VNDK__ \
+
+# libbinder has some deprecated declarations that we want to produce warnings
+# not errors
+MODULE_EXPORT_COMPILEFLAGS += \
+	-Wno-error=deprecated-declarations \
 
 MODULE_LIBRARY_DEPS += \
 	trusty/user/base/lib/libstdc++-trusty \

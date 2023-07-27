@@ -97,7 +97,7 @@ void Planner::plan(
         if (const auto layerEntry = mPreviousLayers.find(id); layerEntry != mPreviousLayers.end()) {
             // Track changes from previous info
             LayerState& state = layerEntry->second;
-            Flags<LayerStateField> differences = state.update(layer);
+            ftl::Flags<LayerStateField> differences = state.update(layer);
             if (differences.get() == 0) {
                 state.incrementFramesSinceBufferUpdate();
             } else {
@@ -193,7 +193,7 @@ void Planner::reportFinalPlan(
 
         finalPlan.addLayerType(
                 forcedOrRequestedClient
-                        ? hardware::graphics::composer::hal::Composition::CLIENT
+                        ? aidl::android::hardware::graphics::composer3::Composition::CLIENT
                         : layer->getLayerFE().getCompositionState()->compositionType);
     }
 
@@ -201,11 +201,11 @@ void Planner::reportFinalPlan(
                             finalPlan);
 }
 
-void Planner::renderCachedSets(
-        const OutputCompositionState& outputState,
-        std::optional<std::chrono::steady_clock::time_point> renderDeadline) {
+void Planner::renderCachedSets(const OutputCompositionState& outputState,
+                               std::optional<std::chrono::steady_clock::time_point> renderDeadline,
+                               bool deviceHandlesColorTransform) {
     ATRACE_CALL();
-    mFlattener.renderCachedSets(outputState, renderDeadline);
+    mFlattener.renderCachedSets(outputState, renderDeadline, deviceHandlesColorTransform);
 }
 
 void Planner::dump(const Vector<String16>& args, std::string& result) {

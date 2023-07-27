@@ -62,25 +62,20 @@ static bool isSubDevice(const InputDeviceIdentifier& identifier1,
 
 InputReader::InputReader(std::shared_ptr<EventHubInterface> eventHub,
                          const sp<InputReaderPolicyInterface>& policy,
-                         const sp<InputListenerInterface>& listener)
+                         InputListenerInterface& listener)
       : mContext(this),
         mEventHub(eventHub),
         mPolicy(policy),
-        mGlobalMetaState(0),
-        mLedMetaState(AMETA_NUM_LOCK_ON),
+        mQueuedListener(listener),
+        mGlobalMetaState(AMETA_NONE),
+        mLedMetaState(AMETA_NONE),
         mGeneration(1),
         mNextInputDeviceId(END_RESERVED_ID),
         mDisableVirtualKeysTimeout(LLONG_MIN),
         mNextTimeout(LLONG_MAX),
         mConfigurationChangesToRefresh(0) {
-    mQueuedListener = new QueuedInputListener(listener);
-
-    { // acquire lock
-        std::scoped_lock _l(mLock);
-
-        refreshConfigurationLocked(0);
-        updateGlobalMetaStateLocked();
-    } // release lock
+    refreshConfigurationLocked(0);
+    updateGlobalMetaStateLocked();
 }
 
 InputReader::~InputReader() {}
@@ -138,9 +133,9 @@ void InputReader::loopOnce() {
         if (mNextTimeout != LLONG_MAX) {
             nsecs_t now = systemTime(SYSTEM_TIME_MONOTONIC);
             if (now >= mNextTimeout) {
-#if DEBUG_RAW_EVENTS
-                ALOGD("Timeout expired, latency=%0.3fms", (now - mNextTimeout) * 0.000001f);
-#endif
+                if (DEBUG_RAW_EVENTS) {
+                    ALOGD("Timeout expired, latency=%0.3fms", (now - mNextTimeout) * 0.000001f);
+                }
                 mNextTimeout = LLONG_MAX;
                 timeoutExpiredLocked(now);
             }
@@ -164,7 +159,7 @@ void InputReader::loopOnce() {
     // resulting in a deadlock.  This situation is actually quite plausible because the
     // listener is actually the input dispatcher, which calls into the window manager,
     // which occasionally calls into the input reader.
-    mQueuedListener->flush();
+    mQueuedListener.flush();
 }
 
 void InputReader::processEventsLocked(const RawEvent* rawEvents, size_t count) {
@@ -180,9 +175,9 @@ void InputReader::processEventsLocked(const RawEvent* rawEvents, size_t count) {
                 }
                 batchSize += 1;
             }
-#if DEBUG_RAW_EVENTS
-            ALOGD("BatchSize: %zu Count: %zu", batchSize, count);
-#endif
+            if (DEBUG_RAW_EVENTS) {
+                ALOGD("BatchSize: %zu Count: %zu", batchSize, count);
+            }
             processEventsForDeviceLocked(deviceId, rawEvent, batchSize);
         } else {
             switch (rawEvent->type) {
@@ -221,9 +216,9 @@ void InputReader::addDeviceLocked(nsecs_t when, int32_t eventHubId) {
               "(ignored non-input device)",
               device->getId(), eventHubId, identifier.name.c_str(), identifier.descriptor.c_str());
     } else {
-        ALOGI("Device added: id=%d, eventHubId=%d, name='%s', descriptor='%s',sources=0x%08x",
+        ALOGI("Device added: id=%d, eventHubId=%d, name='%s', descriptor='%s',sources=%s",
               device->getId(), eventHubId, identifier.name.c_str(), identifier.descriptor.c_str(),
-              device->getSources());
+              inputEventSourceToString(device->getSources()).c_str());
     }
 
     mDevices.emplace(eventHubId, device);
@@ -262,9 +257,7 @@ void InputReader::removeDeviceLocked(nsecs_t when, int32_t eventHubId) {
     auto mapIt = mDeviceToEventHubIdsMap.find(device);
     if (mapIt != mDeviceToEventHubIdsMap.end()) {
         std::vector<int32_t>& eventHubIds = mapIt->second;
-        eventHubIds.erase(std::remove_if(eventHubIds.begin(), eventHubIds.end(),
-                                         [eventHubId](int32_t eId) { return eId == eventHubId; }),
-                          eventHubIds.end());
+        std::erase_if(eventHubIds, [eventHubId](int32_t eId) { return eId == eventHubId; });
         if (eventHubIds.size() == 0) {
             mDeviceToEventHubIdsMap.erase(mapIt);
         }
@@ -277,9 +270,10 @@ void InputReader::removeDeviceLocked(nsecs_t when, int32_t eventHubId) {
               device->getId(), eventHubId, device->getName().c_str(),
               device->getDescriptor().c_str());
     } else {
-        ALOGI("Device removed: id=%d, eventHubId=%d, name='%s', descriptor='%s', sources=0x%08x",
+        ALOGI("Device removed: id=%d, eventHubId=%d, name='%s', descriptor='%s', sources=%s",
               device->getId(), eventHubId, device->getName().c_str(),
-              device->getDescriptor().c_str(), device->getSources());
+              device->getDescriptor().c_str(),
+              inputEventSourceToString(device->getSources()).c_str());
     }
 
     device->removeEventHubDevice(eventHubId);
@@ -331,7 +325,7 @@ void InputReader::processEventsForDeviceLocked(int32_t eventHubId, const RawEven
     device->process(rawEvents, count);
 }
 
-InputDevice* InputReader::findInputDeviceLocked(int32_t deviceId) {
+InputDevice* InputReader::findInputDeviceLocked(int32_t deviceId) const {
     auto deviceIt =
             std::find_if(mDevices.begin(), mDevices.end(), [deviceId](const auto& devicePair) {
                 return devicePair.second->getId() == deviceId;
@@ -361,7 +355,7 @@ void InputReader::handleConfigurationChangedLocked(nsecs_t when) {
 
     // Enqueue configuration changed.
     NotifyConfigurationChangedArgs args(mContext.getNextId(), when);
-    mQueuedListener->notifyConfigurationChanged(&args);
+    mQueuedListener.notifyConfigurationChanged(&args);
 }
 
 void InputReader::refreshConfigurationLocked(uint32_t changes) {
@@ -395,7 +389,7 @@ void InputReader::refreshConfigurationLocked(uint32_t changes) {
             mCurrentPointerCaptureRequest = mConfig.pointerCaptureRequest;
             const NotifyPointerCaptureChangedArgs args(mContext.getNextId(), now,
                                                        mCurrentPointerCaptureRequest);
-            mQueuedListener->notifyPointerCaptureChanged(&args);
+            mQueuedListener.notifyPointerCaptureChanged(&args);
         }
     }
 }
@@ -582,6 +576,7 @@ void InputReader::toggleCapsLockState(int32_t deviceId) {
     }
 
     if (device->isIgnored()) {
+        ALOGW("Ignoring toggleCapsLock for ignored deviceId %" PRId32 ".", deviceId);
         return;
     }
 
@@ -614,6 +609,18 @@ bool InputReader::markSupportedKeyCodesLocked(int32_t deviceId, uint32_t sourceM
         }
     }
     return result;
+}
+
+int32_t InputReader::getKeyCodeForKeyLocation(int32_t deviceId, int32_t locationKeyCode) const {
+    std::scoped_lock _l(mLock);
+
+    InputDevice* device = findInputDeviceLocked(deviceId);
+    if (device == nullptr) {
+        ALOGW("Failed to get key code for key location: Input device with id %d not found",
+              deviceId);
+        return AKEYCODE_UNKNOWN;
+    }
+    return device->getKeyCodeForKeyLocation(locationKeyCode);
 }
 
 void InputReader::requestRefreshConfiguration(uint32_t changes) {
@@ -699,23 +706,43 @@ void InputReader::flushSensor(int32_t deviceId, InputDeviceSensorType sensorType
 }
 
 std::optional<int32_t> InputReader::getBatteryCapacity(int32_t deviceId) {
-    std::scoped_lock _l(mLock);
+    std::optional<int32_t> eventHubId;
+    {
+        // Do not query the battery state while holding the lock. For some peripheral devices,
+        // reading battery state can be broken and take 5+ seconds. Holding the lock in this case
+        // would block all other event processing during this time. For now, we assume this
+        // call never happens on the InputReader thread and get the battery state outside the
+        // lock to prevent event processing from being blocked by this call.
+        std::scoped_lock _l(mLock);
+        InputDevice* device = findInputDeviceLocked(deviceId);
+        if (!device) return {};
+        eventHubId = device->getBatteryEventHubId();
+    } // release lock
 
-    InputDevice* device = findInputDeviceLocked(deviceId);
-    if (device) {
-        return device->getBatteryCapacity();
-    }
-    return std::nullopt;
+    if (!eventHubId) return {};
+    const auto batteryIds = mEventHub->getRawBatteryIds(*eventHubId);
+    if (batteryIds.empty()) return {};
+    return mEventHub->getBatteryCapacity(*eventHubId, batteryIds.front());
 }
 
 std::optional<int32_t> InputReader::getBatteryStatus(int32_t deviceId) {
-    std::scoped_lock _l(mLock);
+    std::optional<int32_t> eventHubId;
+    {
+        // Do not query the battery state while holding the lock. For some peripheral devices,
+        // reading battery state can be broken and take 5+ seconds. Holding the lock in this case
+        // would block all other event processing during this time. For now, we assume this
+        // call never happens on the InputReader thread and get the battery state outside the
+        // lock to prevent event processing from being blocked by this call.
+        std::scoped_lock _l(mLock);
+        InputDevice* device = findInputDeviceLocked(deviceId);
+        if (!device) return {};
+        eventHubId = device->getBatteryEventHubId();
+    } // release lock
 
-    InputDevice* device = findInputDeviceLocked(deviceId);
-    if (device) {
-        return device->getBatteryStatus();
-    }
-    return std::nullopt;
+    if (!eventHubId) return {};
+    const auto batteryIds = mEventHub->getRawBatteryIds(*eventHubId);
+    if (batteryIds.empty()) return {};
+    return mEventHub->getBatteryStatus(*eventHubId, batteryIds.front());
 }
 
 std::vector<InputDeviceLightInfo> InputReader::getLights(int32_t deviceId) {
@@ -807,12 +834,8 @@ bool InputReader::canDispatchToDisplay(int32_t deviceId, int32_t displayId) {
 
     std::optional<int32_t> associatedDisplayId = device->getAssociatedDisplayId();
     // No associated display. By default, can dispatch to all displays.
-    if (!associatedDisplayId) {
-        return true;
-    }
-
-    if (*associatedDisplayId == ADISPLAY_ID_NONE) {
-        ALOGW("Device %s is associated with display ADISPLAY_ID_NONE.", device->getName().c_str());
+    if (!associatedDisplayId ||
+            *associatedDisplayId == ADISPLAY_ID_NONE) {
         return true;
     }
 
@@ -972,8 +995,8 @@ InputReaderPolicyInterface* InputReader::ContextImpl::getPolicy() {
     return mReader->mPolicy.get();
 }
 
-InputListenerInterface* InputReader::ContextImpl::getListener() {
-    return mReader->mQueuedListener.get();
+InputListenerInterface& InputReader::ContextImpl::getListener() {
+    return mReader->mQueuedListener;
 }
 
 EventHubInterface* InputReader::ContextImpl::getEventHub() {

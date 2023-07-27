@@ -3,13 +3,14 @@
 
   <remote  name="aosp"
            fetch="https://android.googlesource.com/" />
-  <default revision="refs/tags/platform-tools-33.0.3"
+  <default revision="refs/tags/platform-tools-33.0.4"
            remote="aosp"
            sync-j="4" />
 
    <project path="dalvik" name="platform/dalvik" groups="pdk-cw-fs,pdk-fs" />
    <project path="development" name="platform/development" groups="developers,pdk-cw-fs,pdk-fs" />
    <project path="external/avb" name="platform/external/avb" groups="pdk" />
+   <project path="external/cpu_features" name="platform/external/cpu_features" groups="pdk" />
    <project path="external/dlmalloc" name="platform/external/dlmalloc" groups="pdk" />
    <project path="external/fmtlib" name="platform/external/fmtlib" groups="pdk" />
    <project path="external/mdnsresponder" name="platform/external/mdnsresponder" groups="pdk" />

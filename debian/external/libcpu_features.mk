@@ -20,14 +20,14 @@ ifeq ($(DEB_HOST_ARCH), arm64)
   sources += impl_aarch64_linux_or_android.c
 endif
 
-SOURCES := $(foreach source, $(sources), debian/external/cpu_features/src/$(source))
+SOURCES := $(foreach source, $(sources), external/cpu_features/src/$(source))
 OBJECTS := $(SOURCES:.c=.o)
 
 CPPFLAGS += \
   -DHAVE_DLFCN_H \
   -DHAVE_STRONG_GETAUXVAL \
   -DSTACK_LINE_READER_BUFFER_SIZE=1024 \
-  -Idebian/external/cpu_features/include \
+  -Iexternal/cpu_features/include \
 
 LDFLAGS += \
   -Wl,-soname,$(NAME).so.0 \

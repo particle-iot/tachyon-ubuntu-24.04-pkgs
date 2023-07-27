@@ -81,10 +81,9 @@ bool AndroidUnwinder::Initialize(ErrorData& error) {
   // libart.so or libartd.so.
   static std::vector<std::string> search_libs [[clang::no_destroy]] = {"libart.so", "libartd.so"};
 
-  bool initialize = true;
-  std::call_once(initialize_, [this, &initialize, &error]() {
-    initialize = InternalInitialize(error);
-    if (!initialize) {
+  std::call_once(initialize_, [this, &error]() {
+    if (!InternalInitialize(error)) {
+      initialize_status_ = false;
       return;
     }
 
@@ -93,9 +92,10 @@ bool AndroidUnwinder::Initialize(ErrorData& error) {
 #if defined(DEXFILE_SUPPORT)
     dex_files_ = CreateDexFiles(arch_, process_memory_, search_libs);
 #endif
+    initialize_status_ = true;
   });
 
-  return initialize;
+  return initialize_status_;
 }
 
 std::string AndroidUnwinder::FormatFrame(const FrameData& frame) const {
@@ -143,6 +143,11 @@ bool AndroidUnwinder::Unwind(void* ucontext, AndroidUnwinderData& data) {
     data.error.code = ERROR_INVALID_PARAMETER;
     return false;
   }
+
+  if (!Initialize(data.error)) {
+    return false;
+  }
+
   std::unique_ptr<Regs> regs(Regs::CreateFromUcontext(arch_, ucontext));
   return Unwind(regs.get(), data);
 }
@@ -179,7 +184,7 @@ bool AndroidUnwinder::Unwind(Regs* initial_regs, AndroidUnwinderData& data) {
 
 bool AndroidLocalUnwinder::InternalUnwind(std::optional<pid_t> tid, AndroidUnwinderData& data) {
   if (!tid) {
-    *tid = android::base::GetThreadId();
+    tid = android::base::GetThreadId();
   }
 
   if (static_cast<uint64_t>(*tid) == android::base::GetThreadId()) {
@@ -206,10 +211,9 @@ bool AndroidLocalUnwinder::InternalUnwind(std::optional<pid_t> tid, AndroidUnwin
 
 bool AndroidRemoteUnwinder::InternalInitialize(ErrorData& error) {
   if (arch_ == ARCH_UNKNOWN) {
-    arch_ = Regs::RemoteGetArch(pid_);
+    arch_ = Regs::RemoteGetArch(pid_, &error.code);
   }
   if (arch_ == ARCH_UNKNOWN) {
-    error.code = ERROR_BAD_ARCH;
     return false;
   }
 
@@ -228,10 +232,13 @@ bool AndroidRemoteUnwinder::InternalInitialize(ErrorData& error) {
 
 bool AndroidRemoteUnwinder::InternalUnwind(std::optional<pid_t> tid, AndroidUnwinderData& data) {
   if (!tid) {
-    *tid = pid_;
+    tid = pid_;
   }
 
-  std::unique_ptr<Regs> regs(Regs::RemoteGet(*tid));
+  std::unique_ptr<Regs> regs(Regs::RemoteGet(*tid, &data.error.code));
+  if (regs == nullptr) {
+    return false;
+  }
   return AndroidUnwinder::Unwind(regs.get(), data);
 }
 

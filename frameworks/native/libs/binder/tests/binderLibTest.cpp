@@ -115,10 +115,12 @@ enum BinderLibTestTranscationCode {
     BINDER_LIB_TEST_NOP_TRANSACTION_WAIT,
     BINDER_LIB_TEST_GETPID,
     BINDER_LIB_TEST_ECHO_VECTOR,
+    BINDER_LIB_TEST_GET_NON_BLOCKING_FD,
     BINDER_LIB_TEST_REJECT_OBJECTS,
     BINDER_LIB_TEST_CAN_GET_SID,
     BINDER_LIB_TEST_GET_MAX_THREAD_COUNT,
     BINDER_LIB_TEST_SET_MAX_THREAD_COUNT,
+    BINDER_LIB_TEST_IS_THREADPOOL_STARTED,
     BINDER_LIB_TEST_LOCK_UNLOCK,
     BINDER_LIB_TEST_PROCESS_LOCK,
     BINDER_LIB_TEST_UNLOCK_AFTER_MS,
@@ -1158,6 +1160,56 @@ TEST_F(BinderLibTest, VectorSent) {
     EXPECT_EQ(readValue, testValue);
 }
 
+TEST_F(BinderLibTest, FileDescriptorRemainsNonBlocking) {
+    sp<IBinder> server = addServer();
+    ASSERT_TRUE(server != nullptr);
+
+    Parcel reply;
+    EXPECT_THAT(server->transact(BINDER_LIB_TEST_GET_NON_BLOCKING_FD, {} /*data*/, &reply),
+                StatusEq(NO_ERROR));
+    base::unique_fd fd;
+    EXPECT_THAT(reply.readUniqueFileDescriptor(&fd), StatusEq(OK));
+
+    const int result = fcntl(fd.get(), F_GETFL);
+    ASSERT_NE(result, -1);
+    EXPECT_EQ(result & O_NONBLOCK, O_NONBLOCK);
+}
+
+// see ProcessState.cpp BINDER_VM_SIZE = 1MB.
+// This value is not exposed, but some code in the framework relies on being able to use
+// buffers near the cap size.
+constexpr size_t kSizeBytesAlmostFull = 950'000;
+constexpr size_t kSizeBytesOverFull = 1'050'000;
+
+TEST_F(BinderLibTest, GargantuanVectorSent) {
+    sp<IBinder> server = addServer();
+    ASSERT_TRUE(server != nullptr);
+
+    for (size_t i = 0; i < 10; i++) {
+        // a slight variation in size is used to consider certain possible caching implementations
+        const std::vector<uint64_t> testValue((kSizeBytesAlmostFull + i) / sizeof(uint64_t), 42);
+
+        Parcel data, reply;
+        data.writeUint64Vector(testValue);
+        EXPECT_THAT(server->transact(BINDER_LIB_TEST_ECHO_VECTOR, data, &reply), StatusEq(NO_ERROR))
+                << i;
+        std::vector<uint64_t> readValue;
+        EXPECT_THAT(reply.readUint64Vector(&readValue), StatusEq(OK));
+        EXPECT_EQ(readValue, testValue);
+    }
+}
+
+TEST_F(BinderLibTest, LimitExceededVectorSent) {
+    sp<IBinder> server = addServer();
+    ASSERT_TRUE(server != nullptr);
+    const std::vector<uint64_t> testValue(kSizeBytesOverFull / sizeof(uint64_t), 42);
+
+    Parcel data, reply;
+    data.writeUint64Vector(testValue);
+    EXPECT_THAT(server->transact(BINDER_LIB_TEST_ECHO_VECTOR, data, &reply),
+                StatusEq(FAILED_TRANSACTION));
+}
+
 TEST_F(BinderLibTest, BufRejected) {
     Parcel data, reply;
     uint32_t buf;
@@ -1332,6 +1384,14 @@ TEST_F(BinderLibTest, ThreadPoolAvailableThreads) {
     EXPECT_EQ(replyi, kKernelThreads + 1);
 }
 
+TEST_F(BinderLibTest, ThreadPoolStarted) {
+    Parcel data, reply;
+    sp<IBinder> server = addServer();
+    ASSERT_TRUE(server != nullptr);
+    EXPECT_THAT(server->transact(BINDER_LIB_TEST_IS_THREADPOOL_STARTED, data, &reply), NO_ERROR);
+    EXPECT_TRUE(reply.readBool());
+}
+
 size_t epochMillis() {
     using std::chrono::duration_cast;
     using std::chrono::milliseconds;
@@ -1346,9 +1406,11 @@ TEST_F(BinderLibTest, HangingServices) {
     ASSERT_TRUE(server != nullptr);
     int32_t delay = 1000; // ms
     data.writeInt32(delay);
+    // b/266537959 - must take before taking lock, since countdown is started in the remote
+    // process there.
+    size_t epochMsBefore = epochMillis();
     EXPECT_THAT(server->transact(BINDER_LIB_TEST_PROCESS_TEMPORARY_LOCK, data, &reply), NO_ERROR);
     std::vector<std::thread> ts;
-    size_t epochMsBefore = epochMillis();
     for (size_t i = 0; i < kKernelThreads + 1; i++) {
         ts.push_back(std::thread([&] {
             Parcel local_reply;
@@ -1766,6 +1828,28 @@ public:
                 reply->writeUint64Vector(vector);
                 return NO_ERROR;
             }
+            case BINDER_LIB_TEST_GET_NON_BLOCKING_FD: {
+                std::array<int, 2> sockets;
+                const bool created = socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets.data()) == 0;
+                if (!created) {
+                    ALOGE("Could not create socket pair");
+                    return UNKNOWN_ERROR;
+                }
+
+                const int result = fcntl(sockets[0], F_SETFL, O_NONBLOCK);
+                if (result != 0) {
+                    ALOGE("Could not make socket non-blocking: %s", strerror(errno));
+                    return UNKNOWN_ERROR;
+                }
+                base::unique_fd out(sockets[0]);
+                status_t writeResult = reply->writeUniqueFileDescriptor(out);
+                if (writeResult != NO_ERROR) {
+                    ALOGE("Could not write unique_fd");
+                    return writeResult;
+                }
+                close(sockets[1]); // we don't need the other side of the fd
+                return NO_ERROR;
+            }
             case BINDER_LIB_TEST_REJECT_OBJECTS: {
                 return data.objectsCount() == 0 ? BAD_VALUE : NO_ERROR;
             }
@@ -1774,6 +1858,10 @@ public:
             }
             case BINDER_LIB_TEST_GET_MAX_THREAD_COUNT: {
                 reply->writeInt32(ProcessState::self()->getThreadPoolMaxTotalThreadCount());
+                return NO_ERROR;
+            }
+            case BINDER_LIB_TEST_IS_THREADPOOL_STARTED: {
+                reply->writeBool(ProcessState::self()->isThreadPoolStarted());
                 return NO_ERROR;
             }
             case BINDER_LIB_TEST_PROCESS_LOCK: {

@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#if !ADB_HOST
-
 #if !defined(__ANDROID_RECOVERY__)
 #define TRACE_TAG JDWP
 
@@ -495,7 +493,7 @@ int init_jdwp(void) {
         adb_thread_setname("jdwp control");
         adbconnection_listen([](int fd, ProcessInfo process) {
             LOG(INFO) << "jdwp connection from " << process.pid;
-            fdevent_run_on_main_thread([fd, process] {
+            fdevent_run_on_looper([fd, process] {
                 unique_fd ufd(fd);
                 auto proc = std::make_unique<JdwpProcess>(std::move(ufd), process);
                 if (!proc) {
@@ -534,4 +532,3 @@ int init_jdwp() {
 }
 
 #endif /* defined(__ANDROID_RECOVERY__) */
-#endif /* !ADB_HOST */

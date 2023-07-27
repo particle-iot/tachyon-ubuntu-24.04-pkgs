@@ -16,6 +16,7 @@
 
 #define LOG_TAG "RpcTransportTipcTrusty"
 
+#include <inttypes.h>
 #include <trusty_ipc.h>
 
 #include <binder/RpcSession.h>
@@ -33,7 +34,7 @@ namespace {
 // RpcTransport for Trusty.
 class RpcTransportTipcTrusty : public RpcTransport {
 public:
-    explicit RpcTransportTipcTrusty(android::base::unique_fd socket) : mSocket(std::move(socket)) {}
+    explicit RpcTransportTipcTrusty(android::RpcTransportFd socket) : mSocket(std::move(socket)) {}
     ~RpcTransportTipcTrusty() { releaseMessage(); }
 
     status_t pollRead() override {
@@ -45,8 +46,8 @@ public:
     }
 
     status_t interruptableWriteFully(
-            FdTrigger* fdTrigger, iovec* iovs, int niovs,
-            const std::optional<android::base::function_ref<status_t()>>& altPoll,
+            FdTrigger* /*fdTrigger*/, iovec* iovs, int niovs,
+            const std::optional<android::base::function_ref<status_t()>>& /*altPoll*/,
             const std::vector<std::variant<base::unique_fd, base::borrowed_fd>>* ancillaryFds)
             override {
         if (niovs < 0) {
@@ -58,13 +59,33 @@ public:
             size += iovs[i].iov_len;
         }
 
+        handle_t msgHandles[IPC_MAX_MSG_HANDLES];
         ipc_msg_t msg{
                 .num_iov = static_cast<uint32_t>(niovs),
                 .iov = iovs,
-                .num_handles = 0, // TODO: add ancillaryFds
+                .num_handles = 0,
                 .handles = nullptr,
         };
-        ssize_t rc = send_msg(mSocket.get(), &msg);
+
+        if (ancillaryFds != nullptr && !ancillaryFds->empty()) {
+            if (ancillaryFds->size() > IPC_MAX_MSG_HANDLES) {
+                // This shouldn't happen because we check the FD count in RpcState.
+                ALOGE("Saw too many file descriptors in RpcTransportCtxTipcTrusty: "
+                      "%zu (max is %u). Aborting session.",
+                      ancillaryFds->size(), IPC_MAX_MSG_HANDLES);
+                return BAD_VALUE;
+            }
+
+            for (size_t i = 0; i < ancillaryFds->size(); i++) {
+                msgHandles[i] =
+                        std::visit([](const auto& fd) { return fd.get(); }, ancillaryFds->at(i));
+            }
+
+            msg.num_handles = ancillaryFds->size();
+            msg.handles = msgHandles;
+        }
+
+        ssize_t rc = send_msg(mSocket.fd.get(), &msg);
         if (rc == ERR_NOT_ENOUGH_BUFFER) {
             // Peer is blocked, wait until it unblocks.
             // TODO: when tipc supports a send-unblocked handler,
@@ -72,7 +93,7 @@ public:
             // when the handler gets called by the library
             uevent uevt;
             do {
-                rc = ::wait(mSocket.get(), &uevt, INFINITE_TIME);
+                rc = ::wait(mSocket.fd.get(), &uevt, INFINITE_TIME);
                 if (rc < 0) {
                     return statusFromTrusty(rc);
                 }
@@ -83,7 +104,7 @@ public:
 
             // Retry the send, it should go through this time because
             // sending is now unblocked
-            rc = send_msg(mSocket.get(), &msg);
+            rc = send_msg(mSocket.fd.get(), &msg);
         }
         if (rc < 0) {
             return statusFromTrusty(rc);
@@ -95,8 +116,8 @@ public:
     }
 
     status_t interruptableReadFully(
-            FdTrigger* fdTrigger, iovec* iovs, int niovs,
-            const std::optional<android::base::function_ref<status_t()>>& altPoll,
+            FdTrigger* /*fdTrigger*/, iovec* iovs, int niovs,
+            const std::optional<android::base::function_ref<status_t()>>& /*altPoll*/,
             std::vector<std::variant<base::unique_fd, base::borrowed_fd>>* ancillaryFds) override {
         if (niovs < 0) {
             return BAD_VALUE;
@@ -123,13 +144,18 @@ public:
                 return status;
             }
 
+            LOG_ALWAYS_FATAL_IF(mMessageInfo.num_handles > IPC_MAX_MSG_HANDLES,
+                                "Received too many handles %" PRIu32, mMessageInfo.num_handles);
+            bool haveHandles = mMessageInfo.num_handles != 0;
+            handle_t msgHandles[IPC_MAX_MSG_HANDLES];
+
             ipc_msg_t msg{
                     .num_iov = static_cast<uint32_t>(niovs),
                     .iov = iovs,
-                    .num_handles = 0, // TODO: support ancillaryFds
-                    .handles = nullptr,
+                    .num_handles = mMessageInfo.num_handles,
+                    .handles = haveHandles ? msgHandles : 0,
             };
-            ssize_t rc = read_msg(mSocket.get(), mMessageInfo.id, mMessageOffset, &msg);
+            ssize_t rc = read_msg(mSocket.fd.get(), mMessageInfo.id, mMessageOffset, &msg);
             if (rc < 0) {
                 return statusFromTrusty(rc);
             }
@@ -139,6 +165,28 @@ public:
             LOG_ALWAYS_FATAL_IF(mMessageOffset > mMessageInfo.len,
                                 "Message offset exceeds length %zu/%zu", mMessageOffset,
                                 mMessageInfo.len);
+
+            if (haveHandles) {
+                if (ancillaryFds != nullptr) {
+                    ancillaryFds->reserve(ancillaryFds->size() + mMessageInfo.num_handles);
+                    for (size_t i = 0; i < mMessageInfo.num_handles; i++) {
+                        ancillaryFds->emplace_back(base::unique_fd(msgHandles[i]));
+                    }
+
+                    // Clear the saved number of handles so we don't accidentally
+                    // read them multiple times
+                    mMessageInfo.num_handles = 0;
+                    haveHandles = false;
+                } else {
+                    ALOGE("Received unexpected handles %" PRIu32, mMessageInfo.num_handles);
+                    // It should be safe to continue here. We could abort, but then
+                    // peers could DoS us by sending messages with handles in them.
+                    // Close the handles since we are ignoring them.
+                    for (size_t i = 0; i < mMessageInfo.num_handles; i++) {
+                        ::close(msgHandles[i]);
+                    }
+                }
+            }
 
             // Release the message if all of it has been read
             if (mMessageOffset == mMessageInfo.len) {
@@ -169,6 +217,8 @@ public:
         }
     }
 
+    bool isWaiting() override { return mSocket.isInPollingState(); }
+
 private:
     status_t ensureMessage(bool wait) {
         int rc;
@@ -179,7 +229,7 @@ private:
 
         /* TODO: interruptible wait, maybe with a timeout??? */
         uevent uevt;
-        rc = ::wait(mSocket.get(), &uevt, wait ? INFINITE_TIME : 0);
+        rc = ::wait(mSocket.fd.get(), &uevt, wait ? INFINITE_TIME : 0);
         if (rc < 0) {
             if (rc == ERR_TIMED_OUT && !wait) {
                 // If we timed out with wait==false, then there's no message
@@ -189,10 +239,16 @@ private:
         }
         if (!(uevt.event & IPC_HANDLE_POLL_MSG)) {
             /* No message, terminate here and leave mHaveMessage false */
+            if (uevt.event & IPC_HANDLE_POLL_HUP) {
+                // Peer closed the connection. We need to preserve the order
+                // between MSG and HUP from FdTrigger.cpp, which means that
+                // getting MSG&HUP should return OK instead of DEAD_OBJECT.
+                return DEAD_OBJECT;
+            }
             return OK;
         }
 
-        rc = get_msg(mSocket.get(), &mMessageInfo);
+        rc = get_msg(mSocket.fd.get(), &mMessageInfo);
         if (rc < 0) {
             return statusFromTrusty(rc);
         }
@@ -204,12 +260,12 @@ private:
 
     void releaseMessage() {
         if (mHaveMessage) {
-            put_msg(mSocket.get(), mMessageInfo.id);
+            put_msg(mSocket.fd.get(), mMessageInfo.id);
             mHaveMessage = false;
         }
     }
 
-    base::unique_fd mSocket;
+    android::RpcTransportFd mSocket;
 
     bool mHaveMessage = false;
     ipc_msg_info mMessageInfo;
@@ -219,9 +275,9 @@ private:
 // RpcTransportCtx for Trusty.
 class RpcTransportCtxTipcTrusty : public RpcTransportCtx {
 public:
-    std::unique_ptr<RpcTransport> newTransport(android::base::unique_fd fd,
+    std::unique_ptr<RpcTransport> newTransport(android::RpcTransportFd socket,
                                                FdTrigger*) const override {
-        return std::make_unique<RpcTransportTipcTrusty>(std::move(fd));
+        return std::make_unique<RpcTransportTipcTrusty>(std::move(socket));
     }
     std::vector<uint8_t> getCertificate(RpcCertificateFormat) const override { return {}; }
 };

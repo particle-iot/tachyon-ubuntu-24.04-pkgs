@@ -30,6 +30,8 @@
 
 #include "BuildFlags.h"
 
+#include <android-base/file.h>
+
 //#undef ALOGV
 //#define ALOGV(...) fprintf(stderr, __VA_ARGS__)
 
@@ -44,6 +46,8 @@ int BpBinder::sNumTrackedUids = 0;
 std::atomic_bool BpBinder::sCountByUidEnabled(false);
 binder_proxy_limit_callback BpBinder::sLimitCallback;
 bool BpBinder::sBinderProxyThrottleCreate = false;
+
+static StaticString16 kDescriptorUninit(u"<uninit descriptor>");
 
 // Arbitrarily high value that probably distinguishes a bad behaving app
 uint32_t BpBinder::sBinderProxyCountHighWatermark = 2500;
@@ -98,6 +102,36 @@ void* BpBinder::ObjectManager::detach(const void* objectID) {
     void* value = i->second.object;
     mObjects.erase(i);
     return value;
+}
+
+namespace {
+struct Tag {
+    wp<IBinder> binder;
+};
+} // namespace
+
+static void cleanWeak(const void* /* id */, void* obj, void* /* cookie */) {
+    delete static_cast<Tag*>(obj);
+}
+
+sp<IBinder> BpBinder::ObjectManager::lookupOrCreateWeak(const void* objectID, object_make_func make,
+                                                        const void* makeArgs) {
+    entry_t& e = mObjects[objectID];
+    if (e.object != nullptr) {
+        if (auto attached = static_cast<Tag*>(e.object)->binder.promote()) {
+            return attached;
+        }
+    } else {
+        e.object = new Tag;
+        LOG_ALWAYS_FATAL_IF(!e.object, "no more memory");
+    }
+    sp<IBinder> newObj = make(makeArgs);
+
+    static_cast<Tag*>(e.object)->binder = newObj;
+    e.cleanupCookie = nullptr;
+    e.func = cleanWeak;
+
+    return newObj;
 }
 
 void BpBinder::ObjectManager::kill()
@@ -179,6 +213,7 @@ BpBinder::BpBinder(Handle&& handle)
         mAlive(true),
         mObitsSent(false),
         mObituaries(nullptr),
+        mDescriptorCache(kDescriptorUninit),
         mTrackedUid(-1) {
     extendObjectLifetime(OBJECT_LIFETIME_WEAK);
 }
@@ -226,12 +261,12 @@ std::optional<int32_t> BpBinder::getDebugBinderHandle() const {
 
 bool BpBinder::isDescriptorCached() const {
     Mutex::Autolock _l(mLock);
-    return mDescriptorCache.size() ? true : false;
+    return mDescriptorCache.string() != kDescriptorUninit.string();
 }
 
 const String16& BpBinder::getInterfaceDescriptor() const
 {
-    if (isDescriptorCached() == false) {
+    if (!isDescriptorCached()) {
         sp<BpBinder> thiz = sp<BpBinder>::fromExisting(const_cast<BpBinder*>(this));
 
         Parcel data;
@@ -244,8 +279,7 @@ const String16& BpBinder::getInterfaceDescriptor() const
             Mutex::Autolock _l(mLock);
             // mDescriptorCache could have been assigned while the lock was
             // released.
-            if (mDescriptorCache.size() == 0)
-                mDescriptorCache = res;
+            if (mDescriptorCache.string() == kDescriptorUninit.string()) mDescriptorCache = res;
         }
     }
 
@@ -267,6 +301,18 @@ status_t BpBinder::pingBinder()
     data.markForBinder(sp<BpBinder>::fromExisting(this));
     Parcel reply;
     return transact(PING_TRANSACTION, data, &reply);
+}
+
+status_t BpBinder::startRecordingBinder(const android::base::unique_fd& fd) {
+    Parcel send, reply;
+    send.writeUniqueFileDescriptor(fd);
+    return transact(START_RECORDING_TRANSACTION, send, &reply);
+}
+
+status_t BpBinder::stopRecordingBinder() {
+    Parcel data, reply;
+    data.markForBinder(sp<BpBinder>::fromExisting(this));
+    return transact(STOP_RECORDING_TRANSACTION, data, &reply);
 }
 
 status_t BpBinder::dump(int fd, const Vector<String16>& args)
@@ -325,10 +371,7 @@ status_t BpBinder::transact(
         if (data.dataSize() > LOG_TRANSACTIONS_OVER_SIZE) {
             Mutex::Autolock _l(mLock);
             ALOGW("Large outgoing transaction of %zu bytes, interface descriptor %s, code %d",
-                  data.dataSize(),
-                  mDescriptorCache.size() ? String8(mDescriptorCache).c_str()
-                                          : "<uncached descriptor>",
-                  code);
+                  data.dataSize(), String8(mDescriptorCache).c_str(), code);
         }
 
         if (status == DEAD_OBJECT) mAlive = 0;
@@ -345,7 +388,7 @@ status_t BpBinder::linkToDeath(
 {
     if (isRpcBinder()) {
         if (rpcSession()->getMaxIncomingThreads() < 1) {
-            LOG_ALWAYS_FATAL("Cannot register a DeathRecipient without any incoming connections.");
+            ALOGE("Cannot register a DeathRecipient without any incoming connections.");
             return INVALID_OPERATION;
         }
     } else if constexpr (!kEnableKernelIpc) {
@@ -516,6 +559,12 @@ void BpBinder::withLock(const std::function<void()>& doWithLock) {
     doWithLock();
 }
 
+sp<IBinder> BpBinder::lookupOrCreateWeak(const void* objectID, object_make_func make,
+                                         const void* makeArgs) {
+    AutoMutex _l(mLock);
+    return mObjects.lookupOrCreateWeak(objectID, make, makeArgs);
+}
+
 BpBinder* BpBinder::remoteBinder()
 {
     return this;
@@ -597,7 +646,7 @@ void BpBinder::onLastStrongRef(const void* /*id*/) {
     if(obits != nullptr) {
         if (!obits->isEmpty()) {
             ALOGI("onLastStrongRef automatically unlinking death recipients: %s",
-                  mDescriptorCache.size() ? String8(mDescriptorCache).c_str() : "<uncached descriptor>");
+                  String8(mDescriptorCache).c_str());
         }
 
         if (ipc) ipc->clearDeathNotification(binderHandle(), this);

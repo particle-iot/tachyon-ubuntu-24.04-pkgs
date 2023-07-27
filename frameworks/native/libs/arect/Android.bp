@@ -49,6 +49,9 @@ cc_library_headers {
         "com.android.media",
         "com.android.media.swcodec",
     ],
+    llndk: {
+        llndk_headers: true,
+    },
 }
 
 cc_library_static {
@@ -64,4 +67,11 @@ cc_library_static {
         },
     },
     min_sdk_version: "29",
+    // static link, so it won't straddle a module boundary at runtime.
+    apex_available: [
+        "//apex_available:platform",
+        "com.android.media",
+        "com.android.media.swcodec",
+    ],
+
 }

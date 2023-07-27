@@ -16,14 +16,18 @@
 
 #pragma once
 
-#include <android-base/thread_annotations.h>
-#include <ui/FenceTime.h>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
-#include "TimeKeeper.h"
+
+#include <android-base/thread_annotations.h>
+#include <ui/FenceTime.h>
+
+#include <scheduler/TimeKeeper.h>
+
 #include "VsyncController.h"
+
 namespace android::scheduler {
 
 class Clock;
@@ -37,13 +41,15 @@ public:
                  bool supportKernelIdleTimer);
     ~VSyncReactor();
 
-    bool addPresentFence(const std::shared_ptr<android::FenceTime>& fence) final;
+    bool addPresentFence(std::shared_ptr<FenceTime>) final;
     void setIgnorePresentFences(bool ignore) final;
 
     void startPeriodTransition(nsecs_t period) final;
 
     bool addHwVsyncTimestamp(nsecs_t timestamp, std::optional<nsecs_t> hwcVsyncPeriod,
                              bool* periodFlushed) final;
+
+    void setDisplayPowerMode(hal::PowerMode powerMode) final;
 
     void dump(std::string& result) const final;
 
@@ -68,6 +74,8 @@ private:
     bool mPeriodConfirmationInProgress GUARDED_BY(mMutex) = false;
     std::optional<nsecs_t> mPeriodTransitioningTo GUARDED_BY(mMutex);
     std::optional<nsecs_t> mLastHwVsync GUARDED_BY(mMutex);
+
+    hal::PowerMode mDisplayPowerMode GUARDED_BY(mMutex) = hal::PowerMode::ON;
 
     const bool mSupportKernelIdleTimer = false;
 };

@@ -104,24 +104,48 @@ int RpcServerTrusty::handleConnect(const tipc_port* port, handle_t chan, const u
             return;
         }
 
-        /* Save the session for easy access */
-        *ctx_p = session.get();
+        /* Save the session and connection for the other callbacks */
+        auto* channelContext = new (std::nothrow) ChannelContext;
+        if (channelContext == nullptr) {
+            rc = ERR_NO_MEMORY;
+            return;
+        }
+
+        channelContext->session = std::move(session);
+        channelContext->connection = std::move(result.connection);
+
+        *ctx_p = channelContext;
     };
 
-    base::unique_fd clientFd(chan);
+    // We need to duplicate the channel handle here because the tipc library
+    // owns the original handle and closes is automatically on channel cleanup.
+    // We use dup() because Trusty does not have fcntl().
+    // NOLINTNEXTLINE(android-cloexec-dup)
+    handle_t chanDup = dup(chan);
+    if (chanDup < 0) {
+        return chanDup;
+    }
+    base::unique_fd clientFd(chanDup);
+    android::RpcTransportFd transportFd(std::move(clientFd));
+
     std::array<uint8_t, RpcServer::kRpcAddressSize> addr;
     constexpr size_t addrLen = sizeof(*peer);
     memcpy(addr.data(), peer, addrLen);
-    RpcServer::establishConnection(sp(server->mRpcServer), std::move(clientFd), addr, addrLen,
+    RpcServer::establishConnection(sp(server->mRpcServer), std::move(transportFd), addr, addrLen,
                                    joinFn);
 
     return rc;
 }
 
-int RpcServerTrusty::handleMessage(const tipc_port* port, handle_t chan, void* ctx) {
-    auto* session = reinterpret_cast<RpcSession*>(ctx);
-    status_t status = session->state()->drainCommands(session->mConnections.mIncoming[0], session,
-                                                      RpcState::CommandType::ANY);
+int RpcServerTrusty::handleMessage(const tipc_port* /*port*/, handle_t /*chan*/, void* ctx) {
+    auto* channelContext = reinterpret_cast<ChannelContext*>(ctx);
+    LOG_ALWAYS_FATAL_IF(channelContext == nullptr,
+                        "bad state: message received on uninitialized channel");
+
+    auto& session = channelContext->session;
+    auto& connection = channelContext->connection;
+    status_t status =
+            session->state()->drainCommands(connection, session, RpcState::CommandType::ANY);
     if (status != OK) {
         LOG_RPC_DETAIL("Binder connection thread closing w/ status %s",
                        statusToString(status).c_str());
@@ -130,13 +154,21 @@ int RpcServerTrusty::handleMessage(const tipc_port* port, handle_t chan, void* c
     return NO_ERROR;
 }
 
-void RpcServerTrusty::handleDisconnect(const tipc_port* port, handle_t chan, void* ctx) {}
+void RpcServerTrusty::handleDisconnect(const tipc_port* /*port*/, handle_t /*chan*/,
+                                       void* /*ctx*/) {}
 
 void RpcServerTrusty::handleChannelCleanup(void* ctx) {
-    auto* session = reinterpret_cast<RpcSession*>(ctx);
-    auto& connection = session->mConnections.mIncoming.at(0);
+    auto* channelContext = reinterpret_cast<ChannelContext*>(ctx);
+    if (channelContext == nullptr) {
+        return;
+    }
+
+    auto& session = channelContext->session;
+    auto& connection = channelContext->connection;
     LOG_ALWAYS_FATAL_IF(!session->removeIncomingConnection(connection),
                         "bad state: connection object guaranteed to be in list");
+
+    delete channelContext;
 }
 
 } // namespace android

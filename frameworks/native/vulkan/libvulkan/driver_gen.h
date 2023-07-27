@@ -60,6 +60,7 @@ struct ProcHook {
         EXTENSION_CORE_1_0,
         EXTENSION_CORE_1_1,
         EXTENSION_CORE_1_2,
+        EXTENSION_CORE_1_3,
         EXTENSION_COUNT,
         EXTENSION_UNKNOWN,
     };
@@ -122,6 +123,7 @@ struct DeviceDriverTable {
     PFN_vkGetDeviceQueue2 GetDeviceQueue2;
     PFN_vkGetSwapchainGrallocUsageANDROID GetSwapchainGrallocUsageANDROID;
     PFN_vkGetSwapchainGrallocUsage2ANDROID GetSwapchainGrallocUsage2ANDROID;
+    PFN_vkGetSwapchainGrallocUsage3ANDROID GetSwapchainGrallocUsage3ANDROID;
     PFN_vkAcquireImageANDROID AcquireImageANDROID;
     PFN_vkQueueSignalReleaseImageANDROID QueueSignalReleaseImageANDROID;
     // clang-format on

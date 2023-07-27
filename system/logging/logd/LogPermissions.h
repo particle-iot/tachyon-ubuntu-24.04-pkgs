@@ -23,3 +23,4 @@
 bool clientHasLogCredentials(uid_t uid, gid_t gid, pid_t pid);
 bool clientHasLogCredentials(SocketClient* cli);
 bool clientCanWriteSecurityLog(uid_t uid, gid_t gid, pid_t pid);
+bool clientIsExemptedFromUserConsent(SocketClient* cli);

@@ -28,6 +28,7 @@
 
 #include <sys/cdefs.h>
 
+#include <android/choreographer.h>
 #include <android/data_space.h>
 #include <android/hardware_buffer.h>
 #include <android/hdr_metadata.h>
@@ -594,6 +595,25 @@ void ASurfaceTransaction_setEnableBackPressure(ASurfaceTransaction* transaction,
                                                ASurfaceControl* surface_control,
                                                bool enableBackPressure)
                                                __INTRODUCED_IN(31);
+
+/**
+ * Sets the frame timeline to use in SurfaceFlinger.
+ *
+ * A frame timeline should be chosen based on the frame deadline the application
+ * can meet when rendering the frame and the application's desired presentation time.
+ * By setting a frame timeline, SurfaceFlinger tries to present the frame at the corresponding
+ * expected presentation time.
+ *
+ * To receive frame timelines, a callback must be posted to Choreographer using
+ * AChoreographer_postVsyncCallback(). The \c vsyncId can then be extracted from the
+ * callback payload using AChoreographerFrameCallbackData_getFrameTimelineVsyncId().
+ *
+ * \param vsyncId The vsync ID received from AChoreographer, setting the frame's presentation target
+ * to the corresponding expected presentation time and deadline from the frame to be rendered. A
+ * stale or invalid value will be ignored.
+ */
+void ASurfaceTransaction_setFrameTimeline(ASurfaceTransaction* transaction,
+                                          AVsyncId vsyncId) __INTRODUCED_IN(33);
 
 __END_DECLS
 

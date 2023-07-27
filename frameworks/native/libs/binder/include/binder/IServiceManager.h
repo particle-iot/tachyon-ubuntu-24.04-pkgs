@@ -67,7 +67,8 @@ public:
      * a system property, or in the case of services in the VINTF manifest, it can be checked
      * with isDeclared).
      */
-    virtual sp<IBinder>         getService( const String16& name) const = 0;
+    [[deprecated("this polls for 5s, prefer waitForService or checkService")]]
+    virtual sp<IBinder> getService(const String16& name) const = 0;
 
     /**
      * Retrieve an existing service, non-blocking.
@@ -113,6 +114,12 @@ public:
      * this can be updated.
      */
     virtual std::optional<String16> updatableViaApex(const String16& name) = 0;
+
+    /**
+     * Returns all instances which are updatable via the APEX. Instance names are fully qualified
+     * like `pack.age.IFoo/default`.
+     */
+    virtual Vector<String16> getUpdatableNames(const String16& apexName) = 0;
 
     /**
      * If this instance has declared remote connection information, returns
@@ -191,7 +198,10 @@ status_t getService(const String16& name, sp<INTERFACE>* outService)
 {
     const sp<IServiceManager> sm = defaultServiceManager();
     if (sm != nullptr) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         *outService = interface_cast<INTERFACE>(sm->getService(name));
+#pragma clang diagnostic pop // getService deprecation
         if ((*outService) != nullptr) return NO_ERROR;
     }
     return NAME_NOT_FOUND;

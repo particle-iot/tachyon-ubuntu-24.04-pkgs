@@ -12,13 +12,17 @@ aidl_interface {
     host_supported: true,
     unstable: true,
     srcs: [
-        "EmptyParcelable.aidl",
-        "SingleDataParcelable.aidl",
-        "GenericDataParcelable.aidl",
+        "parcelables/EmptyParcelable.aidl",
+        "parcelables/SingleDataParcelable.aidl",
+        "parcelables/GenericDataParcelable.aidl",
     ],
     backend: {
         java: {
-            enabled: false,
+            enabled: true,
+            platform_apis: true,
+        },
+        rust: {
+            enabled: true,
         },
     },
 }
@@ -84,6 +88,7 @@ cc_library_static {
         },
     },
     srcs: [
+        "random_binder.cpp",
         "random_fd.cpp",
         "random_parcel.cpp",
         "libbinder_driver.cpp",

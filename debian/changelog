@@ -1,3 +1,13 @@
+android-platform-tools (33.0.4-1~exp1) experimental; urgency=medium
+
+  * New upstream release 33.0.4
+  * debian/patches:
+    - Refresh patches.
+    - Add patch to fix ftbfs.
+    - Revert upstream's removal of simg2simg.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 27 Jul 2023 01:56:00 -0700
+
 android-platform-tools (33.0.3-2) unstable; urgency=medium
 
   * Upload to unstable.

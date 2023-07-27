@@ -54,6 +54,7 @@
 
 #include "daemon/file_sync_service.h"
 #include "daemon/framebuffer_service.h"
+#include "daemon/jdwp_service.h"
 #include "daemon/logging.h"
 #include "daemon/restart_service.h"
 #include "daemon/shell_service.h"
@@ -132,7 +133,7 @@ static void spin_service(unique_fd fd) {
         return;
     }
 
-    fdevent_run_on_main_thread([fd = pipe_read.release()]() {
+    fdevent_run_on_looper([fd = pipe_read.release()]() {
         fdevent* fde = fdevent_create(
                 fd, [](int, unsigned, void*) {}, nullptr);
         fdevent_add(fde, FDE_READ);

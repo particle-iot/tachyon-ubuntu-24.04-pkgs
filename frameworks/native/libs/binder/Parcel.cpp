@@ -48,6 +48,7 @@
 #include <utils/String8.h>
 #include <utils/misc.h>
 
+#include "OS.h"
 #include "RpcState.h"
 #include "Static.h"
 #include "Utils.h"
@@ -374,6 +375,10 @@ size_t Parcel::dataSize() const
     return (mDataSize > mDataPos ? mDataSize : mDataPos);
 }
 
+size_t Parcel::dataBufferSize() const {
+    return mDataSize;
+}
+
 size_t Parcel::dataAvail() const
 {
     size_t result = dataSize() - dataPosition();
@@ -613,11 +618,14 @@ status_t Parcel::appendFrom(const Parcel* parcel, size_t offset, size_t len) {
                 if (status_t status = readInt32(&fdIndex); status != OK) {
                     return status;
                 }
-                const auto& oldFd = otherRpcFields->mFds->at(fdIndex);
+                int oldFd = toRawFd(otherRpcFields->mFds->at(fdIndex));
                 // To match kernel binder behavior, we always dup, even if the
                 // FD was unowned in the source parcel.
-                rpcFields->mFds->emplace_back(
-                        base::unique_fd(fcntl(toRawFd(oldFd), F_DUPFD_CLOEXEC, 0)));
+                int newFd = -1;
+                if (status_t status = dupFileDescriptor(oldFd, &newFd); status != OK) {
+                    ALOGW("Failed to duplicate file descriptor %d: %s", oldFd, strerror(-status));
+                }
+                rpcFields->mFds->emplace_back(base::unique_fd(newFd));
                 // Fixup the index in the data.
                 mDataPos = newDataPos + 4;
                 if (status_t status = writeInt32(rpcFields->mFds->size() - 1); status != OK) {
@@ -965,7 +973,15 @@ bool Parcel::enforceInterface(const char16_t* interface,
     }
 }
 
+void Parcel::setEnforceNoDataAvail(bool enforceNoDataAvail) {
+    mEnforceNoDataAvail = enforceNoDataAvail;
+}
+
 binder::Status Parcel::enforceNoDataAvail() const {
+    if (!mEnforceNoDataAvail) {
+        return binder::Status::ok();
+    }
+
     const auto n = dataAvail();
     if (n == 0) {
         return binder::Status::ok();
@@ -1438,7 +1454,8 @@ status_t Parcel::writeFileDescriptor(int fd, bool takeOwnership) {
             case RpcSession::FileDescriptorTransportMode::NONE: {
                 return FDS_NOT_ALLOWED;
             }
-            case RpcSession::FileDescriptorTransportMode::UNIX: {
+            case RpcSession::FileDescriptorTransportMode::UNIX:
+            case RpcSession::FileDescriptorTransportMode::TRUSTY: {
                 if (rpcFields->mFds == nullptr) {
                     rpcFields->mFds = std::make_unique<decltype(rpcFields->mFds)::element_type>();
                 }
@@ -1462,7 +1479,7 @@ status_t Parcel::writeFileDescriptor(int fd, bool takeOwnership) {
 #ifdef BINDER_WITH_KERNEL_IPC
     flat_binder_object obj;
     obj.hdr.type = BINDER_TYPE_FD;
-    obj.flags = 0x7f | FLAT_BINDER_FLAG_ACCEPTS_FDS;
+    obj.flags = 0;
     obj.binder = 0; /* Don't pass uninitialized stack data to a remote process */
     obj.handle = fd;
     obj.cookie = takeOwnership ? 1 : 0;
@@ -1477,9 +1494,9 @@ status_t Parcel::writeFileDescriptor(int fd, bool takeOwnership) {
 
 status_t Parcel::writeDupFileDescriptor(int fd)
 {
-    int dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
-    if (dupFd < 0) {
-        return -errno;
+    int dupFd;
+    if (status_t err = dupFileDescriptor(fd, &dupFd); err != OK) {
+        return err;
     }
     status_t err = writeFileDescriptor(dupFd, true /*takeOwnership*/);
     if (err != OK) {
@@ -1496,9 +1513,9 @@ status_t Parcel::writeParcelFileDescriptor(int fd, bool takeOwnership)
 
 status_t Parcel::writeDupParcelFileDescriptor(int fd)
 {
-    int dupFd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
-    if (dupFd < 0) {
-        return -errno;
+    int dupFd;
+    if (status_t err = dupFileDescriptor(fd, &dupFd); err != OK) {
+        return err;
     }
     status_t err = writeParcelFileDescriptor(dupFd, true /*takeOwnership*/);
     if (err != OK) {
@@ -2295,7 +2312,12 @@ status_t Parcel::readUniqueFileDescriptor(base::unique_fd* val) const
         return BAD_TYPE;
     }
 
-    val->reset(fcntl(got, F_DUPFD_CLOEXEC, 0));
+    int dupFd;
+    if (status_t err = dupFileDescriptor(got, &dupFd); err != OK) {
+        return BAD_VALUE;
+    }
+
+    val->reset(dupFd);
 
     if (val->get() < 0) {
         return BAD_VALUE;
@@ -2312,7 +2334,12 @@ status_t Parcel::readUniqueParcelFileDescriptor(base::unique_fd* val) const
         return BAD_TYPE;
     }
 
-    val->reset(fcntl(got, F_DUPFD_CLOEXEC, 0));
+    int dupFd;
+    if (status_t err = dupFileDescriptor(got, &dupFd); err != OK) {
+        return BAD_VALUE;
+    }
+
+    val->reset(dupFd);
 
     if (val->get() < 0) {
         return BAD_VALUE;
@@ -2628,8 +2655,7 @@ status_t Parcel::rpcSetDataReference(
     return OK;
 }
 
-void Parcel::print(TextOutput& to, uint32_t /*flags*/) const
-{
+void Parcel::print(std::ostream& to, uint32_t /*flags*/) const {
     to << "Parcel(";
 
     if (errorCheck() != NO_ERROR) {
@@ -2637,7 +2663,7 @@ void Parcel::print(TextOutput& to, uint32_t /*flags*/) const
         to << "Error: " << (void*)(intptr_t)err << " \"" << strerror(-err) << "\"";
     } else if (dataSize() > 0) {
         const uint8_t* DATA = data();
-        to << indent << HexDump(DATA, dataSize()) << dedent;
+        to << "\t" << HexDump(DATA, dataSize());
 #ifdef BINDER_WITH_KERNEL_IPC
         if (const auto* kernelFields = maybeKernelFields()) {
             const binder_size_t* OBJS = kernelFields->mObjects;
@@ -2645,8 +2671,7 @@ void Parcel::print(TextOutput& to, uint32_t /*flags*/) const
             for (size_t i = 0; i < N; i++) {
                 const flat_binder_object* flat =
                         reinterpret_cast<const flat_binder_object*>(DATA + OBJS[i]);
-                to << endl
-                   << "Object #" << i << " @ " << (void*)OBJS[i] << ": "
+                to << "Object #" << i << " @ " << (void*)OBJS[i] << ": "
                    << TypeCode(flat->hdr.type & 0x7f7f7f00) << " = " << flat->binder;
             }
         }
@@ -3067,6 +3092,7 @@ void Parcel::initState()
     mAllowFds = true;
     mDeallocZero = false;
     mOwner = nullptr;
+    mEnforceNoDataAvail = true;
 }
 
 void Parcel::scanForFds() const {

@@ -230,21 +230,33 @@ inline bool ReadMapFile(const std::string& map_file,
   return ReadMapFileContent(&content[0], callback);
 }
 
+
+inline bool ReadMapFile(const std::string& map_file, const MapInfoParamsCallback& callback,
+                        std::string& mapsBuffer) {
+  if (!android::base::ReadFileToString(map_file, &mapsBuffer)) {
+    return false;
+  }
+  return ReadMapFileContent(&mapsBuffer[0], callback);
+}
+
 inline bool ReadMapFile(const std::string& map_file,
                 const MapInfoParamsCallback& callback) {
   std::string content;
-  if (!android::base::ReadFileToString(map_file, &content)) {
-    return false;
-  }
-  return ReadMapFileContent(&content[0], callback);
+  return ReadMapFile(map_file, callback, content);
 }
 
 inline bool ReadProcessMaps(pid_t pid, const MapInfoCallback& callback) {
   return ReadMapFile("/proc/" + std::to_string(pid) + "/maps", callback);
 }
 
+inline bool ReadProcessMaps(pid_t pid, const MapInfoParamsCallback& callback,
+                            std::string& mapsBuffer) {
+  return ReadMapFile("/proc/" + std::to_string(pid) + "/maps", callback, mapsBuffer);
+}
+
 inline bool ReadProcessMaps(pid_t pid, const MapInfoParamsCallback& callback) {
-  return ReadMapFile("/proc/" + std::to_string(pid) + "/maps", callback);
+  std::string content;
+  return ReadProcessMaps(pid, callback, content);
 }
 
 inline bool ReadProcessMaps(pid_t pid, std::vector<MapInfo>* maps) {

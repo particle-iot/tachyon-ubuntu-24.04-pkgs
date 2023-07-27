@@ -35,6 +35,10 @@
 
 namespace android {
 
+namespace gui {
+class ISurfaceComposer;
+} // namespace gui
+
 class ISurfaceComposer;
 
 /* This is the same as ProducerListener except that onBuffersDiscarded is
@@ -105,6 +109,24 @@ public:
      * well as its IGraphicBufferProducer */
     static bool isValid(const sp<Surface>& surface) {
         return surface != nullptr && surface->getIGraphicBufferProducer() != nullptr;
+    }
+
+    static sp<IGraphicBufferProducer> getIGraphicBufferProducer(ANativeWindow* window) {
+        int val;
+        if (window->query(window, NATIVE_WINDOW_CONCRETE_TYPE, &val) >= 0 &&
+            val == NATIVE_WINDOW_SURFACE) {
+            return ((Surface*) window)->mGraphicBufferProducer;
+        }
+        return nullptr;
+    }
+
+    static sp<IBinder> getSurfaceControlHandle(ANativeWindow* window) {
+        int val;
+        if (window->query(window, NATIVE_WINDOW_CONCRETE_TYPE, &val) >= 0 &&
+            val == NATIVE_WINDOW_SURFACE) {
+            return ((Surface*) window)->mSurfaceControlHandle;
+        }
+        return nullptr;
     }
 
     /* Attaches a sideband buffer stream to the Surface's IGraphicBufferProducer.
@@ -196,6 +218,7 @@ protected:
 
     // Virtual for testing.
     virtual sp<ISurfaceComposer> composerService() const;
+    virtual sp<gui::ISurfaceComposer> composerServiceAIDL() const;
     virtual nsecs_t now() const;
 
 private:
@@ -398,6 +421,13 @@ protected:
     void getQueueBufferInputLocked(android_native_buffer_t* buffer, int fenceFd, nsecs_t timestamp,
             IGraphicBufferProducer::QueueBufferInput* out);
 
+    // For easing in adoption of gralloc4 metadata by vendor components, as well as for supporting
+    // the public ANativeWindow api, allow setting relevant metadata when queueing a buffer through
+    // a native window
+    void applyGrallocMetadataLocked(
+            android_native_buffer_t* buffer,
+            const IGraphicBufferProducer::QueueBufferInput& queueBufferInput);
+
     void onBufferQueuedLocked(int slot, sp<Fence> fence,
             const IGraphicBufferProducer::QueueBufferOutput& output);
 
@@ -429,11 +459,11 @@ protected:
     uint32_t mReqHeight;
 
     // mReqFormat is the buffer pixel format that will be requested at the next
-    // deuque operation. It is initialized to PIXEL_FORMAT_RGBA_8888.
+    // dequeue operation. It is initialized to PIXEL_FORMAT_RGBA_8888.
     PixelFormat mReqFormat;
 
     // mReqUsage is the set of buffer usage flags that will be requested
-    // at the next deuque operation. It is initialized to 0.
+    // at the next dequeue operation. It is initialized to 0.
     uint64_t mReqUsage;
 
     // mTimestamp is the timestamp that will be used for the next buffer queue
@@ -449,6 +479,11 @@ protected:
     // mHdrMetadata is the HDR metadata that will be used for the next buffer
     // queue operation.  There is no HDR metadata by default.
     HdrMetadata mHdrMetadata;
+
+    // mHdrMetadataIsSet is a bitfield to track which HDR metadata has been set.
+    // Prevent Surface from resetting HDR metadata that was set on a bufer when
+    // HDR metadata is not set on this Surface.
+    uint32_t mHdrMetadataIsSet{0};
 
     // mCrop is the crop rectangle that will be used for the next buffer
     // that gets queued. It is set by calling setCrop.

@@ -50,6 +50,17 @@ public:
             std::unique_ptr<RpcTransportCtxFactory> rpcTransportCtxFactory = nullptr);
 
     /**
+     * Creates an RPC server that bootstraps sessions using an existing
+     * Unix domain socket pair.
+     *
+     * Callers should create a pair of SOCK_STREAM Unix domain sockets, pass
+     * one to RpcServer::setupUnixDomainSocketBootstrapServer and the other
+     * to RpcSession::setupUnixDomainSocketBootstrapClient. Multiple client
+     * session can be created from the client end of the pair.
+     */
+    [[nodiscard]] status_t setupUnixDomainSocketBootstrapServer(base::unique_fd serverFd);
+
+    /**
      * This represents a session for responses, e.g.:
      *
      *     process A serves binder a
@@ -60,9 +71,19 @@ public:
     [[nodiscard]] status_t setupUnixDomainServer(const char* path);
 
     /**
-     * Creates an RPC server at the current port.
+     * Sets up an RPC server with a raw socket file descriptor.
+     * The socket should be created and bound to a socket address already, e.g.
+     * the socket can be created in init.rc.
+     *
+     * This method is used in the libbinder_rpc_unstable API
+     * RunInitUnixDomainRpcServer().
      */
-    [[nodiscard]] status_t setupVsockServer(unsigned int port);
+    [[nodiscard]] status_t setupRawSocketServer(base::unique_fd socket_fd);
+
+    /**
+     * Creates an RPC server binding to the given CID at the given port.
+     */
+    [[nodiscard]] status_t setupVsockServer(unsigned int bindCid, unsigned int port);
 
     /**
      * Creates an RPC server at the current port using IPv4.
@@ -150,6 +171,16 @@ public:
     sp<IBinder> getRootObject();
 
     /**
+     * Set optional filter of incoming connections based on the peer's address.
+     *
+     * Takes one argument: a callable that is invoked on each accept()-ed
+     * connection and returns false if the connection should be dropped.
+     * See the description of setPerSessionRootObject() for details about
+     * the callable's arguments.
+     */
+    void setConnectionFilter(std::function<bool(const void*, size_t)>&& filter);
+
+    /**
      * See RpcTransportCtx::getCertificate
      */
     std::vector<uint8_t> getCertificate(RpcCertificateFormat);
@@ -187,6 +218,11 @@ public:
     std::vector<sp<RpcSession>> listSessions();
     size_t numUninitializedSessions();
 
+    /**
+     * Whether any requests are currently being processed.
+     */
+    bool hasActiveRequests();
+
     ~RpcServer();
 
 private:
@@ -197,11 +233,18 @@ private:
     void onSessionAllIncomingThreadsEnded(const sp<RpcSession>& session) override;
     void onSessionIncomingThreadEnded() override;
 
+    status_t setupExternalServer(
+            base::unique_fd serverFd,
+            std::function<status_t(const RpcServer&, RpcTransportFd*)>&& acceptFn);
+
     static constexpr size_t kRpcAddressSize = 128;
     static void establishConnection(
-            sp<RpcServer>&& server, base::unique_fd clientFd,
+            sp<RpcServer>&& server, RpcTransportFd clientFd,
             std::array<uint8_t, kRpcAddressSize> addr, size_t addrLen,
             std::function<void(sp<RpcSession>&&, RpcSession::PreJoinSetupResult&&)>&& joinFn);
+    static status_t acceptSocketConnection(const RpcServer& server, RpcTransportFd* out);
+    static status_t recvmsgSocketConnection(const RpcServer& server, RpcTransportFd* out);
+
     [[nodiscard]] status_t setupSocketServer(const RpcSocketAddress& address);
 
     const std::unique_ptr<RpcTransportCtx> mCtx;
@@ -210,7 +253,7 @@ private:
     // A mode is supported if the N'th bit is on, where N is the mode enum's value.
     std::bitset<8> mSupportedFileDescriptorTransportModes = std::bitset<8>().set(
             static_cast<size_t>(RpcSession::FileDescriptorTransportMode::NONE));
-    base::unique_fd mServer; // socket we are accepting sessions on
+    RpcTransportFd mServer; // socket we are accepting sessions on
 
     RpcMutex mLock; // for below
     std::unique_ptr<RpcMaybeThread> mJoinThread;
@@ -220,9 +263,11 @@ private:
     sp<IBinder> mRootObject;
     wp<IBinder> mRootObjectWeak;
     std::function<sp<IBinder>(const void*, size_t)> mRootObjectFactory;
+    std::function<bool(const void*, size_t)> mConnectionFilter;
     std::map<std::vector<uint8_t>, sp<RpcSession>> mSessions;
     std::unique_ptr<FdTrigger> mShutdownTrigger;
     RpcConditionVariable mShutdownCv;
+    std::function<status_t(const RpcServer& server, RpcTransportFd* out)> mAcceptFn;
 };
 
 } // namespace android
