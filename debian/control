@@ -20,10 +20,10 @@ Build-Depends-Arch:
  libusb-1.0-0-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libzstd-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  lld [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el],
- pandoc [amd64 i386 armel armhf arm64 hppa ia64 mipsel mips64el ppc64el s390x alpha ppc64 sparc64 riscv64],
+ pandoc [amd64 i386 armel armhf arm64 ia64 mipsel mips64el ppc64el s390x ppc64],
  protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  python3 [amd64 i386 arm64],
- ronn [arc hurd-i386 kfreebsd-amd64 kfreebsd-i386 m68k powerpc sh4 x32],
+ ronn [alpha arc hppa hurd-i386 kfreebsd-amd64 kfreebsd-i386 m68k powerpc riscv64 sh4 sparc64 x32],
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/android-tools-team/android-platform-tools.git

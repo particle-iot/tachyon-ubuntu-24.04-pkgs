@@ -1,3 +1,13 @@
+android-platform-tools (33.0.4-1~exp3) experimental; urgency=medium
+
+  * debian/patches:
+    - Restore previously removed for gcc only patches.
+    - Move all revert patches to folder 'revert'.
+  * debian/control:
+    - pandoc are not available for some arch-es now, move to use ronn.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 28 Jul 2023 00:16:45 -0700
+
 android-platform-tools (33.0.4-1~exp2) experimental; urgency=medium
 
   * debian/patches:
