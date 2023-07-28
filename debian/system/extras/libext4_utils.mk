@@ -28,6 +28,7 @@ CPPFLAGS += \
   -DFEC_NO_KLOG \
   -DSQUASHFS_NO_KLOG \
   -I/usr/include/android \
+  -I/usr/include/squashfuse \
   -Isystem/core/libcutils/include \
   -Isystem/core/libsparse/include \
   -Isystem/extras/ext4_utils/include \

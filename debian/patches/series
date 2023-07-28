@@ -2,15 +2,13 @@ system/Revert-Remove-mips-build.patch
 system/Revert-Remove-mips-support-fr.patch
 system/Revert-Remove-a-file-we-haven-t-built-since-2013.patch
 system/support-mips.patch
+system/unwindstack-porting.patch
 system/move-log-file-to-proper-dir.patch
 system/Added-missing-headers.patch
 system/libusb-header-path.patch
-system/stdatomic.patch
 system/throw-exception-on-unknown-os.patch
 system/hard-code-build-number.patch
 system/stub-out-fastdeploy.patch
-system/workaround__builtin_available.patch
-system/Fix-include-path.patch
 system/Implement-const_iterator-operator.patch
 system/Update_casting_type.patch
 development/typos.patch
