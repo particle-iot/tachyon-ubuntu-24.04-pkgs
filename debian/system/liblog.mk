@@ -17,7 +17,7 @@ SOURCES = $(liblog_sources) $(not_windows_sources)
 SOURCES := $(foreach source, $(SOURCES), system/logging/liblog/$(source))
 OBJECTS := $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a -fcommon
+CXXFLAGS += -fcommon
 CPPFLAGS += \
   -DLIBLOG_LOG_TAG=1006 \
   -DSNET_EVENT_LOG_TAG=1397638484 \

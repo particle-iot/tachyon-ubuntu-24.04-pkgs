@@ -14,7 +14,6 @@ OBJECTS_CC = $(SOURCES_CC:.cc=.o)
 SOURCES_CPP = $(filter %.cpp,$(SOURCES))
 OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -DINCFS_SUPPORT_DISABLED=1 \
   -DZLIB_CONST \

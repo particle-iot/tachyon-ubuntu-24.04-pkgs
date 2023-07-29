@@ -29,7 +29,7 @@ OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
 SOURCES_CC = $(filter %.cc,$(SOURCES))
 OBJECTS_CC = $(SOURCES_CC:.cc=.o)
 
-CXXFLAGS += -std=gnu++2a -fpermissive
+CXXFLAGS += -fpermissive
 CPPFLAGS += \
   -D_GNU_SOURCE \
   -DADB_HOST=1 \

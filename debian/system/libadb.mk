@@ -87,7 +87,7 @@ SOURCES := \
 
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a \
+CXXFLAGS += \
   -Wexit-time-destructors \
   -Wno-non-virtual-dtor \
   -Wno-unused-parameter \

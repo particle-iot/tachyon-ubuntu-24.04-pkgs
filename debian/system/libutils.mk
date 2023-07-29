@@ -30,7 +30,6 @@ SOURCES := $(foreach source, $(SOURCES), system/core/libutils/$(source))
 SOURCES += system/incremental_delivery/incfs/util/map_ptr.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -Isystem/core/cutils/include \
   -Isystem/core/include \

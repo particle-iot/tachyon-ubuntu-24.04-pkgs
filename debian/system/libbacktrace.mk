@@ -37,6 +37,7 @@ libunwindstack_SOURCES := \
   RegsArm64.cpp \
   RegsX86.cpp \
   RegsX86_64.cpp \
+  RegsRiscv64.cpp \
   RegsMips.cpp \
   RegsMips64.cpp \
   Symbols.cpp \
@@ -65,7 +66,7 @@ OBJECTS_CXX = $(SOURCES:.cpp=.o)
 SOURCES_ASSEMBLY := $(foreach source, $(SOURCES_ASSEMBLY), system/unwinding/$(source))
 OBJECTS_ASSEMBLY := $(SOURCES_ASSEMBLY:.S=.o)
 
-CXXFLAGS += -std=gnu++17 -fno-omit-frame-pointer
+CXXFLAGS += -fno-omit-frame-pointer
 CPPFLAGS += \
   -Iexternal/lzma/C \
   -Isystem/libbase/include \

@@ -3,7 +3,6 @@ NAME = etc1tool
 # development/tools/etc1tool/Android.bp
 SOURCES = development/tools/etc1tool/etc1tool.cpp
 
-CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -I/usr/include/android \
   -Idevelopment/include \
