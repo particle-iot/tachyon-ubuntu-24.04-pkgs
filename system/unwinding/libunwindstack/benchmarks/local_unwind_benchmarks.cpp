@@ -59,7 +59,7 @@ size_t LocalCall1(size_t (*func)(void*), void* data) {
 }
 
 static void Run(benchmark::State& state, size_t (*func)(void*), void* data) {
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     if (LocalCall1(func, data) < 5) {
       state.SkipWithError("Failed to unwind.");
     }
@@ -108,7 +108,7 @@ static void BM_local_android_unwind_uncached_process_memory(benchmark::State& st
     state.SkipWithError("Failed to initialize.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     if (LocalCall1(
             [](void* u) -> size_t {
               unwindstack::AndroidLocalUnwinder* unwinder =
@@ -132,7 +132,7 @@ static void BM_local_android_unwind_cached_process_memory(benchmark::State& stat
     state.SkipWithError("Failed to initialize.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     if (LocalCall1(
             [](void* u) -> size_t {
               unwindstack::AndroidLocalUnwinder* unwinder =

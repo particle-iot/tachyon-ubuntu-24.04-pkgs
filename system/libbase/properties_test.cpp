@@ -25,6 +25,8 @@
 #include <string>
 #include <thread>
 
+#include <android-base/stringprintf.h>
+
 #if !defined(_WIN32)
 using namespace std::literals;
 #endif
@@ -278,6 +280,43 @@ TEST(properties, CachedProperty) {
   ASSERT_STREQ("bar", cached_property.Get(&changed));
   ASSERT_FALSE(changed);
 
+#else
+  GTEST_LOG_(INFO) << "This test does nothing on the host.\n";
+#endif
+}
+
+void SetAfter(const std::string& key, const std::string& value, std::chrono::milliseconds delay) {
+  std::thread([key, value, delay]() {
+    std::this_thread::sleep_for(delay);
+    android::base::SetProperty(key, value);
+  }).detach();
+}
+
+TEST(properties, CachedProperty_WaitForChange) {
+#if defined(__BIONIC__)
+  unsigned long now =
+      std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+  std::string key = android::base::StringPrintf("debug.libbase.CachedProperty_test_%lu", now);
+  android::base::CachedProperty cached_property(key);
+
+  // If the property doesn't exist yet, Get returns the empty string.
+  EXPECT_STREQ("", cached_property.Get());
+
+  // Property doesn't exist yet, timeout.
+  EXPECT_EQ(nullptr, cached_property.WaitForChange(0ms));
+  EXPECT_EQ(nullptr, cached_property.WaitForChange(100ms));
+
+  // Property doesn't exist yet, success.
+  SetAfter(key, "foo", 100ms);
+  EXPECT_STREQ("foo", cached_property.WaitForChange());
+
+  // Property exists, timeout.
+  EXPECT_EQ(nullptr, cached_property.WaitForChange(0ms));
+  EXPECT_EQ(nullptr, cached_property.WaitForChange(100ms));
+
+  // Property exists, success.
+  SetAfter(key, "bar", 100ms);
+  EXPECT_STREQ("bar", cached_property.WaitForChange());
 #else
   GTEST_LOG_(INFO) << "This test does nothing on the host.\n";
 #endif

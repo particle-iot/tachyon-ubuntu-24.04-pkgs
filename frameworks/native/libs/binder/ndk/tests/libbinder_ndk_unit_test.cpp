@@ -51,8 +51,9 @@ constexpr char kBinderNdkUnitTestService[] = "BinderNdkUnitTest";
 constexpr char kLazyBinderNdkUnitTestService[] = "LazyBinderNdkUnitTest";
 constexpr char kForcePersistNdkUnitTestService[] = "ForcePersistNdkUnitTestService";
 constexpr char kActiveServicesNdkUnitTestService[] = "ActiveServicesNdkUnitTestService";
+constexpr char kBinderNdkUnitTestServiceFlagged[] = "BinderNdkUnitTestFlagged";
 
-constexpr unsigned int kShutdownWaitTime = 10;
+constexpr unsigned int kShutdownWaitTime = 11;
 constexpr uint64_t kContextTestValue = 0xb4e42fb4d9a1d715;
 
 class MyTestFoo : public IFoo {
@@ -106,11 +107,13 @@ class MyBinderNdkUnitTest : public aidl::BnBinderNdkUnitTest {
     }
     static bool activeServicesCallback(bool hasClients, void* context) {
         if (hasClients) {
+            LOG(INFO) << "hasClients, so not unregistering.";
             return false;
         }
 
         // Unregister all services
         if (!AServiceManager_tryUnregister()) {
+            LOG(INFO) << "Could not unregister service the first time.";
             // Prevent shutdown (test will fail)
             return false;
         }
@@ -120,6 +123,7 @@ class MyBinderNdkUnitTest : public aidl::BnBinderNdkUnitTest {
 
         // Unregister again before shutdown
         if (!AServiceManager_tryUnregister()) {
+            LOG(INFO) << "Could not unregister service the second time.";
             // Prevent shutdown (test will fail)
             return false;
         }
@@ -127,6 +131,7 @@ class MyBinderNdkUnitTest : public aidl::BnBinderNdkUnitTest {
         // Check if the context was passed correctly
         MyBinderNdkUnitTest* service = static_cast<MyBinderNdkUnitTest*>(context);
         if (service->contextTestValue != kContextTestValue) {
+            LOG(INFO) << "Incorrect context value.";
             // Prevent shutdown (test will fail)
             return false;
         }
@@ -151,6 +156,24 @@ int generatedService() {
 
     if (exception != EX_NONE) {
         LOG(FATAL) << "Could not register: " << exception << " " << kBinderNdkUnitTestService;
+    }
+
+    ABinderProcess_joinThreadPool();
+
+    return 1;  // should not return
+}
+
+int generatedFlaggedService(const AServiceManager_AddServiceFlag flags, const char* instance) {
+    ABinderProcess_setThreadPoolMaxThreadCount(0);
+
+    auto service = ndk::SharedRefBase::make<MyBinderNdkUnitTest>();
+    auto binder = service->asBinder();
+
+    binder_exception_t exception =
+            AServiceManager_addServiceWithFlags(binder.get(), instance, flags);
+
+    if (exception != EX_NONE) {
+        LOG(FATAL) << "Could not register: " << exception << " " << instance;
     }
 
     ABinderProcess_joinThreadPool();
@@ -260,8 +283,8 @@ TEST(NdkBinder, CheckServiceThatDoesntExist) {
 
 TEST(NdkBinder, CheckServiceThatDoesExist) {
     AIBinder* binder = AServiceManager_checkService(kExistingNonNdkService);
-    EXPECT_NE(nullptr, binder);
-    EXPECT_EQ(STATUS_OK, AIBinder_ping(binder));
+    ASSERT_NE(nullptr, binder) << "Could not get " << kExistingNonNdkService;
+    EXPECT_EQ(STATUS_OK, AIBinder_ping(binder)) << "Could not ping " << kExistingNonNdkService;
 
     AIBinder_decStrong(binder);
 }
@@ -460,6 +483,8 @@ TEST(NdkBinder, ForcedPersistenceTest) {
 }
 
 TEST(NdkBinder, ActiveServicesCallbackTest) {
+    LOG(INFO) << "ActiveServicesCallbackTest starting";
+
     ndk::SpAIBinder binder(AServiceManager_waitForService(kActiveServicesNdkUnitTestService));
     std::shared_ptr<aidl::IBinderNdkUnitTest> service =
             aidl::IBinderNdkUnitTest::fromBinder(binder);
@@ -470,6 +495,7 @@ TEST(NdkBinder, ActiveServicesCallbackTest) {
     service = nullptr;
     IPCThreadState::self()->flushCommands();
 
+    LOG(INFO) << "ActiveServicesCallbackTest about to sleep";
     sleep(kShutdownWaitTime);
 
     ASSERT_FALSE(isServiceRunning(kActiveServicesNdkUnitTestService))
@@ -478,14 +504,28 @@ TEST(NdkBinder, ActiveServicesCallbackTest) {
 
 struct DeathRecipientCookie {
     std::function<void(void)>*onDeath, *onUnlink;
+
+    // may contain additional data
+    // - if it contains AIBinder, then you must call AIBinder_unlinkToDeath manually,
+    //   because it would form a strong reference cycle
+    // - if it points to a data member of another structure, this should have a weak
+    //   promotable reference or a strong reference, in case that object is deleted
+    //   while the death recipient is firing
 };
 void LambdaOnDeath(void* cookie) {
     auto funcs = static_cast<DeathRecipientCookie*>(cookie);
+
+    // may reference other cookie members
+
     (*funcs->onDeath)();
 };
 void LambdaOnUnlink(void* cookie) {
     auto funcs = static_cast<DeathRecipientCookie*>(cookie);
     (*funcs->onUnlink)();
+
+    // may reference other cookie members
+
+    delete funcs;
 };
 TEST(NdkBinder, DeathRecipient) {
     using namespace std::chrono_literals;
@@ -517,12 +557,12 @@ TEST(NdkBinder, DeathRecipient) {
         unlinkCv.notify_one();
     };
 
-    DeathRecipientCookie cookie = {&onDeath, &onUnlink};
+    DeathRecipientCookie* cookie = new DeathRecipientCookie{&onDeath, &onUnlink};
 
     AIBinder_DeathRecipient* recipient = AIBinder_DeathRecipient_new(LambdaOnDeath);
     AIBinder_DeathRecipient_setOnUnlinked(recipient, LambdaOnUnlink);
 
-    EXPECT_EQ(STATUS_OK, AIBinder_linkToDeath(binder, recipient, static_cast<void*>(&cookie)));
+    EXPECT_EQ(STATUS_OK, AIBinder_linkToDeath(binder, recipient, static_cast<void*>(cookie)));
 
     // the binder driver should return this if the service dies during the transaction
     EXPECT_EQ(STATUS_DEAD_OBJECT, foo->die());
@@ -847,6 +887,12 @@ TEST(NdkBinder, UseHandleShellCommand) {
     EXPECT_EQ("CMD", shellCmdToString(testService, {"C", "M", "D"}));
 }
 
+TEST(NdkBinder, FlaggedServiceAccessible) {
+    static const sp<android::IServiceManager> sm(android::defaultServiceManager());
+    sp<IBinder> testService = sm->getService(String16(kBinderNdkUnitTestServiceFlagged));
+    ASSERT_NE(nullptr, testService);
+}
+
 TEST(NdkBinder, GetClassInterfaceDescriptor) {
     ASSERT_STREQ(IFoo::kIFooDescriptor, AIBinder_Class_getDescriptor(IFoo::kClass));
 }
@@ -900,6 +946,13 @@ int main(int argc, char* argv[]) {
     if (fork() == 0) {
         prctl(PR_SET_PDEATHSIG, SIGHUP);
         return generatedService();
+    }
+    if (fork() == 0) {
+        prctl(PR_SET_PDEATHSIG, SIGHUP);
+        // We may want to change this flag to be more generic ones for the future
+        AServiceManager_AddServiceFlag test_flags =
+                AServiceManager_AddServiceFlag::ADD_SERVICE_ALLOW_ISOLATED;
+        return generatedFlaggedService(test_flags, kBinderNdkUnitTestServiceFlagged);
     }
 
     ABinderProcess_setThreadPoolMaxThreadCount(1);  // to receive death notifications/callbacks

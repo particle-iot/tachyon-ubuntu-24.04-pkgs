@@ -25,6 +25,7 @@
 
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
+#include <android-base/properties.h>
 #include <android-base/strings.h>
 #include <hidl-util/FQName.h>
 #include <processgroup/processgroup.h>
@@ -369,8 +370,8 @@ Result<void> ServiceParser::ParseRebootOnFailure(std::vector<std::string>&& args
 
 Result<void> ServiceParser::ParseRestartPeriod(std::vector<std::string>&& args) {
     int period;
-    if (!ParseInt(args[1], &period, 5)) {
-        return Error() << "restart_period value must be an integer >= 5";
+    if (!ParseInt(args[1], &period, 0)) {
+        return Error() << "restart_period value must be an integer >= 0";
     }
     service_->restart_period_ = std::chrono::seconds(period);
     return {};
@@ -534,7 +535,7 @@ Result<void> ServiceParser::ParseUser(std::vector<std::string>&& args) {
     if (!uid.ok()) {
         return Error() << "Unable to find UID for '" << args[1] << "': " << uid.error();
     }
-    service_->proc_attr_.uid = *uid;
+    service_->proc_attr_.parsed_uid = *uid;
     return {};
 }
 
@@ -675,6 +676,16 @@ Result<void> ServiceParser::ParseLineSection(std::vector<std::string>&& args, in
 Result<void> ServiceParser::EndSection() {
     if (!service_) {
         return {};
+    }
+
+    if (service_->proc_attr_.parsed_uid == std::nullopt) {
+        if (android::base::GetIntProperty("ro.vendor.api_level", 0) > __ANDROID_API_U__) {
+            return Error() << "No user specified for service '" << service_->name()
+                           << "'. Defaults to root.";
+        } else {
+            LOG(WARNING) << "No user specified for service '" << service_->name()
+                         << "'. Defaults to root.";
+        }
     }
 
     if (interface_inheritance_hierarchy_) {

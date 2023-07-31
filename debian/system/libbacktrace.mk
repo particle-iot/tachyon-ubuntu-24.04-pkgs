@@ -2,16 +2,6 @@ include /usr/share/dpkg/architecture.mk
 
 NAME = libbacktrace
 
-# system/unwinding/libbacktrace/Android.bp
-libbacktrace_SOURCES = \
-  Backtrace.cpp \
-  BacktraceCurrent.cpp \
-  BacktraceMap.cpp \
-  BacktracePtrace.cpp \
-  ThreadEntry.cpp \
-  UnwindStack.cpp \
-  UnwindStackMap.cpp \
-
 # system/unwinding/libunwindstack/Android.bp
 libunwindstack_SOURCES := \
   AndroidUnwinder.cpp \
@@ -58,7 +48,6 @@ else ifeq ($(DEB_HOST_ARCH), mipsel)
 endif
 
 SOURCES = \
-  $(foreach source, $(filter %.cpp, $(libbacktrace_SOURCES)), libbacktrace/$(source)) \
   $(foreach source, $(filter %.cpp, $(libunwindstack_SOURCES)), libunwindstack/$(source)) \
 
 SOURCES := $(foreach source, $(SOURCES), system/unwinding/$(source))
@@ -72,7 +61,6 @@ CPPFLAGS += \
   -Isystem/libbase/include \
   -Isystem/libprocinfo/include \
   -Isystem/logging/liblog/include \
-  -Isystem/unwinding/libbacktrace/include \
   -Isystem/unwinding/libunwindstack/include \
 
 LDFLAGS += \

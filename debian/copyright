@@ -43,7 +43,6 @@ Files-Excluded:
  system/extras/simpleperf
  system/libziparchive/cli-tests
  system/libziparchive/testdata
- system/unwinding/libbacktrace/testdata
  system/unwinding/libunwindstack/benchmarks/files
  system/unwinding/libunwindstack/offline_files
  system/unwinding/libunwindstack/tests
@@ -95,13 +94,15 @@ Files: external/avb/libavb/sha/sha256_impl.c
 Copyright: 2005-2007, Olivier Gay <olivier.gay@a3.epfl.ch>
 License: BSD-3-clause
 
-Files: external/dlmalloc/*
-Copyright: n/a
-License: public-domain
- This is a version (aka dlmalloc) of malloc/free/realloc written by
- Doug Lea and released to the public domain, as explained at
- http://creativecommons.org/publicdomain/zero/1.0/ Send questions,
- comments, complaints, performance data, etc to dl@cs.oswego.edu
+Files: external/cpu_features/*
+Copyright: 2017-2020, Google LLC
+           2020, Intel Corporation
+           2018, IBM
+License: Apache-2.0
+
+Files: external/cpu_features/ndk_compat/cpu-features.h
+Copyright: 2010 The Android Open Source Project
+License: BSD-2-clause
 
 Files: external/fmtlib/*
 Copyright: 2019, Paul Dreik

@@ -221,26 +221,6 @@ on init
     write /dev/stune/nnapi-hal/schedtune.boost 1
     write /dev/stune/nnapi-hal/schedtune.prefer_idle 1
 
-    # Create blkio group and apply initial settings.
-    # This feature needs kernel to support it, and the
-    # device's init.rc must actually set the correct values.
-    mkdir /dev/blkio/background
-    chown system system /dev/blkio
-    chown system system /dev/blkio/background
-    chown system system /dev/blkio/tasks
-    chown system system /dev/blkio/background/tasks
-    chown system system /dev/blkio/cgroup.procs
-    chown system system /dev/blkio/background/cgroup.procs
-    chmod 0664 /dev/blkio/tasks
-    chmod 0664 /dev/blkio/background/tasks
-    chmod 0664 /dev/blkio/cgroup.procs
-    chmod 0664 /dev/blkio/background/cgroup.procs
-    write /dev/blkio/blkio.weight 1000
-    write /dev/blkio/background/blkio.weight 200
-    write /dev/blkio/background/blkio.bfq.weight 10
-    write /dev/blkio/blkio.group_idle 0
-    write /dev/blkio/background/blkio.group_idle 0
-
     restorecon_recursive /mnt
 
     mount configfs none /config nodev noexec nosuid
@@ -315,7 +295,7 @@ on init
     write /proc/sys/kernel/randomize_va_space 2
     write /proc/sys/vm/mmap_min_addr 32768
     write /proc/sys/net/ipv4/ping_group_range "0 2147483647"
-    write /proc/sys/net/unix/max_dgram_qlen 600
+    write /proc/sys/net/unix/max_dgram_qlen 2400
 
     # Assign reasonable ceiling values for socket rcv/snd buffers.
     # These should almost always be overridden by the target per the
@@ -495,25 +475,28 @@ service boringssl_self_test32 /system/bin/boringssl_self_test32
     stdio_to_kmsg
     # Explicitly specify that boringssl_self_test32 doesn't require any capabilities
     capabilities
+    user nobody
 
 service boringssl_self_test64 /system/bin/boringssl_self_test64
     reboot_on_failure reboot,boringssl-self-check-failed
     stdio_to_kmsg
     # Explicitly specify that boringssl_self_test64 doesn't require any capabilities
     capabilities
+    user nobody
 
 service boringssl_self_test_apex32 /apex/com.android.conscrypt/bin/boringssl_self_test32
     reboot_on_failure reboot,boringssl-self-check-failed
     stdio_to_kmsg
     # Explicitly specify that boringssl_self_test_apex32 doesn't require any capabilities
     capabilities
+    user nobody
 
 service boringssl_self_test_apex64 /apex/com.android.conscrypt/bin/boringssl_self_test64
     reboot_on_failure reboot,boringssl-self-check-failed
     stdio_to_kmsg
     # Explicitly specify that boringssl_self_test_apex64 doesn't require any capabilities
     capabilities
-
+    user nobody
 
 # Healthd can trigger a full boot from charger mode by signaling this
 # property when the power button is held.
@@ -925,6 +908,10 @@ on post-fs-data
     mkdir /data/system/dropbox 0700 system system
     mkdir /data/system/heapdump 0700 system system
     mkdir /data/system/users 0775 system system
+    # Mkdir and set SELinux security contexts for shutdown-checkpoints.
+    # TODO(b/270286197): remove these after couple releases.
+    mkdir /data/system/shutdown-checkpoints 0700 system system
+    restorecon_recursive /data/system/shutdown-checkpoints
 
     # Create the parent directories of the user CE and DE storage directories.
     # These parent directories must use encryption=None, since each of their
@@ -932,15 +919,22 @@ on post-fs-data
     # encryption policies apply recursively.  These directories should never
     # contain any subdirectories other than the per-user ones.  /data/media/obb
     # is an exception that exists for legacy reasons.
-    mkdir /data/media 0770 media_rw media_rw encryption=None
-    mkdir /data/misc_ce 01771 system misc encryption=None
-    mkdir /data/misc_de 01771 system misc encryption=None
-    mkdir /data/system_ce 0770 system system encryption=None
-    mkdir /data/system_de 0770 system system encryption=None
-    mkdir /data/user 0711 system system encryption=None
-    mkdir /data/user_de 0711 system system encryption=None
-    mkdir /data/vendor_ce 0771 root root encryption=None
-    mkdir /data/vendor_de 0771 root root encryption=None
+    #
+    # Don't use any write mode bits (0222) for any of these directories, since
+    # the only process that should write to them directly is vold (since it
+    # needs to set up file-based encryption on the subdirectories), which runs
+    # as root with CAP_DAC_OVERRIDE.  This is also fully enforced via the
+    # SELinux policy.  But we also set the DAC file modes accordingly, to try to
+    # minimize differences in behavior if SELinux is set to permissive mode.
+    mkdir /data/media 0550 media_rw media_rw encryption=None
+    mkdir /data/misc_ce 0551 system misc encryption=None
+    mkdir /data/misc_de 0551 system misc encryption=None
+    mkdir /data/system_ce 0550 system system encryption=None
+    mkdir /data/system_de 0550 system system encryption=None
+    mkdir /data/user 0511 system system encryption=None
+    mkdir /data/user_de 0511 system system encryption=None
+    mkdir /data/vendor_ce 0551 root root encryption=None
+    mkdir /data/vendor_de 0551 root root encryption=None
 
     # Set the casefold flag on /data/media.  For upgrades, a restorecon can be
     # needed first to relabel the directory from media_rw_data_file.
@@ -993,6 +987,7 @@ on post-fs-data
     # Create directories for statsd
     mkdir /data/misc/stats-active-metric/ 0770 statsd system
     mkdir /data/misc/stats-data/ 0770 statsd system
+    mkdir /data/misc/stats-data/restricted-data 0770 statsd system
     mkdir /data/misc/stats-metadata/ 0770 statsd system
     mkdir /data/misc/stats-service/ 0770 statsd system
     mkdir /data/misc/train-info/ 0770 statsd system
@@ -1015,6 +1010,11 @@ on post-fs-data
     # Must start before 'odsign', as odsign depends on *CLASSPATH variables
     exec_start derive_classpath
     load_exports /data/system/environ/classpath
+
+    # Start ART's oneshot boot service to propagate boot experiment flags to
+    # dalvik.vm.*. This needs to be done before odsign since odrefresh uses and
+    # validates those properties against the signed cache-info.xml.
+    exec_start art_boot
 
     # Start the on-device signing daemon, and wait for it to finish, to ensure
     # ART artifacts are generated if needed.
@@ -1129,7 +1129,7 @@ on boot
     write /dev/sys/fs/by-name/userdata/iostat_enable 1
 
     # set readahead multiplier for POSIX_FADV_SEQUENTIAL files
-    write /dev/sys/fs/by-name/userdata/seq_file_ra_mul 16
+    write /dev/sys/fs/by-name/userdata/seq_file_ra_mul 128
 
     # limit discard size to 128MB in order to avoid long IO latency
     # for filesystem tuning first (dm or sda)
@@ -1275,6 +1275,7 @@ service ueventd /system/bin/ueventd
     class core
     critical
     seclabel u:r:ueventd:s0
+    user root
     shutdown critical
 
 service console /system/bin/sh

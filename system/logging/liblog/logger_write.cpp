@@ -165,42 +165,13 @@ int32_t __android_log_get_minimum_priority() {
 }
 
 #ifdef __ANDROID__
-static const char* get_file_logger_path() {
-  static const char* file_logger_path = []() {
-    static char path[PROP_VALUE_MAX] = {};
-    if (__system_property_get("ro.log.file_logger.path", path) > 0) {
-      return path;
-    }
-    return (char*)nullptr;  // means file_logger should not be used
-  }();
-  return file_logger_path;
-}
-#endif
-
-static void file_logger(const struct __android_log_message* log_message);
-
-static __android_logger_function user_set_logger_function = nullptr;
-
-static __android_logger_function get_logger_function() {
-  if (user_set_logger_function != nullptr) {
-    return user_set_logger_function;
-  }
-  static __android_logger_function default_logger_function = []() {
-#if __ANDROID__
-    if (get_file_logger_path() != nullptr) {
-      return file_logger;
-    } else {
-      return __android_log_logd_logger;
-    }
+static __android_logger_function logger_function = __android_log_logd_logger;
 #else
-    return file_logger;
+static __android_logger_function logger_function = __android_log_stderr_logger;
 #endif
-  }();
-  return default_logger_function;
-}
 
 void __android_log_set_logger(__android_logger_function logger) {
-  user_set_logger_function = logger;
+  logger_function = logger;
 }
 
 void __android_log_default_aborter(const char* abort_message) {
@@ -282,16 +253,18 @@ static uint64_t GetThreadId() {
 
 static void filestream_logger(const struct __android_log_message* log_message, FILE* stream) {
   struct tm now;
-  time_t t = time(nullptr);
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
 
 #if defined(_WIN32)
-  localtime_s(&now, &t);
+  localtime_s(&now, &ts.tv_sec);
 #else
-  localtime_r(&t, &now);
+  localtime_r(&ts.tv_sec, &now);
 #endif
 
-  char timestamp[32];
-  strftime(timestamp, sizeof(timestamp), "%m-%d %H:%M:%S", &now);
+  char timestamp[sizeof("mm-DD HH::MM::SS.mmm\0")];
+  size_t n = strftime(timestamp, sizeof(timestamp), "%m-%d %H:%M:%S", &now);
+  snprintf(timestamp + n, sizeof(timestamp) - n, ".%03ld", ts.tv_nsec / (1000 * 1000));
 
   static const char log_characters[] = "XXVDIWEF";
   static_assert(arraysize(log_characters) - 1 == ANDROID_LOG_SILENT,
@@ -300,42 +273,61 @@ static void filestream_logger(const struct __android_log_message* log_message, F
       log_message->priority > ANDROID_LOG_SILENT ? ANDROID_LOG_FATAL : log_message->priority;
   char priority_char = log_characters[priority];
   uint64_t tid = GetThreadId();
+  const char* tag = log_message->tag ? log_message->tag : " nullptr";
 
   if (log_message->file != nullptr) {
-    fprintf(stream, "%s %c %s %5d %5" PRIu64 " %s:%u] %s\n",
-            log_message->tag ? log_message->tag : "nullptr", priority_char, timestamp, getpid(),
-            tid, log_message->file, log_message->line, log_message->message);
+    fprintf(stream, "%s %5d %5" PRIu64 " %c %-8s: %s:%u %s\n", timestamp, getpid(), tid,
+            priority_char, tag, log_message->file, log_message->line, log_message->message);
   } else {
-    fprintf(stream, "%s %c %s %5d %5" PRIu64 "] %s\n",
-            log_message->tag ? log_message->tag : "nullptr", priority_char, timestamp, getpid(),
-            tid, log_message->message);
+    fprintf(stream, "%s %5d %5" PRIu64 " %c %-8s: %s\n", timestamp, getpid(), tid, priority_char,
+            tag, log_message->message);
   }
 }
 
-static void file_logger(const struct __android_log_message* log_message) {
-  static FILE* stream = []() {
+static const char* get_file_logger_path() {
 #ifdef __ANDROID__
-    const char* file_logger_path = get_file_logger_path();
-    if (file_logger_path != nullptr) {
-      FILE* f = fopen(file_logger_path, "ae");
-      if (f != nullptr) return f;
-      using namespace std::string_literals;
-      std::string err_msg = "Cannot open "s + file_logger_path + " for logging: (" + strerror(errno) +
-                            "). Falling back to stderr";
-      __android_log_message m = {sizeof(__android_log_message),
-                                 LOG_ID_DEFAULT,
-                                 ANDROID_LOG_WARN,
-                                 "liblog",
-                                 __FILE__,
-                                 __LINE__,
-                                 err_msg.c_str()};
-      filestream_logger(&m, stderr);
+  static const char* file_logger_path = []() {
+    static char path[PROP_VALUE_MAX] = {};
+    if (__system_property_get("ro.log.file_logger.path", path) > 0) {
+      return path;
     }
+    return static_cast<char*>(nullptr);  // means file_logger should not be used
+  }();
+  return file_logger_path;
+#else
+  return nullptr;
 #endif
-    // defaults to stderr if the sysprop is not set or the file is not available
+}
+
+/*
+ * If ro.log.file_logger.path is set to a file, send log_message to the file instead. This is for
+ * Android-like environments where logd is not available; e.g. Microdroid. If the file is not
+ * accessible (but ro.log.file_logger.path is set anyway), stderr is chosen as the fallback.
+ *
+ * Returns true if log was sent to file. false, if not.
+ */
+static bool log_to_file_if_overridden(const struct __android_log_message* log_message) {
+  const char* file_logger_path = get_file_logger_path();
+  if (file_logger_path == nullptr) return false;
+
+  static FILE* stream = [&file_logger_path]() {
+    FILE* f = fopen(file_logger_path, "ae");
+    if (f != nullptr) return f;
+    using namespace std::string_literals;
+    std::string err_msg = "Cannot open "s + file_logger_path + " for logging: (" + strerror(errno) +
+                          "). Falling back to stderr";
+    __android_log_message m = {sizeof(__android_log_message),
+                               LOG_ID_DEFAULT,
+                               ANDROID_LOG_WARN,
+                               "liblog",
+                               __FILE__,
+                               __LINE__,
+                               err_msg.c_str()};
+    filestream_logger(&m, stderr);
     return stderr;
   }();
   filestream_logger(log_message, stream);
+  return true;
 }
 
 void __android_log_stderr_logger(const struct __android_log_message* log_message) {
@@ -343,6 +335,8 @@ void __android_log_stderr_logger(const struct __android_log_message* log_message
 }
 
 void __android_log_logd_logger(const struct __android_log_message* log_message) {
+  if (log_to_file_if_overridden(log_message)) return;
+
   int buffer_id = log_message->buffer_id == LOG_ID_DEFAULT ? LOG_ID_MAIN : log_message->buffer_id;
 
   struct iovec vec[3];
@@ -380,7 +374,7 @@ void __android_log_write_log_message(__android_log_message* log_message) {
   }
 #endif
 
-  get_logger_function()(log_message);
+  logger_function(log_message);
 }
 
 int __android_log_buf_write(int bufID, int prio, const char* tag, const char* msg) {

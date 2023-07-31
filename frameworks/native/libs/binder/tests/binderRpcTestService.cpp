@@ -83,9 +83,23 @@ public:
         fd->reset(mFdChannel.read());
         return Status::ok();
     }
+
+    HandoffChannel<int> mIntChannel;
+
+    Status blockingSendIntOneway(int n) override {
+        mIntChannel.write(n);
+        return Status::ok();
+    }
+
+    Status blockingRecvInt(int* n) override {
+        *n = mIntChannel.read();
+        return Status::ok();
+    }
 };
 
-int main(int argc, const char* argv[]) {
+int main(int argc, char* argv[]) {
+    android::base::InitLogging(argv, android::base::StderrLogger, android::base::DefaultAborter);
+
     LOG_ALWAYS_FATAL_IF(argc != 3, "Invalid number of arguments: %d", argc);
     base::unique_fd writeEnd(atoi(argv[1]));
     base::unique_fd readEnd(atoi(argv[2]));
@@ -102,9 +116,9 @@ int main(int argc, const char* argv[]) {
     }
 
     auto certVerifier = std::make_shared<RpcCertificateVerifierSimple>();
-    sp<RpcServer> server = RpcServer::make(newFactory(rpcSecurity, certVerifier));
+    sp<RpcServer> server = RpcServer::make(newTlsFactory(rpcSecurity, certVerifier));
 
-    server->setProtocolVersion(serverConfig.serverVersion);
+    CHECK(server->setProtocolVersion(serverConfig.serverVersion));
     server->setMaxThreads(serverConfig.numThreads);
     server->setSupportedFileDescriptorTransportModes(serverSupportedFileDescriptorTransportModes);
 
@@ -125,7 +139,8 @@ int main(int argc, const char* argv[]) {
             CHECK_EQ(OK, server->setupRawSocketServer(std::move(socketFd)));
             break;
         case SocketType::VSOCK:
-            CHECK_EQ(OK, server->setupVsockServer(VMADDR_CID_LOCAL, serverConfig.vsockPort));
+            CHECK_EQ(OK, server->setupVsockServer(VMADDR_CID_LOCAL, serverConfig.vsockPort))
+                    << "Need `sudo modprobe vsock_loopback`?";
             break;
         case SocketType::INET: {
             CHECK_EQ(OK, server->setupInetServer(kLocalInetAddress, 0, &outPort));
@@ -150,7 +165,12 @@ int main(int argc, const char* argv[]) {
         }
     }
 
-    server->setPerSessionRootObject([&](const void* addrPtr, size_t len) {
+    server->setPerSessionRootObject([&](wp<RpcSession> session, const void* addrPtr, size_t len) {
+        {
+            sp<RpcSession> spSession = session.promote();
+            CHECK_NE(nullptr, spSession.get());
+        }
+
         // UNIX sockets with abstract addresses return
         // sizeof(sa_family_t)==2 in addrlen
         CHECK_GE(len, sizeof(sa_family_t));

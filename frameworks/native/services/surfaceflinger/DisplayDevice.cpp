@@ -174,7 +174,7 @@ auto DisplayDevice::getInputInfo() const -> InputInfo {
 
 void DisplayDevice::setPowerMode(hal::PowerMode mode) {
     if (mode == hal::PowerMode::OFF || mode == hal::PowerMode::ON) {
-        if (mStagedBrightness && mBrightness != *mStagedBrightness) {
+        if (mStagedBrightness && mBrightness != mStagedBrightness) {
             getCompositionDisplay()->setNextBrightness(*mStagedBrightness);
             mBrightness = *mStagedBrightness;
         }
@@ -336,7 +336,7 @@ void DisplayDevice::stageBrightness(float brightness) {
 }
 
 void DisplayDevice::persistBrightness(bool needsComposite) {
-    if (mStagedBrightness && mBrightness != *mStagedBrightness) {
+    if (mStagedBrightness && mBrightness != mStagedBrightness) {
         if (needsComposite) {
             getCompositionDisplay()->setNextBrightness(*mStagedBrightness);
         }
@@ -511,7 +511,7 @@ void DisplayDevice::animateRefreshRateOverlay() {
     }
 }
 
-bool DisplayDevice::setDesiredActiveMode(const ActiveModeInfo& info) {
+bool DisplayDevice::setDesiredActiveMode(const ActiveModeInfo& info, bool force) {
     ATRACE_CALL();
 
     LOG_ALWAYS_FATAL_IF(!info.mode, "desired mode not provided");
@@ -529,7 +529,7 @@ bool DisplayDevice::setDesiredActiveMode(const ActiveModeInfo& info) {
     }
 
     // Check if we are already at the desired mode
-    if (getActiveMode()->getId() == info.mode->getId()) {
+    if (!force && getActiveMode()->getId() == info.mode->getId()) {
         return false;
     }
 

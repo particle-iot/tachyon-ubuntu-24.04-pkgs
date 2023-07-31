@@ -67,7 +67,7 @@ bool Quiesce(pid_t pid) {
     }
     usleep(5000);
   }
-  fprintf(stderr, "Did not quiesce in 10 seconds\n");
+  fprintf(stderr, "%d: Did not quiesce in 10 seconds\n", pid);
   return false;
 }
 
@@ -102,14 +102,15 @@ bool Detach(pid_t pid) {
   return true;
 }
 
-bool RunWhenQuiesced(pid_t pid, bool leave_attached, std::function<PidRunEnum()> fn) {
-  // Wait up to 120 seconds to run the fn.
+static constexpr time_t kMaxWaitTimeSeconds = 30;
+
+bool WaitForPidState(pid_t pid, const std::function<PidRunEnum()>& state_check_func) {
   PidRunEnum status = PID_RUN_KEEP_GOING;
   for (time_t start_time = time(nullptr);
-       time(nullptr) - start_time < 120 && status == PID_RUN_KEEP_GOING;) {
+       time(nullptr) - start_time < kMaxWaitTimeSeconds && status == PID_RUN_KEEP_GOING;) {
     if (Attach(pid)) {
-      status = fn();
-      if (status == PID_RUN_PASS && leave_attached) {
+      status = state_check_func();
+      if (status == PID_RUN_PASS) {
         return true;
       }
 
@@ -121,6 +122,26 @@ bool RunWhenQuiesced(pid_t pid, bool leave_attached, std::function<PidRunEnum()>
     }
     usleep(5000);
   }
+  if (status == PID_RUN_KEEP_GOING) {
+    fprintf(stderr, "Timed out waiting for pid %d to be ready\n", pid);
+  }
+  return status == PID_RUN_PASS;
+}
+
+bool WaitForPidStateAfterAttach(pid_t pid, const std::function<PidRunEnum()>& state_check_func) {
+  PidRunEnum status;
+  time_t start_time = time(nullptr);
+  do {
+    status = state_check_func();
+    if (status == PID_RUN_PASS) {
+      return true;
+    }
+    if (!Detach(pid)) {
+      return false;
+    }
+    usleep(5000);
+  } while (time(nullptr) - start_time < kMaxWaitTimeSeconds && status == PID_RUN_KEEP_GOING &&
+           Attach(pid));
   if (status == PID_RUN_KEEP_GOING) {
     fprintf(stderr, "Timed out waiting for pid %d to be ready\n", pid);
   }

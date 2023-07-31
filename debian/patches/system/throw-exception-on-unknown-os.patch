@@ -5,8 +5,8 @@ Forwarded: not-needed
 --- a/system/libbase/file.cpp
 +++ b/system/libbase/file.cpp
 @@ -461,7 +461,8 @@
-   path[PATH_MAX - 1] = 0;
-   return path;
+ #elif defined(__EMSCRIPTEN__)
+   abort();
  #else
 -#error unknown OS
 +#include <stdexcept>

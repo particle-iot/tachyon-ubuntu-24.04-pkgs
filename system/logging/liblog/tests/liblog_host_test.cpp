@@ -40,8 +40,8 @@ static std::string MakeLogPattern(int priority, const char* tag, const char* mes
   priority = priority > ANDROID_LOG_SILENT ? ANDROID_LOG_FATAL : priority;
   char log_char = log_characters[priority];
 
-  return StringPrintf("%s %c \\d+-\\d+ \\d+:\\d+:\\d+ \\s*\\d+ \\s*\\d+ %s", tag, log_char,
-                      message);
+  return StringPrintf(R"(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \s*\d+ \s*\d+ %c %s\s*: %s)",
+                      log_char, tag, message);
 }
 
 static void CheckMessage(bool expected, const std::string& output, int priority, const char* tag,

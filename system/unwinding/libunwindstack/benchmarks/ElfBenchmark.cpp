@@ -29,59 +29,41 @@
 
 #include "Utils.h"
 
-static void BenchmarkElfCreate(benchmark::State& state, const std::string& elf_file) {
-#if defined(__BIONIC__)
-  uint64_t rss_bytes = 0;
-#endif
-  uint64_t alloc_bytes = 0;
-  for (auto _ : state) {
-    state.PauseTiming();
-#if defined(__BIONIC__)
-    mallopt(M_PURGE, 0);
-    uint64_t rss_bytes_before = 0;
-    GatherRss(&rss_bytes_before);
-#endif
-    uint64_t alloc_bytes_before = mallinfo().uordblks;
-    auto file_memory = unwindstack::Memory::CreateFileMemory(elf_file, 0);
-    state.ResumeTiming();
+class ElfCreateBenchmark : public benchmark::Fixture {
+ public:
+  void RunBenchmark(benchmark::State& state, const std::string& elf_file) {
+    MemoryTracker mem_tracker;
+    for (const auto& _ : state) {
+      state.PauseTiming();
+      mem_tracker.StartTrackingAllocations();
 
-    unwindstack::Elf elf(file_memory.release());
-    if (!elf.Init() || !elf.valid()) {
-      errx(1, "Internal Error: Cannot open elf: %s", elf_file.c_str());
+      auto file_memory = unwindstack::Memory::CreateFileMemory(elf_file, 0);
+      state.ResumeTiming();
+
+      unwindstack::Elf elf(file_memory.release());
+      if (!elf.Init() || !elf.valid()) {
+        errx(1, "Internal Error: Cannot open elf: %s", elf_file.c_str());
+      }
+
+      state.PauseTiming();
+      mem_tracker.StopTrackingAllocations();
+      state.ResumeTiming();
     }
-
-    state.PauseTiming();
-#if defined(__BIONIC__)
-    mallopt(M_PURGE, 0);
-#endif
-    alloc_bytes += mallinfo().uordblks - alloc_bytes_before;
-#if defined(__BIONIC__)
-    GatherRss(&rss_bytes);
-    rss_bytes -= rss_bytes_before;
-#endif
-    state.ResumeTiming();
+    mem_tracker.SetBenchmarkCounters(state);
   }
+};
 
-#if defined(__BIONIC__)
-  state.counters["RSS_BYTES"] = rss_bytes / static_cast<double>(state.iterations());
-#endif
-  state.counters["ALLOCATED_BYTES"] = alloc_bytes / static_cast<double>(state.iterations());
+BENCHMARK_F(ElfCreateBenchmark, BM_elf_create)(benchmark::State& state) {
+  RunBenchmark(state, GetElfFile());
 }
 
-void BM_elf_create(benchmark::State& state) {
-  BenchmarkElfCreate(state, GetElfFile());
+BENCHMARK_F(ElfCreateBenchmark, BM_elf_create_large_compressed)(benchmark::State& state) {
+  RunBenchmark(state, GetLargeCompressedFrameElfFile());
 }
-BENCHMARK(BM_elf_create);
 
-void BM_elf_create_large_compressed(benchmark::State& state) {
-  BenchmarkElfCreate(state, GetLargeCompressedFrameElfFile());
+BENCHMARK_F(ElfCreateBenchmark, BM_elf_create_large_eh_frame)(benchmark::State& state) {
+  RunBenchmark(state, GetLargeEhFrameElfFile());
 }
-BENCHMARK(BM_elf_create_large_compressed);
-
-void BM_elf_create_large_eh_frame(benchmark::State& state) {
-  BenchmarkElfCreate(state, GetLargeEhFrameElfFile());
-}
-BENCHMARK(BM_elf_create_large_eh_frame);
 
 static void InitializeBuildId(benchmark::State& state, unwindstack::Maps& maps,
                               unwindstack::MapInfo** build_id_map_info) {
@@ -115,7 +97,7 @@ static void BM_elf_get_build_id_from_object(benchmark::State& state) {
     state.SkipWithError("Cannot get valid elf from map.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     state.PauseTiming();
     unwindstack::SharedString* id = build_id_map_info->build_id();
     if (id != nullptr) {
@@ -133,7 +115,7 @@ static void BM_elf_get_build_id_from_file(benchmark::State& state) {
   unwindstack::MapInfo* build_id_map_info;
   InitializeBuildId(state, maps, &build_id_map_info);
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     state.PauseTiming();
     unwindstack::SharedString* id = build_id_map_info->build_id();
     if (id != nullptr) {

@@ -100,20 +100,15 @@ where
 /// An interface can promise to be a stable vendor interface ([`Vintf`]), or
 /// makes no stability guarantees ([`Local`]). [`Local`] is
 /// currently the default stability.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Stability {
     /// Default stability, visible to other modules in the same compilation
     /// context (e.g. modules on system.img)
+    #[default]
     Local,
 
     /// A Vendor Interface Object, which promises to be stable
     Vintf,
-}
-
-impl Default for Stability {
-    fn default() -> Self {
-        Stability::Local
-    }
 }
 
 impl From<Stability> for i32 {
@@ -1127,6 +1122,10 @@ macro_rules! declare_binder_enum {
         }
 
         impl $crate::binder_impl::Deserialize for $enum {
+            type UninitType = Self;
+            fn uninit() -> Self::UninitType { Self::UninitType::default() }
+            fn from_init(value: Self) -> Self::UninitType { value }
+
             fn deserialize(parcel: &$crate::binder_impl::BorrowedParcel<'_>) -> std::result::Result<Self, $crate::StatusCode> {
                 parcel.read().map(Self)
             }

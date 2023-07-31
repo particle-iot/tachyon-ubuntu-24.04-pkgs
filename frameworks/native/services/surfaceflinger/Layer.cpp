@@ -72,6 +72,7 @@
 #include "LayerProtoHelper.h"
 #include "LayerRejecter.h"
 #include "MonitoredProducer.h"
+#include "MutexUtils.h"
 #include "SurfaceFlinger.h"
 #include "TimeStats/TimeStats.h"
 #include "TunnelModeEnabledReporter.h"
@@ -254,10 +255,12 @@ void Layer::onRemovedFromCurrentState() {
     auto layersInTree = getRootLayer()->getLayersInTree(LayerVector::StateSet::Current);
     std::sort(layersInTree.begin(), layersInTree.end());
 
-    traverse(LayerVector::StateSet::Current, [&](Layer* layer) {
-        layer->removeFromCurrentState();
-        layer->removeRelativeZ(layersInTree);
-    });
+    REQUIRE_MUTEX(mFlinger->mStateLock);
+    traverse(LayerVector::StateSet::Current,
+             [&](Layer* layer) REQUIRES(layer->mFlinger->mStateLock) {
+                 layer->removeFromCurrentState();
+                 layer->removeRelativeZ(layersInTree);
+             });
 }
 
 void Layer::addToCurrentState() {
@@ -406,7 +409,7 @@ void Layer::prepareBasicGeometryCompositionState() {
     const auto& drawingState{getDrawingState()};
     const auto alpha = static_cast<float>(getAlpha());
     const bool opaque = isOpaque(drawingState);
-    const bool usesRoundedCorners = getRoundedCornerState().radius != 0.f;
+    const bool usesRoundedCorners = hasRoundedCorners();
 
     auto blendMode = Hwc2::IComposerClient::BlendMode::NONE;
     if (!opaque || alpha != 1.0f) {
@@ -482,7 +485,7 @@ void Layer::preparePerFrameCompositionState() {
     compositionState->hasProtectedContent = isProtected();
     compositionState->dimmingEnabled = isDimmingEnabled();
 
-    const bool usesRoundedCorners = getRoundedCornerState().radius != 0.f;
+    const bool usesRoundedCorners = hasRoundedCorners();
 
     compositionState->isOpaque =
             isOpaque(drawingState) && !usesRoundedCorners && getAlpha() == 1.0_hf;
@@ -936,10 +939,12 @@ bool Layer::setBackgroundColor(const half3& color, float alpha, ui::Dataspace da
         mFlinger->mLayersAdded = true;
         // set up SF to handle added color layer
         if (isRemovedFromCurrentState()) {
+            MUTEX_ALIAS(mFlinger->mStateLock, mDrawingState.bgColorLayer->mFlinger->mStateLock);
             mDrawingState.bgColorLayer->onRemovedFromCurrentState();
         }
         mFlinger->setTransactionFlags(eTransactionNeeded);
     } else if (mDrawingState.bgColorLayer && alpha == 0) {
+        MUTEX_ALIAS(mFlinger->mStateLock, mDrawingState.bgColorLayer->mFlinger->mStateLock);
         mDrawingState.bgColorLayer->reparent(nullptr);
         mDrawingState.bgColorLayer = nullptr;
         return true;
@@ -1917,27 +1922,22 @@ Layer::RoundedCornerState Layer::getRoundedCornerState() const {
     const auto& parent = mDrawingParent.promote();
     if (parent != nullptr) {
         parentSettings = parent->getRoundedCornerState();
-        if (parentSettings.radius > 0) {
+        if (parentSettings.hasRoundedCorners()) {
             ui::Transform t = getActiveTransform(getDrawingState());
             t = t.inverse();
             parentSettings.cropRect = t.transform(parentSettings.cropRect);
-            // The rounded corners shader only accepts 1 corner radius for performance reasons,
-            // but a transform matrix can define horizontal and vertical scales.
-            // Let's take the average between both of them and pass into the shader, practically we
-            // never do this type of transformation on windows anyway.
-            auto scaleX = sqrtf(t[0][0] * t[0][0] + t[0][1] * t[0][1]);
-            auto scaleY = sqrtf(t[1][0] * t[1][0] + t[1][1] * t[1][1]);
-            parentSettings.radius *= (scaleX + scaleY) / 2.0f;
+            parentSettings.radius.x *= t.getScaleX();
+            parentSettings.radius.y *= t.getScaleY();
         }
     }
 
     // Get layer settings
     Rect layerCropRect = getCroppedBufferSize(getDrawingState());
-    const float radius = getDrawingState().cornerRadius;
+    const vec2 radius(getDrawingState().cornerRadius, getDrawingState().cornerRadius);
     RoundedCornerState layerSettings(layerCropRect.toFloatRect(), radius);
-    const bool layerSettingsValid = layerSettings.radius > 0 && layerCropRect.isValid();
+    const bool layerSettingsValid = layerSettings.hasRoundedCorners() && layerCropRect.isValid();
 
-    if (layerSettingsValid && parentSettings.radius > 0) {
+    if (layerSettingsValid && parentSettings.hasRoundedCorners()) {
         // If the parent and the layer have rounded corner settings, use the parent settings if the
         // parent crop is entirely inside the layer crop.
         // This has limitations and cause rendering artifacts. See b/200300845 for correct fix.
@@ -1951,7 +1951,7 @@ Layer::RoundedCornerState Layer::getRoundedCornerState() const {
         }
     } else if (layerSettingsValid) {
         return layerSettings;
-    } else if (parentSettings.radius > 0) {
+    } else if (parentSettings.hasRoundedCorners()) {
         return parentSettings;
     }
     return {};
@@ -2072,7 +2072,8 @@ void Layer::writeToProtoDrawingState(LayerProto* layerInfo) {
     layerInfo->set_effective_scaling_mode(getEffectiveScalingMode());
 
     layerInfo->set_requested_corner_radius(getDrawingState().cornerRadius);
-    layerInfo->set_corner_radius(getRoundedCornerState().radius);
+    layerInfo->set_corner_radius(
+            (getRoundedCornerState().radius.x + getRoundedCornerState().radius.y) / 2.0);
     layerInfo->set_background_blur_radius(getBackgroundBlurRadius());
     layerInfo->set_is_trusted_overlay(isTrustedOverlay());
     LayerProtoHelper::writeToProtoDeprecated(transform, layerInfo->mutable_transform());
@@ -2397,16 +2398,7 @@ WindowInfo Layer::fillInputInfo(const InputDisplayArgs& displayArgs) {
         info.inputConfig |= WindowInfo::InputConfig::NOT_TOUCHABLE;
     }
 
-    // For compatibility reasons we let layers which can receive input
-    // receive input before they have actually submitted a buffer. Because
-    // of this we use canReceiveInput instead of isVisible to check the
-    // policy-visibility, ignoring the buffer state. However for layers with
-    // hasInputInfo()==false we can use the real visibility state.
-    // We are just using these layers for occlusion detection in
-    // InputDispatcher, and obviously if they aren't visible they can't occlude
-    // anything.
-    const bool visible = hasInputInfo() ? canReceiveInput() : isVisible();
-    info.setInputConfig(WindowInfo::InputConfig::NOT_VISIBLE, !visible);
+    info.setInputConfig(WindowInfo::InputConfig::NOT_VISIBLE, !isVisibleForInput());
 
     info.alpha = getAlpha();
     fillTouchOcclusionMode(info);

@@ -209,16 +209,24 @@ TEST(logging, WOULD_LOG_VERBOSE_enabled) {
 
 
 #if !defined(_WIN32)
-static std::string make_log_pattern(android::base::LogSeverity severity,
+static std::string make_log_pattern(const char* expected_tag, android::base::LogSeverity severity,
                                     const char* message) {
   static const char log_characters[] = "VDIWEFF";
   static_assert(arraysize(log_characters) - 1 == android::base::FATAL + 1,
                 "Mismatch in size of log_characters and values in LogSeverity");
   char log_char = log_characters[severity];
   std::string holder(__FILE__);
+
+  // `message` can have a function name like "TestBody()". The parentheses should be escaped,
+  // otherwise it will be interpreted as a capturing group when it is used as a regex.  Below
+  // replaces either '(' or ')' to '\(' or '\)', respectively.
+  std::regex parentheses(R"(\(|\))");
+  std::string message_escaped = std::regex_replace(message, parentheses, R"(\$&)");
+
+  const char* tag_pattern = expected_tag != nullptr ? expected_tag : ".+";
   return android::base::StringPrintf(
-      "%c \\d+-\\d+ \\d+:\\d+:\\d+ \\s*\\d+ \\s*\\d+ %s:\\d+] %s",
-      log_char, basename(&holder[0]), message);
+      R"(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \s*\d+ \s*\d+ %c %s\s*: %s:\d+ %s)", log_char,
+      tag_pattern, basename(&holder[0]), message_escaped.c_str());
 }
 #endif
 
@@ -234,12 +242,7 @@ static void CheckMessage(const std::string& output, android::base::LogSeverity s
   }
 
 #if !defined(_WIN32)
-  std::string regex_str;
-  if (expected_tag != nullptr) {
-    regex_str.append(expected_tag);
-    regex_str.append(" ");
-  }
-  regex_str.append(make_log_pattern(severity, expected));
+  std::string regex_str = make_log_pattern(expected_tag, severity, expected);
   std::regex message_regex(regex_str);
   ASSERT_TRUE(std::regex_search(output, message_regex)) << output;
 #endif

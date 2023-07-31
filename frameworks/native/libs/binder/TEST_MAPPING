@@ -16,7 +16,13 @@
       "name": "binderDriverInterfaceTest"
     },
     {
+      "name": "binderRecordReplayTest"
+    },
+    {
       "name": "binderHostDeviceTest"
+    },
+    {
+      "name": "binderParcelBenchmark"
     },
     {
       "name": "binderTextOutputTest"
@@ -58,6 +64,9 @@
       "name": "libbinderthreadstateutils_test"
     },
     {
+      "name": "fuzz_service_test"
+    },
+    {
       "name": "CtsOsTestCases",
       "options": [
         {
@@ -79,6 +88,12 @@
     },
     {
       "name": "rustBinderSerializationTest"
+    },
+    {
+      "name": "libbinder_ndk_bindgen_test"
+    },
+    {
+      "name": "libbinder_rpc_unstable_bindgen_test"
     }
   ],
   "presubmit-large": [
@@ -112,6 +127,11 @@
     },
     {
       "name": "memunreachable_binder_test"
+    }
+  ],
+  "imports": [
+    {
+      "path": "packages/modules/Virtualization"
     }
   ]
 }

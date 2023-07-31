@@ -31,30 +31,21 @@ using namespace android::dm;
 using android::base::unique_fd;
 
 SnapshotHandler::SnapshotHandler(std::string misc_name, std::string cow_device,
-                                 std::string backing_device, std::string base_path_merge) {
+                                 std::string backing_device, std::string base_path_merge,
+                                 int num_worker_threads, bool use_iouring,
+                                 bool perform_verification) {
     misc_name_ = std::move(misc_name);
     cow_device_ = std::move(cow_device);
     backing_store_device_ = std::move(backing_device);
     control_device_ = "/dev/dm-user/" + misc_name_;
     base_path_merge_ = std::move(base_path_merge);
+    num_worker_threads_ = num_worker_threads;
+    is_io_uring_enabled_ = use_iouring;
+    perform_verification_ = perform_verification;
 }
 
 bool SnapshotHandler::InitializeWorkers() {
-    int num_worker_threads = kNumWorkerThreads;
-
-    // We will need multiple worker threads only during
-    // device boot after OTA. For all other purposes,
-    // one thread is sufficient. We don't want to consume
-    // unnecessary memory especially during OTA install phase
-    // when daemon will be up during entire post install phase.
-    //
-    // During boot up, we need multiple threads primarily for
-    // update-verification.
-    if (is_socket_present_) {
-        num_worker_threads = 1;
-    }
-
-    for (int i = 0; i < num_worker_threads; i++) {
+    for (int i = 0; i < num_worker_threads_; i++) {
         std::unique_ptr<Worker> wt =
                 std::make_unique<Worker>(cow_device_, backing_store_device_, control_device_,
                                          misc_name_, base_path_merge_, GetSharedPtr());
@@ -107,8 +98,7 @@ bool SnapshotHandler::CommitMerge(int num_merge_ops) {
         }
     } else {
         reader_->UpdateMergeOpsCompleted(num_merge_ops);
-        CowHeader header;
-        reader_->GetHeader(&header);
+        const auto& header = reader_->GetHeader();
 
         if (lseek(cow_fd_.get(), 0, SEEK_SET) < 0) {
             SNAP_PLOG(ERROR) << "lseek failed";
@@ -163,7 +153,6 @@ bool SnapshotHandler::CheckMergeCompletionStatus() {
 
 bool SnapshotHandler::ReadMetadata() {
     reader_ = std::make_unique<CowReader>(CowReader::ReaderFlags::USERSPACE_MERGE, true);
-    CowHeader header;
     CowOptions options;
 
     SNAP_LOG(DEBUG) << "ReadMetadata: Parsing cow file";
@@ -173,11 +162,7 @@ bool SnapshotHandler::ReadMetadata() {
         return false;
     }
 
-    if (!reader_->GetHeader(&header)) {
-        SNAP_LOG(ERROR) << "Failed to get header";
-        return false;
-    }
-
+    const auto& header = reader_->GetHeader();
     if (!(header.block_size == BLOCK_SZ)) {
         SNAP_LOG(ERROR) << "Invalid header block size found: " << header.block_size;
         return false;
@@ -200,8 +185,8 @@ bool SnapshotHandler::ReadMetadata() {
 
     size_t copy_ops = 0, replace_ops = 0, zero_ops = 0, xor_ops = 0;
 
-    while (!cowop_iter->Done()) {
-        const CowOperation* cow_op = &cowop_iter->Get();
+    while (!cowop_iter->AtEnd()) {
+        const CowOperation* cow_op = cowop_iter->Get();
 
         if (cow_op->type == kCowCopyOp) {
             copy_ops += 1;
@@ -253,12 +238,11 @@ bool SnapshotHandler::ReadMetadata() {
 }
 
 bool SnapshotHandler::MmapMetadata() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    total_mapped_addr_length_ = header.header_size + BUFFER_REGION_DEFAULT_SIZE;
+    total_mapped_addr_length_ = header.prefix.header_size + BUFFER_REGION_DEFAULT_SIZE;
 
-    if (header.major_version >= 2 && header.buffer_size > 0) {
+    if (header.prefix.major_version >= 2 && header.buffer_size > 0) {
         scratch_space_ = true;
     }
 
@@ -331,19 +315,11 @@ bool SnapshotHandler::Start() {
                 std::async(std::launch::async, &Worker::RunThread, worker_threads_[i].get()));
     }
 
-    bool partition_verification = true;
-
-    // We don't want to read the blocks during first stage init or
-    // during post-install phase.
-    if (android::base::EndsWith(misc_name_, "-init") || is_socket_present_) {
-        partition_verification = false;
-    }
-
     std::future<bool> merge_thread =
             std::async(std::launch::async, &Worker::RunMergeThread, merge_thread_.get());
 
     // Now that the worker threads are up, scan the partitions.
-    if (partition_verification) {
+    if (perform_verification_) {
         update_verify_->VerifyUpdatePartition();
     }
 
@@ -384,10 +360,9 @@ bool SnapshotHandler::Start() {
 }
 
 uint64_t SnapshotHandler::GetBufferMetadataOffset() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    return (header.header_size + sizeof(BufferState));
+    return (header.prefix.header_size + sizeof(BufferState));
 }
 
 /*
@@ -400,8 +375,7 @@ uint64_t SnapshotHandler::GetBufferMetadataOffset() {
  *
  */
 size_t SnapshotHandler::GetBufferMetadataSize() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
     size_t buffer_size = header.buffer_size;
 
     // If there is no scratch space, then just use the
@@ -414,18 +388,16 @@ size_t SnapshotHandler::GetBufferMetadataSize() {
 }
 
 size_t SnapshotHandler::GetBufferDataOffset() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    return (header.header_size + GetBufferMetadataSize());
+    return (header.prefix.header_size + GetBufferMetadataSize());
 }
 
 /*
  * (2MB - 8K = 2088960 bytes) will be the buffer region to hold the data.
  */
 size_t SnapshotHandler::GetBufferDataSize() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
     size_t buffer_size = header.buffer_size;
 
     // If there is no scratch space, then just use the
@@ -438,22 +410,16 @@ size_t SnapshotHandler::GetBufferDataSize() {
 }
 
 struct BufferState* SnapshotHandler::GetBufferState() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
     struct BufferState* ra_state =
-            reinterpret_cast<struct BufferState*>((char*)mapped_addr_ + header.header_size);
+            reinterpret_cast<struct BufferState*>((char*)mapped_addr_ + header.prefix.header_size);
     return ra_state;
 }
 
 bool SnapshotHandler::IsIouringSupported() {
     struct utsname uts;
     unsigned int major, minor;
-
-    if (android::base::GetBoolProperty("snapuserd.test.io_uring.force_disable", false)) {
-        SNAP_LOG(INFO) << "io_uring disabled for testing";
-        return false;
-    }
 
     if ((uname(&uts) != 0) || (sscanf(uts.release, "%u.%u", &major, &minor) != 2)) {
         SNAP_LOG(ERROR) << "Could not parse the kernel version from uname. "
@@ -480,6 +446,10 @@ bool SnapshotHandler::IsIouringSupported() {
 
     // Finally check the system property
     return android::base::GetBoolProperty("ro.virtual_ab.io_uring.enabled", false);
+}
+
+bool SnapshotHandler::CheckPartitionVerification() {
+    return update_verify_->CheckPartitionVerification();
 }
 
 }  // namespace snapshot

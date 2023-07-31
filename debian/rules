@@ -5,7 +5,7 @@ include /usr/share/dpkg/pkg-info.mk
 
 ## Security Hardening
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
-# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-33.0.4/cc/config/global.go#307
+# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-34.0.4/cc/config/global.go#301
 export DEB_CFLAGS_MAINT_APPEND = -fPIC -gdwarf-4 -std=gnu17
 export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -gdwarf-4 -std=gnu++2a
 export DEB_LDFLAGS_MAINT_APPEND = -fPIC
@@ -27,8 +27,8 @@ export DEB_SOURCE
 ## system
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-33.0.4/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 33.0.4
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-34.0.4/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 34.0.4
 
 ifneq (, $(shell which clang))
   export CC=clang
@@ -202,7 +202,7 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure-arch:
-	rm -rf external/dlmalloc development/[a-s]* development/v* development/testrunner
+	rm -rf development/[a-s]* development/v* development/testrunner
 	mkdir -p debian/out/dalvik/tools debian/out/development debian/out/external \
 		debian/out/frameworks/native debian/out/system/extras debian/out/libnativehelper
 ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)

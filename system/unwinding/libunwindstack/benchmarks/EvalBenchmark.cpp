@@ -45,8 +45,6 @@ class EvalBenchmark : public benchmark::Fixture {
     section_ = std::make_unique<DwarfSectionImplFake<AddresssType>>(&memory_);
   }
 
-  void TearDown(benchmark::State& state) override { mem_tracker_.SetBenchmarkCounters(state); }
-
   // Benchmarks DwarfSectionImpl::Eval given the DwarfLocation object, loc_regs, initialized in each
   // individual benchmark macro/function.
   //
@@ -67,8 +65,12 @@ class EvalBenchmark : public benchmark::Fixture {
     regs.set_pc(0x1000);
     regs.set_sp(0x3500);
     regs[0] = 0x10000000;
-    mem_tracker_.StartTrackingAllocations();
-    for (auto _ : state) {
+    MemoryTracker mem_tracker;
+    for (const auto& _ : state) {
+      state.PauseTiming();
+      mem_tracker.StartTrackingAllocations();
+      state.ResumeTiming();
+
       std::stringstream err_stream;
       if (!section_->Eval(&cie, &memory_, loc_regs, &regs, &finished)) {
         err_stream << "Eval() failed at address " << section_->LastErrorAddress();
@@ -84,14 +86,16 @@ class EvalBenchmark : public benchmark::Fixture {
         state.SkipWithError(err_stream.str().c_str());
         return;
       }
+      state.PauseTiming();
+      mem_tracker.StopTrackingAllocations();
+      state.ResumeTiming();
     }
-    mem_tracker_.StopTrackingAllocations();
+    mem_tracker.SetBenchmarkCounters(state);
   }
 
  protected:
   MemoryFake memory_;
   std::unique_ptr<DwarfSectionImplFake<AddresssType>> section_;
-  MemoryTracker mem_tracker_;
 };
 
 // Benchmarks exercising Eval with the DWARF_LOCATION_REGISTER evaluation method.

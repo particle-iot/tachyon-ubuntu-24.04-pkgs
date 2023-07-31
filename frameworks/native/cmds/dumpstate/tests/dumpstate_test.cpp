@@ -285,8 +285,8 @@ TEST_F(DumpOptionsTest, InitializeWearBugReport) {
 
 
     // Other options retain default values
-    EXPECT_TRUE(options_.do_vibrate);
     EXPECT_FALSE(options_.progress_updates_to_socket);
+    EXPECT_FALSE(options_.do_vibrate);
     EXPECT_FALSE(options_.show_header_only);
     EXPECT_FALSE(options_.is_remote_mode);
     EXPECT_FALSE(options_.stream_to_socket);
@@ -1023,7 +1023,8 @@ class ZippedBugReportStreamTest : public DumpstateBaseTest {
 };
 
 // Generate a quick LimitedOnly report redirected to a file, open it and verify entry exist.
-TEST_F(ZippedBugReportStreamTest, StreamLimitedOnlyReport) {
+// TODO: broken test tracked in b/249983726
+TEST_F(ZippedBugReportStreamTest, DISABLED_StreamLimitedOnlyReport) {
     std::string out_path = kTestDataPath + "StreamLimitedOnlyReportOut.zip";
     android::base::unique_fd out_fd;
     CreateFd(out_path, &out_fd);

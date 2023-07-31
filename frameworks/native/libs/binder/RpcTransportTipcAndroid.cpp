@@ -31,8 +31,6 @@ using android::base::Result;
 
 namespace android {
 
-namespace {
-
 // RpcTransport for writing Trusty IPC clients in Android.
 class RpcTransportTipcAndroid : public RpcTransport {
 public:
@@ -54,7 +52,7 @@ public:
             }
 
             LOG_RPC_DETAIL("RpcTransport poll(): %s", strerror(savedErrno));
-            return -savedErrno;
+            return adjustStatus(-savedErrno);
         }
 
         if (pfd.revents & POLLNVAL) {
@@ -87,8 +85,10 @@ public:
                                 "File descriptors are not supported on Trusty yet");
             return TEMP_FAILURE_RETRY(tipc_send(mSocket.fd.get(), iovs, niovs, nullptr, 0));
         };
-        return interruptableReadOrWrite(mSocket, fdTrigger, iovs, niovs, writeFn, "tipc_send",
-                                        POLLOUT, altPoll);
+
+        status_t status = interruptableReadOrWrite(mSocket, fdTrigger, iovs, niovs, writeFn,
+                                                   "tipc_send", POLLOUT, altPoll);
+        return adjustStatus(status);
     }
 
     status_t interruptableReadFully(
@@ -121,13 +121,26 @@ public:
 
             return processSize;
         };
-        return interruptableReadOrWrite(mSocket, fdTrigger, iovs, niovs, readFn, "read", POLLIN,
-                                        altPoll);
+
+        status_t status = interruptableReadOrWrite(mSocket, fdTrigger, iovs, niovs, readFn, "read",
+                                                   POLLIN, altPoll);
+        return adjustStatus(status);
     }
 
     bool isWaiting() override { return mSocket.isInPollingState(); }
 
 private:
+    status_t adjustStatus(status_t status) {
+        if (status == -ENOTCONN) {
+            // TIPC returns ENOTCONN on disconnect, but that's basically
+            // the same as DEAD_OBJECT and the latter is the common libbinder
+            // error code for dead connections
+            return DEAD_OBJECT;
+        }
+
+        return status;
+    }
+
     status_t fillReadBuffer() {
         if (mReadBufferPos < mReadBufferSize) {
             return OK;
@@ -167,7 +180,7 @@ private:
                     continue;
                 } else {
                     LOG_RPC_DETAIL("RpcTransport fillBuffer(): %s", strerror(savedErrno));
-                    return -savedErrno;
+                    return adjustStatus(-savedErrno);
                 }
             } else {
                 mReadBufferSize = static_cast<size_t>(processSize);
@@ -201,8 +214,6 @@ public:
     }
     std::vector<uint8_t> getCertificate(RpcCertificateFormat) const override { return {}; }
 };
-
-} // namespace
 
 std::unique_ptr<RpcTransportCtx> RpcTransportCtxFactoryTipcAndroid::newServerCtx() const {
     return std::make_unique<RpcTransportCtxTipcAndroid>();

@@ -55,6 +55,7 @@
 
 #if USES_NETLINK
 #include <asm/types.h>
+#include <linux/if_arp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #else // USES_NETLINK
@@ -1144,9 +1145,18 @@ mDNSlocal mDNSBool		ProcessRoutingNotification(int sd)
 #endif
 
 		// Process the NetLink message
-		if (pNLMsg->nlmsg_type == RTM_GETLINK || pNLMsg->nlmsg_type == RTM_NEWLINK ||
-				pNLMsg->nlmsg_type == RTM_DELADDR || pNLMsg->nlmsg_type == RTM_NEWADDR)
+		if (pNLMsg->nlmsg_type == RTM_GETLINK || pNLMsg->nlmsg_type == RTM_DELADDR ||
+				pNLMsg->nlmsg_type == RTM_NEWADDR)
+			{
 			result = mDNStrue;
+			}
+		else if (pNLMsg->nlmsg_type == RTM_NEWLINK)
+			{
+			// Fix for UWB start/stop causing mdns drop. See b/265207453
+			struct ifinfomsg *pIfInfo = (struct ifinfomsg*) NLMSG_DATA(pNLMsg);
+			if (pIfInfo->ifi_family != AF_UNSPEC || pIfInfo->ifi_type != ARPHRD_IEEE802154)
+				result = mDNStrue;
+			}
 
 		// Advance pNLMsg to the next message in the buffer
 		if ((pNLMsg->nlmsg_flags & NLM_F_MULTI) != 0 && pNLMsg->nlmsg_type != NLMSG_DONE)

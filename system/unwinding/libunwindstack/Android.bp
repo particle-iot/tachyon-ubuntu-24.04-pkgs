@@ -54,6 +54,7 @@ cc_defaults {
 libunwindstack_common_src_files = [
     "AndroidUnwinder.cpp",
     "ArmExidx.cpp",
+    "Demangle.cpp",
     "DexFiles.cpp",
     "DwarfCfa.cpp",
     "DwarfEhFrameWithHdr.cpp",
@@ -121,6 +122,10 @@ cc_defaults {
 
     static_libs: [
         "libprocinfo",
+    ],
+
+    whole_static_libs: [
+        "librustc_demangle_static",
     ],
 
     shared_libs: [
@@ -233,10 +238,10 @@ cc_library {
     shared_libs: [
         "libbase",
         "libunwindstack",
-        "libprocinfo",
     ],
     whole_static_libs: [
         "libc++fs",
+        "libprocinfo",
         "libz",
     ],
     srcs: [
@@ -273,6 +278,7 @@ cc_defaults {
         "tests/AndroidUnwinderTest.cpp",
         "tests/ArmExidxDecodeTest.cpp",
         "tests/ArmExidxExtractTest.cpp",
+        "tests/DemangleTest.cpp",
         "tests/DexFileTest.cpp",
         "tests/DexFilesTest.cpp",
         "tests/DwarfCfaLogTest.cpp",
@@ -345,7 +351,6 @@ cc_defaults {
     static_libs: [
         "libdexfile_support",
         "libgmock",
-        "libprocinfo",
         "libunwindstack_utils",
     ],
 
@@ -363,6 +368,7 @@ cc_defaults {
         "offline_files/apk_rorx_unreadable_arm64/*",
         "offline_files/apk_rx_arm64/*",
         "offline_files/apk_rx_unreadable_arm64/*",
+        "offline_files/apk_soname_at_end_arm64/*",
         "offline_files/art_quick_osr_stub_arm/*",
         "offline_files/bad_eh_frame_hdr_arm64/*",
         "offline_files/debug_frame_first_x86/*",
@@ -462,9 +468,9 @@ cc_defaults {
     defaults: ["libunwindstack_flags"],
 
     shared_libs: [
-        "libunwindstack_stdout_log",
         "libbase",
         "liblzma",
+        "libunwindstack_stdout_log",
     ],
     target: {
         // Always disable optimizations for host to make it easier to debug.
@@ -508,8 +514,8 @@ cc_binary {
     name: "unwind_for_offline",
     defaults: ["libunwindstack_tools"],
     static_libs: [
-        "libunwindstack_utils",
         "libc++fs",
+        "libunwindstack_utils",
     ],
 
     srcs: [
@@ -577,8 +583,8 @@ cc_benchmark {
     ],
 
     static_libs: [
-        "libunwindstack_utils",
         "libprocinfo",
+        "libunwindstack_utils",
     ],
 
     target: {

@@ -939,7 +939,9 @@ bool MakeScratchFilesystem(const std::string& scratch_device) {
     auto command = ""s;
     if (!access(kMkF2fs.c_str(), X_OK) && fs_mgr_filesystem_available("f2fs")) {
         fs_type = "f2fs";
-        command = kMkF2fs + " -w 4096 -f -d1 -l" + android::base::Basename(kScratchMountPoint);
+        command = kMkF2fs + " -w ";
+        command += std::to_string(getpagesize());
+        command += " -f -d1 -l" + android::base::Basename(kScratchMountPoint);
     } else if (!access(kMkExt4.c_str(), X_OK) && fs_mgr_filesystem_available("ext4")) {
         fs_type = "ext4";
         command = kMkExt4 + " -F -b 4096 -t ext4 -m 0 -O has_journal -M " + kScratchMountPoint;
@@ -1083,7 +1085,7 @@ static inline uint64_t GetIdealDataScratchSize() {
         return 0;
     }
 
-    auto ideal_size = std::min(super_info.size, (uint64_t(s.f_frsize) * s.f_bfree) / 2);
+    auto ideal_size = std::min(super_info.size, uint64_t(uint64_t(s.f_frsize) * s.f_bfree * 0.85));
 
     // Align up to the filesystem block size.
     if (auto remainder = ideal_size % s.f_bsize; remainder > 0) {

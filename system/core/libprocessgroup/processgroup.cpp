@@ -200,6 +200,11 @@ extern "C" bool android_set_process_profiles(uid_t uid, pid_t pid, size_t num_pr
     return SetProcessProfiles(uid, pid, std::span<const std::string_view>(profiles_));
 }
 
+bool SetUserProfiles(uid_t uid, const std::vector<std::string>& profiles) {
+    return TaskProfiles::GetInstance().SetUserProfiles(uid, std::span<const std::string>(profiles),
+                                                       false);
+}
+
 static std::string ConvertUidToPath(const char* cgroup, uid_t uid) {
     return StringPrintf("%s/uid_%d", cgroup, uid);
 }
@@ -211,7 +216,6 @@ static std::string ConvertUidPidToPath(const char* cgroup, uid_t uid, int pid) {
 static int RemoveProcessGroup(const char* cgroup, uid_t uid, int pid, unsigned int retries) {
     int ret = 0;
     auto uid_pid_path = ConvertUidPidToPath(cgroup, uid, pid);
-    auto uid_path = ConvertUidToPath(cgroup, uid);
 
     while (retries--) {
         ret = rmdir(uid_pid_path.c_str());
@@ -372,6 +376,7 @@ static int DoKillProcessGroupOnce(const char* cgroup, uid_t uid, int initialPid,
     std::set<pid_t> pgids;
     pgids.emplace(initialPid);
     std::set<pid_t> pids;
+    int processes = 0;
 
     std::unique_ptr<FILE, decltype(&fclose)> fd(nullptr, fclose);
 
@@ -390,6 +395,7 @@ static int DoKillProcessGroupOnce(const char* cgroup, uid_t uid, int initialPid,
         pid_t pid;
         bool file_is_empty = true;
         while (fscanf(fd.get(), "%d\n", &pid) == 1 && pid >= 0) {
+            processes++;
             file_is_empty = false;
             if (pid == 0) {
                 // Should never happen...  but if it does, trying to kill this
@@ -406,31 +412,25 @@ static int DoKillProcessGroupOnce(const char* cgroup, uid_t uid, int initialPid,
                 pids.emplace(pid);
             }
         }
-        if (file_is_empty) {
-            // This happens when process is already dead
-            return 0;
-        }
-
-        // Erase all pids that will be killed when we kill the process groups.
-        for (auto it = pids.begin(); it != pids.end();) {
-            pid_t pgid = getpgid(*it);
-            if (pgids.count(pgid) == 1) {
-                it = pids.erase(it);
-            } else {
-                ++it;
+        if (!file_is_empty) {
+            // Erase all pids that will be killed when we kill the process groups.
+            for (auto it = pids.begin(); it != pids.end();) {
+                pid_t pgid = getpgid(*it);
+                if (pgids.count(pgid) == 1) {
+                    it = pids.erase(it);
+                } else {
+                    ++it;
+                }
             }
         }
     }
 
-    int processes = 0;
     // Kill all process groups.
     for (const auto pgid : pgids) {
         LOG(VERBOSE) << "Killing process group " << -pgid << " in uid " << uid
                      << " as part of process cgroup " << initialPid;
 
-        if (kill(-pgid, signal) == 0) {
-            processes++;
-        } else if (errno != ESRCH) {
+        if (kill(-pgid, signal) == -1 && errno != ESRCH) {
             PLOG(WARNING) << "kill(" << -pgid << ", " << signal << ") failed";
         }
     }
@@ -440,9 +440,7 @@ static int DoKillProcessGroupOnce(const char* cgroup, uid_t uid, int initialPid,
         LOG(VERBOSE) << "Killing pid " << pid << " in uid " << uid << " as part of process cgroup "
                      << initialPid;
 
-        if (kill(pid, signal) == 0) {
-            processes++;
-        } else if (errno != ESRCH) {
+        if (kill(pid, signal) == -1 && errno != ESRCH) {
             PLOG(WARNING) << "kill(" << pid << ", " << signal << ") failed";
         }
     }
@@ -452,6 +450,9 @@ static int DoKillProcessGroupOnce(const char* cgroup, uid_t uid, int initialPid,
 
 static int KillProcessGroup(uid_t uid, int initialPid, int signal, int retries,
                             int* max_processes) {
+    CHECK_GE(uid, 0);
+    CHECK_GT(initialPid, 0);
+
     std::string hierarchy_root_path;
     if (CgroupsAvailable()) {
         CgroupGetControllerPath(CGROUPV2_CONTROLLER_NAME, &hierarchy_root_path);
@@ -540,6 +541,15 @@ int killProcessGroupOnce(uid_t uid, int initialPid, int signal, int* max_process
     return KillProcessGroup(uid, initialPid, signal, 0 /*retries*/, max_processes);
 }
 
+int sendSignalToProcessGroup(uid_t uid, int initialPid, int signal) {
+    std::string hierarchy_root_path;
+    if (CgroupsAvailable()) {
+        CgroupGetControllerPath(CGROUPV2_CONTROLLER_NAME, &hierarchy_root_path);
+    }
+    const char* cgroup = hierarchy_root_path.c_str();
+    return DoKillProcessGroupOnce(cgroup, uid, initialPid, signal);
+}
+
 static int createProcessGroupInternal(uid_t uid, int initialPid, std::string cgroup,
                                       bool activate_controllers) {
     auto uid_path = ConvertUidToPath(cgroup.c_str(), uid);
@@ -588,7 +598,8 @@ static int createProcessGroupInternal(uid_t uid, int initialPid, std::string cgr
 }
 
 int createProcessGroup(uid_t uid, int initialPid, bool memControl) {
-    std::string cgroup;
+    CHECK_GE(uid, 0);
+    CHECK_GT(initialPid, 0);
 
     if (memControl && !UsePerAppMemcg()) {
         PLOG(ERROR) << "service memory controls are used without per-process memory cgroup support";
@@ -606,6 +617,7 @@ int createProcessGroup(uid_t uid, int initialPid, bool memControl) {
         }
     }
 
+    std::string cgroup;
     CgroupGetControllerPath(CGROUPV2_CONTROLLER_NAME, &cgroup);
     return createProcessGroupInternal(uid, initialPid, cgroup, true);
 }
@@ -643,4 +655,14 @@ bool setProcessGroupLimit(uid_t, int pid, int64_t limit_in_bytes) {
 
 bool getAttributePathForTask(const std::string& attr_name, int tid, std::string* path) {
     return CgroupGetAttributePathForTask(attr_name, tid, path);
+}
+
+bool isProfileValidForProcess(const std::string& profile_name, int uid, int pid) {
+    const TaskProfile* tp = TaskProfiles::GetInstance().GetProfile(profile_name);
+
+    if (tp == nullptr) {
+        return false;
+    }
+
+    return tp->IsValidForProcess(uid, pid);
 }

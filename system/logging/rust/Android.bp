@@ -12,16 +12,18 @@ rust_library {
         "liblog_rust",
     ],
     vendor_available: true,
+    product_available: true,
     target: {
         android: {
             rustlibs: [
                 "libandroid_logger",
-            ]
+            ],
         },
     },
     apex_available: [
+        "//apex_available:anyapex",
         "//apex_available:platform",
-        "com.android.uwb",
+        "//apex_available:anyapex",
     ],
     min_sdk_version: "29",
 }
@@ -42,7 +44,7 @@ rust_defaults {
     rustlibs: [
         "liblogger",
         "liblog_rust",
-    ]
+    ],
 }
 
 rust_test {
@@ -51,15 +53,15 @@ rust_test {
     srcs: ["logger.rs"],
     rustlibs: [
         "libenv_logger",
-        "libandroid_logger"
-    ]
+        "libandroid_logger",
+    ],
 }
 
 rust_test_host {
     name: "logger_host_unit_tests",
     defaults: ["liblogger_test_defaults"],
     srcs: ["logger.rs"],
-    rustlibs: ["libenv_logger"]
+    rustlibs: ["libenv_logger"],
 }
 
 // The following tests are each run as separate targets because they all require a clean init state.

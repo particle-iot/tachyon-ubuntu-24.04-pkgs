@@ -2,19 +2,25 @@ NAME = fastboot
 
 fastboot_SOURCES = \
   bootimg_utils.cpp \
-  fastboot.cpp \
   fastboot_driver.cpp \
+  fastboot.cpp \
+  filesystem.cpp \
   fs.cpp \
   main.cpp \
   socket.cpp \
+  storage.cpp \
+  super_flash_helper.cpp \
   tcp.cpp \
   udp.cpp \
-  usb_linux.cpp \
   util.cpp \
   vendor_boot_img_utils.cpp \
+  task.cpp \
+  \
+  usb_linux.cpp \
 
 fs_mgr_liblp_SOURCES := \
   builder.cpp \
+  super_layout_builder.cpp \
   images.cpp \
   partition_opener.cpp \
   property_fetcher.cpp \

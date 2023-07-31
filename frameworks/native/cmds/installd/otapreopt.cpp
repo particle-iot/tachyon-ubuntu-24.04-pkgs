@@ -308,7 +308,7 @@ private:
         // This is different from the normal installd. We only do the base
         // directory, the rest will be created on demand when each app is compiled.
         if (access(GetOtaDirectoryPrefix().c_str(), R_OK) < 0) {
-            LOG(ERROR) << "Could not access " << GetOtaDirectoryPrefix();
+            PLOG(ERROR) << "Could not access " << GetOtaDirectoryPrefix();
             return false;
         }
 
@@ -460,7 +460,7 @@ private:
         // this tool will wipe the OTA artifact cache and try again (for robustness after
         // a failed OTA with remaining cache artifacts).
         if (access(apk_path, F_OK) != 0) {
-            LOG(WARNING) << "Skipping A/B OTA preopt of non-existing package " << apk_path;
+            PLOG(WARNING) << "Skipping A/B OTA preopt of non-existing package " << apk_path;
             return true;
         }
 
@@ -708,6 +708,11 @@ bool create_cache_path(char path[PKG_PATH_MAX],
     }
     strcpy(path, assembled_path.c_str());
 
+    return true;
+}
+
+bool force_compile_without_image() {
+    // We don't have a boot image anyway. Compile without a boot image.
     return true;
 }
 

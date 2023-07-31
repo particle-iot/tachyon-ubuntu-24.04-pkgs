@@ -70,7 +70,7 @@ static void BM_thread_unwind(benchmark::State& state) {
     state.SkipWithError("Failed to init.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     unwinder.UnwindWithSignal(SIGRTMIN, tid.load());
     if (unwinder.NumFrames() < 5) {
       state.SkipWithError("Failed to unwind.");

@@ -161,6 +161,15 @@ impl ParcelableHolder {
     }
 }
 
+impl Clone for ParcelableHolder {
+    fn clone(&self) -> ParcelableHolder {
+        ParcelableHolder {
+            data: Mutex::new(self.data.lock().unwrap().clone()),
+            stability: self.stability,
+        }
+    }
+}
+
 impl Serialize for ParcelableHolder {
     fn serialize(&self, parcel: &mut BorrowedParcel<'_>) -> Result<(), StatusCode> {
         parcel.write(&NON_NULL_PARCELABLE_FLAG)?;
@@ -169,6 +178,14 @@ impl Serialize for ParcelableHolder {
 }
 
 impl Deserialize for ParcelableHolder {
+    type UninitType = Self;
+    fn uninit() -> Self::UninitType {
+        Self::new(Default::default())
+    }
+    fn from_init(value: Self) -> Self::UninitType {
+        value
+    }
+
     fn deserialize(parcel: &BorrowedParcel<'_>) -> Result<Self, StatusCode> {
         let status: i32 = parcel.read()?;
         if status == NULL_PARCELABLE_FLAG {

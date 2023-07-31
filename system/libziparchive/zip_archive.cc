@@ -1691,6 +1691,8 @@ int32_t ProcessZipEntryContents(ZipArchiveHandle archive, const ZipEntry64* entr
 
 MappedZipFile::MappedZipFile(int fd, off64_t length, off64_t offset)
     : fd_(fd), fd_offset_(offset), data_length_(length) {
+  // TODO(b/287285733): restore mmap() when the cold cache regression is fixed.
+#if 0
   // Only try to mmap all files in 64-bit+ processes as it's too easy to use up the whole
   // virtual address space on 32-bits, causing out of memory errors later.
   if constexpr (sizeof(void*) >= 8) {
@@ -1706,6 +1708,7 @@ MappedZipFile::MappedZipFile(int fd, off64_t length, off64_t offset)
       }
     }
   }
+#endif  // 0
 }
 
 int MappedZipFile::GetFileDescriptor() const {

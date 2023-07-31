@@ -77,6 +77,12 @@ android_test {
     optimize: {
         enabled: false,
     },
+
+    test_config: "FastDeployTests.xml",
+
+    test_suites: [
+        "general-tests",
+    ],
 }
 
 java_test_host {
@@ -87,6 +93,8 @@ java_test_host {
     data: [
         "testdata/helloworld5.apk",
         "testdata/helloworld7.apk",
+        "testdata/sample.apk",
+        "testdata/sample.cd",
     ],
     libs: [
         "compatibility-host-util",
@@ -96,4 +104,5 @@ java_test_host {
     test_suites: [
         "general-tests",
     ],
+    test_config: "FastDeployHostDrivenTests.xml",
 }

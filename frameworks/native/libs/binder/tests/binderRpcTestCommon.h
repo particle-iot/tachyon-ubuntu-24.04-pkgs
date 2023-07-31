@@ -126,7 +126,11 @@ static inline size_t epochMillis() {
 struct BinderRpcOptions {
     size_t numThreads = 1;
     size_t numSessions = 1;
-    size_t numIncomingConnections = 0;
+    // right now, this can be empty, or length numSessions, where each value
+    // represents the info for the corresponding session, but we should
+    // probably switch this to be a list of sessions options so that other
+    // options can all be specified per session
+    std::vector<size_t> numIncomingConnectionsBySession = {};
     size_t numOutgoingConnections = SIZE_MAX;
     RpcSession::FileDescriptorTransportMode clientFileDescriptorTransportMode =
             RpcSession::FileDescriptorTransportMode::NONE;
@@ -170,7 +174,7 @@ static inline T readFromFd(android::base::borrowed_fd fd) {
     return object;
 }
 
-static inline std::unique_ptr<RpcTransportCtxFactory> newFactory(
+static inline std::unique_ptr<RpcTransportCtxFactory> newTlsFactory(
         RpcSecurity rpcSecurity, std::shared_ptr<RpcCertificateVerifier> verifier = nullptr,
         std::unique_ptr<RpcAuth> auth = nullptr) {
     switch (rpcSecurity) {
@@ -445,6 +449,12 @@ public:
     Status blockingRecvFd(android::os::ParcelFileDescriptor* /*fd*/) override {
         return Status::fromStatusT(UNKNOWN_TRANSACTION);
     }
+
+    Status blockingSendIntOneway(int /*n*/) override {
+        return Status::fromStatusT(UNKNOWN_TRANSACTION);
+    }
+
+    Status blockingRecvInt(int* /*n*/) override { return Status::fromStatusT(UNKNOWN_TRANSACTION); }
 };
 
 } // namespace android

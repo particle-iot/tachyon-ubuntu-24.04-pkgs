@@ -56,6 +56,16 @@ class BatteryMonitor {
         ANDROID_POWER_SUPPLY_TYPE_DOCK
     };
 
+    enum BatteryHealthStatus {
+        BH_UNKNOWN = -1,
+        BH_NOMINAL,
+        BH_MARGINAL,
+        BH_NEEDS_REPLACEMENT,
+        BH_FAILED,
+        BH_NOT_AVAILABLE,
+        BH_INCONSISTENT,
+    };
+
     BatteryMonitor();
     ~BatteryMonitor();
     void init(struct healthd_config *hc);
@@ -85,6 +95,7 @@ class BatteryMonitor {
     bool mBatteryDevicePresent;
     int mBatteryFixedCapacity;
     int mBatteryFixedTemperature;
+    int mBatteryHealthStatus;
     std::unique_ptr<aidl::android::hardware::health::HealthInfo> mHealthInfo;
 };
 

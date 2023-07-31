@@ -35,7 +35,7 @@
 #include "tests/TestUtils.h"
 
 static bool WaitForRemote(pid_t pid, volatile bool* ready_ptr) {
-  return unwindstack::RunWhenQuiesced(pid, true, [pid, ready_ptr]() {
+  return unwindstack::WaitForPidState(pid, [pid, ready_ptr]() {
     unwindstack::MemoryRemote memory(pid);
     bool ready;
     uint64_t ready_addr = reinterpret_cast<uint64_t>(ready_ptr);
@@ -111,7 +111,7 @@ static void RemoteUnwind(benchmark::State& state, bool cached) {
     state.SkipWithError("Failed to parse maps.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     std::unique_ptr<unwindstack::Regs> regs(unwindstack::Regs::RemoteGet(pid));
     unwindstack::Unwinder unwinder(32, &maps, regs.get(), process_memory);
     unwinder.Unwind();
@@ -152,7 +152,7 @@ static void RemoteAndroidUnwind(benchmark::State& state, bool cached) {
     state.SkipWithError("Failed to initialize unwinder.");
   }
 
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     unwindstack::AndroidUnwinderData data;
     if (!unwinder.Unwind(data) || data.frames.size() < 5) {
       state.SkipWithError("Failed to unwind properly.");

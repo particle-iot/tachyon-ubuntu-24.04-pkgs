@@ -24,7 +24,14 @@
 __BEGIN_DECLS
 
 /**
- * This creates a threadpool for incoming binder transactions if it has not already been created.
+ * This creates a threadpool for incoming binder transactions if it has not already been created,
+ * spawning one thread, and allowing the kernel to lazily start threads according to the count
+ * that is specified in ABinderProcess_setThreadPoolMaxThreadCount.
+ *
+ * For instance, if ABinderProcess_setThreadPoolMaxThreadCount(3) is called,
+ * ABinderProcess_startThreadPool() is called (+1 thread) then the main thread calls
+ * ABinderProcess_joinThreadPool() (+1 thread), up to *5* total threads will be started
+ * (2 directly, and 3 more if the kernel starts them lazily).
  *
  * When using this, it is expected that ABinderProcess_setupPolling and
  * ABinderProcess_handlePolledCommands are not used.
@@ -32,11 +39,16 @@ __BEGIN_DECLS
  * Do not use this from a library. Apps setup their own threadpools, and otherwise, the main
  * function should be responsible for configuring the threadpool for the entire application.
  */
-void ABinderProcess_startThreadPool();
+void ABinderProcess_startThreadPool(void);
 /**
  * This sets the maximum number of threads that can be started in the threadpool. By default, after
  * startThreadPool is called, this is 15. If it is called additional times, it will only prevent
- * the kernel from starting new threads and will not delete already existing threads.
+ * the kernel from starting new threads and will not delete already existing threads. This should
+ * be called once before startThreadPool. The number of threads can never decrease.
+ *
+ * This count refers to the number of threads that will be created lazily by the kernel, in
+ * addition to the threads created by ABinderProcess_startThreadPool or
+ * ABinderProcess_joinThreadPool.
  *
  * Do not use this from a library. Apps setup their own threadpools, and otherwise, the main
  * function should be responsible for configuring the threadpool for the entire application.
@@ -48,15 +60,16 @@ bool ABinderProcess_setThreadPoolMaxThreadCount(uint32_t numThreads);
  * you should use this in a library to abort if the threadpool is not started.
  * Programs should configure binder threadpools once at the beginning.
  */
-bool ABinderProcess_isThreadPoolStarted();
+bool ABinderProcess_isThreadPoolStarted(void);
 /**
- * This adds the current thread to the threadpool. This may cause the threadpool to exceed the
- * maximum size.
+ * This adds the current thread to the threadpool. This thread will be in addition to the thread
+ * started by ABinderProcess_startThreadPool and the lazy kernel-started threads specified by
+ * ABinderProcess_setThreadPoolMaxThreadCount.
  *
  * Do not use this from a library. Apps setup their own threadpools, and otherwise, the main
  * function should be responsible for configuring the threadpool for the entire application.
  */
-void ABinderProcess_joinThreadPool();
+void ABinderProcess_joinThreadPool(void);
 
 /**
  * This gives you an fd to wait on. Whenever data is available on the fd,
@@ -79,6 +92,6 @@ __attribute__((weak)) binder_status_t ABinderProcess_setupPolling(int* fd) __INT
  *
  * \return STATUS_OK on success
  */
-__attribute__((weak)) binder_status_t ABinderProcess_handlePolledCommands() __INTRODUCED_IN(31);
+__attribute__((weak)) binder_status_t ABinderProcess_handlePolledCommands(void) __INTRODUCED_IN(31);
 
 __END_DECLS

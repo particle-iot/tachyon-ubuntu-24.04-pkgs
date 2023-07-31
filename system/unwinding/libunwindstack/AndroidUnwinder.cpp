@@ -28,6 +28,7 @@
 
 #include <unwindstack/AndroidUnwinder.h>
 #include <unwindstack/Arch.h>
+#include <unwindstack/Demangle.h>
 #include <unwindstack/DexFiles.h>
 #include <unwindstack/Error.h>
 #include <unwindstack/JitDebug.h>
@@ -45,18 +46,11 @@ static constexpr int kThreadUnwindSignal = BIONIC_SIGNAL_BACKTRACE;
 static int kThreadUnwindSignal = SIGRTMIN;
 #endif
 
-// Use the demangler from libc++.
-extern "C" char* __cxa_demangle(const char*, char*, size_t*, int* status);
-
 namespace unwindstack {
 
 void AndroidUnwinderData::DemangleFunctionNames() {
   for (auto& frame : frames) {
-    char* demangled_name = __cxa_demangle(frame.function_name.c_str(), nullptr, nullptr, nullptr);
-    if (demangled_name != nullptr) {
-      frame.function_name = demangled_name;
-      free(demangled_name);
-    }
+    frame.function_name = DemangleNameIfNeeded(frame.function_name);
   }
 }
 

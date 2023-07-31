@@ -75,11 +75,14 @@ impl RpcSessionRef {
         };
     }
 
-    /// Sets the maximum number of outgoing threads.
-    pub fn set_max_outgoing_threads(&self, threads: usize) {
+    /// Sets the maximum number of outgoing connections.
+    pub fn set_max_outgoing_connections(&self, connections: usize) {
         // SAFETY - Only passes the 'self' pointer as an opaque handle.
         unsafe {
-            binder_rpc_unstable_bindgen::ARpcSession_setMaxOutgoingThreads(self.as_ptr(), threads)
+            binder_rpc_unstable_bindgen::ARpcSession_setMaxOutgoingConnections(
+                self.as_ptr(),
+                connections,
+            )
         };
     }
 
@@ -139,6 +142,32 @@ impl RpcSessionRef {
             new_spibinder(binder_rpc_unstable_bindgen::ARpcSession_setupUnixDomainBootstrapClient(
                 self.as_ptr(),
                 bootstrap_fd.as_raw_fd(),
+            ))
+        };
+        Self::get_interface(service)
+    }
+
+    /// Connects to an RPC Binder server over inet socket at the given address and port.
+    pub fn setup_inet_client<T: FromIBinder + ?Sized>(
+        &self,
+        address: &str,
+        port: u32,
+    ) -> Result<Strong<T>, StatusCode> {
+        let address = match CString::new(address) {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Cannot convert {} to CString. Error: {:?}", address, e);
+                return Err(StatusCode::BAD_VALUE);
+            }
+        };
+
+        // SAFETY: AIBinder returned by ARpcSession_setupInet has correct reference
+        // count, and the ownership can safely be taken by new_spibinder.
+        let service = unsafe {
+            new_spibinder(binder_rpc_unstable_bindgen::ARpcSession_setupInet(
+                self.as_ptr(),
+                address.as_ptr(),
+                port,
             ))
         };
         Self::get_interface(service)

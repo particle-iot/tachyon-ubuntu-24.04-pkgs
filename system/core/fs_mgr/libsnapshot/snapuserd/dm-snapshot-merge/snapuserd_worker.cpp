@@ -95,11 +95,17 @@ void WorkerThread::ConstructKernelCowHeader() {
 // internal COW format and if the block is compressed,
 // it will be de-compressed.
 bool WorkerThread::ProcessReplaceOp(const CowOperation* cow_op) {
-    if (!reader_->ReadData(*cow_op, &bufsink_)) {
-        SNAP_LOG(ERROR) << "ProcessReplaceOp failed for block " << cow_op->new_block;
+    void* buffer = bufsink_.GetPayloadBuffer(BLOCK_SZ);
+    if (!buffer) {
+        SNAP_LOG(ERROR) << "No space in buffer sink";
         return false;
     }
-
+    ssize_t rv = reader_->ReadData(cow_op, buffer, BLOCK_SZ);
+    if (rv != BLOCK_SZ) {
+        SNAP_LOG(ERROR) << "ProcessReplaceOp failed for block " << cow_op->new_block
+                        << ", return = " << rv;
+        return false;
+    }
     return true;
 }
 
@@ -109,20 +115,15 @@ bool WorkerThread::ReadFromBaseDevice(const CowOperation* cow_op) {
         SNAP_LOG(ERROR) << "ReadFromBaseDevice: Failed to get payload buffer";
         return false;
     }
-    SNAP_LOG(DEBUG) << " ReadFromBaseDevice...: new-block: " << cow_op->new_block
-                    << " Source: " << cow_op->source;
-    uint64_t offset = cow_op->source;
-    if (cow_op->type == kCowCopyOp) {
-        offset *= BLOCK_SZ;
+    uint64_t offset;
+    if (!reader_->GetSourceOffset(cow_op, &offset)) {
+        SNAP_LOG(ERROR) << "ReadFromBaseDevice: Failed to get source offset";
+        return false;
     }
+    SNAP_LOG(DEBUG) << " ReadFromBaseDevice...: new-block: " << cow_op->new_block
+                    << " Source: " << offset;
     if (!android::base::ReadFullyAtOffset(backing_store_fd_, buffer, BLOCK_SZ, offset)) {
-        std::string op;
-        if (cow_op->type == kCowCopyOp)
-            op = "Copy-op";
-        else {
-            op = "Xor-op";
-        }
-        SNAP_PLOG(ERROR) << op << " failed. Read from backing store: " << backing_store_device_
+        SNAP_PLOG(ERROR) << "Copy op failed. Read from backing store: " << backing_store_device_
                          << "at block :" << offset / BLOCK_SZ << " offset:" << offset % BLOCK_SZ;
         return false;
     }
@@ -153,23 +154,6 @@ bool WorkerThread::ProcessCopyOp(const CowOperation* cow_op) {
         if (!ReadFromBaseDevice(cow_op)) {
             return false;
         }
-    }
-
-    return true;
-}
-
-bool WorkerThread::ProcessXorOp(const CowOperation* cow_op) {
-    if (!GetReadAheadPopulatedBuffer(cow_op)) {
-        SNAP_LOG(DEBUG) << " GetReadAheadPopulatedBuffer failed..."
-                        << " new_block: " << cow_op->new_block;
-        if (!ReadFromBaseDevice(cow_op)) {
-            return false;
-        }
-    }
-    xorsink_.Reset();
-    if (!reader_->ReadData(*cow_op, &xorsink_)) {
-        SNAP_LOG(ERROR) << "ProcessXorOp failed for block " << cow_op->new_block;
-        return false;
     }
 
     return true;
@@ -206,12 +190,8 @@ bool WorkerThread::ProcessCowOp(const CowOperation* cow_op) {
             return ProcessCopyOp(cow_op);
         }
 
-        case kCowXorOp: {
-            return ProcessXorOp(cow_op);
-        }
-
         default: {
-            SNAP_LOG(ERROR) << "Unknown operation-type found: " << cow_op->type;
+            SNAP_LOG(ERROR) << "Unsupported operation-type found: " << cow_op->type;
         }
     }
     return false;
@@ -529,7 +509,7 @@ int WorkerThread::GetNumberOfMergedOps(void* merged_buffer, void* unmerged_buffe
                 if (read_ahead_buffer_map.find(cow_op->new_block) == read_ahead_buffer_map.end()) {
                     SNAP_LOG(ERROR)
                             << " Block: " << cow_op->new_block << " not found in read-ahead cache"
-                            << " Source: " << cow_op->source;
+                            << " Op: " << *cow_op;
                     return -1;
                 }
                 // If this is a final block merged in the read-ahead buffer
@@ -830,7 +810,6 @@ void WorkerThread::InitializeBufsink() {
 
 bool WorkerThread::RunThread() {
     InitializeBufsink();
-    xorsink_.Initialize(&bufsink_, BLOCK_SZ);
 
     if (!InitializeFds()) {
         return false;

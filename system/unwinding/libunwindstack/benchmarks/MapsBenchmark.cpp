@@ -55,7 +55,7 @@ static void CreateMap(const char* filename, size_t num_maps, size_t increment = 
 
 static void ReparseBenchmark(benchmark::State& state, const char* maps1, size_t maps1_total,
                              const char* maps2, size_t maps2_total) {
-  for (auto _ : state) {
+  for (const auto& _ : state) {
     BenchmarkLocalUpdatableMaps maps;
     maps.BenchmarkSetMapsFile(maps1);
     if (!maps.Reparse()) {

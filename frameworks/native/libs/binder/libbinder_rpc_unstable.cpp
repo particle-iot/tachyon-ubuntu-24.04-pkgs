@@ -105,22 +105,15 @@ ARpcServer* ARpcServer_newVsock(AIBinder* service, unsigned int cid, unsigned in
     return createObjectHandle<ARpcServer>(server);
 }
 
-ARpcServer* ARpcServer_newInitUnixDomain(AIBinder* service, const char* name) {
+ARpcServer* ARpcServer_newBoundSocket(AIBinder* service, int socketFd) {
     auto server = RpcServer::make();
-    auto fd = unique_fd(android_get_control_socket(name));
+    auto fd = unique_fd(socketFd);
     if (!fd.ok()) {
-        LOG(ERROR) << "Failed to get fd for the socket:" << name;
+        LOG(ERROR) << "Invalid socket fd " << socketFd;
         return nullptr;
     }
-    // Control socket fds are inherited from init, so they don't have O_CLOEXEC set.
-    // But we don't want any child processes to inherit the socket we are running
-    // the server on, so attempt to set the flag now.
-    if (fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) {
-        LOG(WARNING) << "Failed to set CLOEXEC on control socket with name " << name
-                     << " error: " << errno;
-    }
     if (status_t status = server->setupRawSocketServer(std::move(fd)); status != OK) {
-        LOG(ERROR) << "Failed to set up Unix Domain RPC server with name " << name
+        LOG(ERROR) << "Failed to set up RPC server with fd " << socketFd
                    << " error: " << statusToString(status).c_str();
         return nullptr;
     }
@@ -139,6 +132,17 @@ ARpcServer* ARpcServer_newUnixDomainBootstrap(AIBinder* service, int bootstrapFd
         status != OK) {
         LOG(ERROR) << "Failed to set up Unix Domain RPC server with bootstrap fd " << bootstrapFd
                    << " error: " << statusToString(status).c_str();
+        return nullptr;
+    }
+    server->setRootObject(AIBinder_toPlatformBinder(service));
+    return createObjectHandle<ARpcServer>(server);
+}
+
+ARpcServer* ARpcServer_newInet(AIBinder* service, const char* address, unsigned int port) {
+    auto server = RpcServer::make();
+    if (status_t status = server->setupInetServer(address, port, nullptr); status != OK) {
+        LOG(ERROR) << "Failed to set up inet RPC server with address " << address << " and port "
+                   << port << " error: " << statusToString(status).c_str();
         return nullptr;
     }
     server->setRootObject(AIBinder_toPlatformBinder(service));
@@ -222,6 +226,16 @@ AIBinder* ARpcSession_setupUnixDomainBootstrapClient(ARpcSession* handle, int bo
     return AIBinder_fromPlatformBinder(session->getRootObject());
 }
 
+AIBinder* ARpcSession_setupInet(ARpcSession* handle, const char* address, unsigned int port) {
+    auto session = handleToStrongPointer<RpcSession>(handle);
+    if (status_t status = session->setupInetClient(address, port); status != OK) {
+        LOG(ERROR) << "Failed to set up inet RPC client with address " << address << " and port "
+                   << port << " error: " << statusToString(status).c_str();
+        return nullptr;
+    }
+    return AIBinder_fromPlatformBinder(session->getRootObject());
+}
+
 AIBinder* ARpcSession_setupPreconnectedClient(ARpcSession* handle, int (*requestFd)(void* param),
                                               void* param) {
     auto session = handleToStrongPointer<RpcSession>(handle);
@@ -244,8 +258,8 @@ void ARpcSession_setMaxIncomingThreads(ARpcSession* handle, size_t threads) {
     session->setMaxIncomingThreads(threads);
 }
 
-void ARpcSession_setMaxOutgoingThreads(ARpcSession* handle, size_t threads) {
+void ARpcSession_setMaxOutgoingConnections(ARpcSession* handle, size_t connections) {
     auto session = handleToStrongPointer<RpcSession>(handle);
-    session->setMaxOutgoingThreads(threads);
+    session->setMaxOutgoingConnections(connections);
 }
 }

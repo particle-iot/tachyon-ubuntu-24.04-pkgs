@@ -39,7 +39,7 @@ std::string GetLargeEhFrameElfFile();
 #include <meminfo/procmeminfo.h>
 #include <procinfo/process_map.h>
 
-void GatherRss(uint64_t* rss_bytes);
+uint64_t GetRSSBytes();
 
 #endif
 
@@ -52,7 +52,7 @@ class MemoryTracker {
  private:
 #if defined(__BIONIC__)
   uint64_t total_rss_bytes_ = 0;
-  uint64_t min_rss_bytes_ = 0;
+  uint64_t min_rss_bytes_ = std::numeric_limits<uint64_t>::max();
   uint64_t max_rss_bytes_ = 0;
   uint64_t rss_bytes_before_;
 #endif
@@ -60,8 +60,4 @@ class MemoryTracker {
   uint64_t min_alloc_bytes_ = std::numeric_limits<uint64_t>::max();
   uint64_t max_alloc_bytes_ = 0;
   uint64_t alloc_bytes_before_;
-  // Benchmarks may run multiple times (the whole benchmark not just what is in the ranged based
-  // for loop) but this instance is not destructed and re-constructed each time. So this holds the
-  // total number of iterations of the ranged for loop across all runs of a single benchmark.
-  size_t total_iterations_ = 0;
 };

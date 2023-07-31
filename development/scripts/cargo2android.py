@@ -118,13 +118,13 @@ DRY_RUN_NOTE = (
     'See --help for other flags, and more usage notes in this script.\n')
 
 # Cargo -v output of a call to rustc.
-RUSTC_PAT = re.compile('^ +Running `rustc (.*)`$')
+RUSTC_PAT = re.compile('^ +Running `(.*\/)?rustc (.*)`$')
 
 # Cargo -vv output of a call to rustc could be split into multiple lines.
 # Assume that the first line will contain some CARGO_* env definition.
 RUSTC_VV_PAT = re.compile('^ +Running `.*CARGO_.*=.*$')
 # The combined -vv output rustc command line pattern.
-RUSTC_VV_CMD_ARGS = re.compile('^ *Running `.*CARGO_.*=.* rustc (.*)`$')
+RUSTC_VV_CMD_ARGS = re.compile('^ *Running `.*CARGO_.*=.* (.*\/)?rustc (.*)`$')
 
 # Cargo -vv output of a "cc" or "ar" command; all in one line.
 CC_AR_VV_PAT = re.compile(r'^\[([^ ]*)[^\]]*\] running:? "(cc|ar)" (.*)$')
@@ -142,7 +142,7 @@ CARGO_TEST_LIST_END_PAT = re.compile('^(\d+) tests?, (\d+) benchmarks$')
 CARGO2ANDROID_RUNNING_PAT = re.compile('^### Running: .*$')
 
 # Rust package name with suffix -d1.d2.d3(+.*)?.
-VERSION_SUFFIX_PAT = re.compile(r'^(.*)-[0-9]+\.[0-9]+\.[0-9]+(?:\+.*)?$')
+VERSION_SUFFIX_PAT = re.compile(r'^(.*)-[0-9]+\.[0-9]+\.[0-9]+(?:-(alpha|beta)\.[0-9]+)?(?:\+.*)?$')
 
 # Crate types corresponding to a C ABI library
 C_LIBRARY_CRATE_TYPES = ['staticlib', 'cdylib']
@@ -734,6 +734,15 @@ class Crate(object):
           self.write('        "%s",' % apex)
       self.write('    ],')
     if crate_type != 'test':
+      if self.runner.variant_args.no_std:
+        self.write('    prefer_rlib: true,')
+        self.write('    no_stdlibs: true,')
+        self.write('    stdlibs: [')
+        if self.runner.variant_args.alloc:
+          self.write('        "liballoc.rust_sysroot",')
+        self.write('        "libcompiler_builtins.rust_sysroot",')
+        self.write('        "libcore.rust_sysroot",')
+        self.write('    ],')
       if self.runner.variant_args.native_bridge_supported:
         self.write('    native_bridge_supported: true,')
       if self.runner.variant_args.product_available:
@@ -927,6 +936,7 @@ class Crate(object):
     so_libs = list()
     rust_libs = ''
     deps_libname = re.compile('^.* = lib(.*)-[0-9a-f]*.(rlib|so|rmeta)$')
+    dependency_suffix = self.runner.variant_args.dependency_suffix or ''
     for lib in self.externs:
       # normal value of lib: "libc = liblibc-*.rlib"
       # strange case in rand crate:  "getrandom_package = libgetrandom-*.rlib"
@@ -940,7 +950,7 @@ class Crate(object):
         continue
       if lib.endswith('.rlib') or lib.endswith('.rmeta'):
         # On MacOS .rmeta is used when Linux uses .rlib or .rmeta.
-        rust_libs += '        "' + altered_name('lib' + lib_name) + '",\n'
+        rust_libs += '        "' + altered_name('lib' + lib_name + dependency_suffix) + '",\n'
       elif lib.endswith('.so'):
         so_libs.append(lib_name)
       elif lib != 'proc_macro':  # --extern proc_macro is special and ignored
@@ -1153,18 +1163,6 @@ class Runner(object):
     self.errors = ''
     self.test_errors = ''
     self.setup_cargo_path()
-    # Default action is cargo clean, followed by build or user given actions.
-    if args.cargo:
-      self.cargo = ['clean'] + args.cargo
-    else:
-      default_target = '--target x86_64-unknown-linux-gnu'
-      # Use the same target for both host and default device builds.
-      # Same target is used as default in host x86_64 Android compilation.
-      # Note: b/169872957, prebuilt cargo failed to build vsock
-      # on x86_64-unknown-linux-musl systems.
-      self.cargo = ['clean', 'build ' + default_target]
-      if args.tests:
-        self.cargo.append('build --tests ' + default_target)
     self.empty_tests = set()
     self.empty_unittests = False
 
@@ -1201,7 +1199,7 @@ class Runner(object):
     if os.path.isfile(path2global):
       # try to find: RustDefaultVersion = "1.44.0"
       version_pat = re.compile(
-          r'\s*RustDefaultVersion\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)".*$')
+          r'\s*RustDefaultVersion\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+).*"')
       with open(path2global, 'r') as inf:
         for line in inf:
           result = version_pat.match(line)
@@ -1341,7 +1339,20 @@ class Runner(object):
       # Resolve - and _ for Namespace usage
       variant_data = {k.replace('-', '_') : v for k, v in self.args.variants[variant_num].items()}
       # Merge and overwrite variant args
-      self.variant_args = argparse.Namespace(**vars(self.args) | variant_data)
+      self.variant_args = argparse.Namespace(**{**vars(self.args), **variant_data})
+
+    # Default action is cargo clean, followed by build or user given actions.
+    if self.variant_args.cargo:
+      self.cargo = ['clean'] + self.variant_args.cargo
+    else:
+      default_target = '--target x86_64-unknown-linux-gnu'
+      # Use the same target for both host and default device builds.
+      # Same target is used as default in host x86_64 Android compilation.
+      # Note: b/169872957, prebuilt cargo failed to build vsock
+      # on x86_64-unknown-linux-musl systems.
+      self.cargo = ['clean', 'build ' + default_target]
+      if self.variant_args.tests:
+        self.cargo.append('build --tests ' + default_target)
 
   def run_cargo(self):
     """Calls cargo -v and save its output to ./cargo{_variant_num}.out."""
@@ -1556,7 +1567,7 @@ class Runner(object):
     if not line.endswith('`\n') or (new_rustc.count('`') % 2) != 0:
       return new_rustc
     if RUSTC_VV_CMD_ARGS.match(new_rustc):
-      args = RUSTC_VV_CMD_ARGS.match(new_rustc).group(1)
+      args = RUSTC_VV_CMD_ARGS.match(new_rustc).group(2)
       self.add_crate(Crate(self, outf_name).parse(n, args))
     else:
       self.assert_empty_vv_line(new_rustc)
@@ -1591,7 +1602,7 @@ class Runner(object):
     # for unit tests.  To figure out to which crate this corresponds, we check
     # if the current source file is the main source of a non-test crate, e.g.,
     # a library or a binary.
-    return (src in self.args.test_blocklist or src in self.empty_tests
+    return (src in self.variant_args.test_blocklist or src in self.empty_tests
             or (self.empty_unittests
                 and src in [c.main_src for c in self.crates if c.crate_types != ['test']]))
 
@@ -1621,7 +1632,7 @@ class Runner(object):
         continue
       new_rustc = ''
       if RUSTC_PAT.match(line):
-        args_line = RUSTC_PAT.match(line).group(1)
+        args_line = RUSTC_PAT.match(line).group(2)
         self.add_crate(Crate(self, outf_name).parse(n, args_line))
         self.assert_empty_vv_line(rustc_line)
       elif rustc_line or RUSTC_VV_PAT.match(line):
@@ -1778,7 +1789,7 @@ def get_parser():
   parser.add_argument(
       '--product-available',
       action='store_true',
-      default=False,
+      default=True,
       help='Mark the main library as product_available.')
   parser.add_argument(
       '--recovery-available',
@@ -1788,7 +1799,7 @@ def get_parser():
   parser.add_argument(
       '--vendor-available',
       action='store_true',
-      default=False,
+      default=True,
       help='Mark the main library as vendor_available.')
   parser.add_argument(
       '--vendor-ramdisk-available',
@@ -1852,6 +1863,20 @@ def get_parser():
       type=str,
       help=('Add the contents of the given file to the main module. '+
             'The filename should start with cargo2android to work with the updater.'))
+  parser.add_argument(
+      '--no-std',
+      action='store_true',
+      default=False,
+      help='Don\'t link against std.')
+  parser.add_argument(
+      '--alloc',
+      action='store_true',
+      default=False,
+      help='Link against alloc. Only valid if --no-std is also passed.')
+  parser.add_argument(
+      '--dependency-suffix',
+      type=str,
+      help='Suffix to add to name of dependencies')
   parser.add_argument(
       '--verbose',
       action='store_true',

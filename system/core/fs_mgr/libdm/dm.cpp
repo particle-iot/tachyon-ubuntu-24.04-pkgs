@@ -106,6 +106,10 @@ bool DeviceMapper::DeleteDevice(const std::string& name,
     if (!GetDeviceUniquePath(name, &unique_path)) {
         LOG(ERROR) << "Failed to get unique path for device " << name;
     }
+    // Expect to have uevent generated if the unique path actually exists. This may not exist
+    // if the device was created but has never been activated before it gets deleted.
+    bool need_uevent = !unique_path.empty() && access(unique_path.c_str(), F_OK) == 0;
+
     struct dm_ioctl io;
     InitIo(&io, name);
 
@@ -116,7 +120,7 @@ bool DeviceMapper::DeleteDevice(const std::string& name,
 
     // Check to make sure appropriate uevent is generated so ueventd will
     // do the right thing and remove the corresponding device node and symlinks.
-    if ((io.flags & DM_UEVENT_GENERATED_FLAG) == 0) {
+    if (need_uevent && (io.flags & DM_UEVENT_GENERATED_FLAG) == 0) {
         LOG(ERROR) << "Didn't generate uevent for [" << name << "] removal";
         return false;
     }
@@ -240,6 +244,25 @@ bool DeviceMapper::GetDeviceUniquePath(const std::string& name, std::string* pat
         return false;
     }
     *path = "/dev/block/mapper/by-uuid/"s + io.uuid;
+    return true;
+}
+
+bool DeviceMapper::GetDeviceNameAndUuid(dev_t dev, std::string* name, std::string* uuid) {
+    struct dm_ioctl io;
+    InitIo(&io, {});
+    io.dev = dev;
+
+    if (ioctl(fd_, DM_DEV_STATUS, &io) < 0) {
+        PLOG(ERROR) << "Failed to find device dev: " << major(dev) << ":" << minor(dev);
+        return false;
+    }
+
+    if (name) {
+        *name = io.name;
+    }
+    if (uuid) {
+        *uuid = io.uuid;
+    }
     return true;
 }
 

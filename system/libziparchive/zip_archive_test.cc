@@ -134,14 +134,16 @@ TEST_F(CdEntryMapTest, Iteration) {
 TEST(ziparchive, Open) {
   ZipArchiveHandle handle;
   ASSERT_EQ(0, OpenArchiveWrapper(kValidZip, &handle));
+  // TODO(b/287285733): restore mmap() when the cold cache regression is fixed.
+#if 0
   const auto& mappedFile = handle->mapped_zip;
   if constexpr (sizeof(void*) < 8) {
     ASSERT_EQ(nullptr, mappedFile.GetBasePtr());
   } else {
     ASSERT_NE(nullptr, mappedFile.GetBasePtr());
   }
+#endif  // 0
   CloseArchive(handle);
-
   ASSERT_EQ(kInvalidEntryName, OpenArchiveWrapper("bad_filename.zip", &handle));
   CloseArchive(handle);
 }

@@ -22,6 +22,16 @@
 
 __BEGIN_DECLS
 
+enum AServiceManager_AddServiceFlag : uint32_t {
+    /**
+     * This allows processes with AID_ISOLATED to get the binder of the service added.
+     *
+     * Services with methods that perform file IO, web socket creation or ways to egress data must
+     * not be added with this flag for privacy concerns.
+     */
+    ADD_SERVICE_ALLOW_ISOLATED = 1,
+};
+
 /**
  * This registers the service with the default service manager under this instance name. This does
  * not take ownership of binder.
@@ -36,6 +46,23 @@ __BEGIN_DECLS
  */
 __attribute__((warn_unused_result)) binder_exception_t AServiceManager_addService(
         AIBinder* binder, const char* instance) __INTRODUCED_IN(29);
+
+/**
+ * This registers the service with the default service manager under this instance name. This does
+ * not take ownership of binder.
+ *
+ * WARNING: when using this API across an APEX boundary, do not use with unstable
+ * AIDL services. TODO(b/139325195)
+ *
+ * \param binder object to register globally with the service manager.
+ * \param instance identifier of the service. This will be used to lookup the service.
+ * \param flags an AServiceManager_AddServiceFlag enum to denote how the service should be added.
+ *
+ * \return EX_NONE on success.
+ */
+__attribute__((warn_unused_result)) binder_exception_t AServiceManager_addServiceWithFlags(
+        AIBinder* binder, const char* instance, const AServiceManager_AddServiceFlag flags)
+        __INTRODUCED_IN(34);
 
 /**
  * Gets a binder object with this specific instance name. Will return nullptr immediately if the

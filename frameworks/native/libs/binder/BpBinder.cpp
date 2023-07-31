@@ -47,7 +47,7 @@ std::atomic_bool BpBinder::sCountByUidEnabled(false);
 binder_proxy_limit_callback BpBinder::sLimitCallback;
 bool BpBinder::sBinderProxyThrottleCreate = false;
 
-static StaticString16 kDescriptorUninit(u"<uninit descriptor>");
+static StaticString16 kDescriptorUninit(u"");
 
 // Arbitrarily high value that probably distinguishes a bad behaving app
 uint32_t BpBinder::sBinderProxyCountHighWatermark = 2500;
@@ -388,7 +388,8 @@ status_t BpBinder::linkToDeath(
 {
     if (isRpcBinder()) {
         if (rpcSession()->getMaxIncomingThreads() < 1) {
-            ALOGE("Cannot register a DeathRecipient without any incoming connections.");
+            ALOGE("Cannot register a DeathRecipient without any incoming threads. Need to set max "
+                  "incoming threads to a value greater than 0 before calling linkToDeath.");
             return INVALID_OPERATION;
         }
     } else if constexpr (!kEnableKernelIpc) {

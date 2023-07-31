@@ -64,6 +64,22 @@ struct BinderRpcTestProcessSession {
     // whether session should be invalidated by end of run
     bool expectAlreadyShutdown = false;
 
+    // TODO(b/271830568): fix this in binderRpcTest, we always use the first session to cause the
+    // remote process to shutdown. Normally, when we shutdown, the default in the destructor is to
+    // check that there are no leaks and shutdown. However, when there are incoming threadpools,
+    // there will be a few extra binder threads there, so we can't shutdown the server. We should
+    // consider an alternative way of doing the test so that we don't need this, some ideas, such as
+    // program in understanding of incoming threadpool into the destructor so that (e.g.
+    // intelligently wait for sessions to shutdown now that they will do this)
+    void forceShutdown() {
+        if (auto status = rootIface->scheduleShutdown(); !status.isOk()) {
+            EXPECT_EQ(DEAD_OBJECT, status.transactionError()) << status;
+        }
+        EXPECT_TRUE(proc->sessions.at(0).session->shutdownAndWait(true));
+        expectAlreadyShutdown = true;
+    }
+
+    BinderRpcTestProcessSession(std::unique_ptr<ProcessSession> proc) : proc(std::move(proc)){};
     BinderRpcTestProcessSession(BinderRpcTestProcessSession&&) = default;
     ~BinderRpcTestProcessSession() {
         if (!expectAlreadyShutdown) {
@@ -123,9 +139,7 @@ public:
     }
 
     BinderRpcTestProcessSession createRpcTestSocketServerProcess(const BinderRpcOptions& options) {
-        BinderRpcTestProcessSession ret{
-                .proc = createRpcTestSocketServerProcessEtc(options),
-        };
+        BinderRpcTestProcessSession ret(createRpcTestSocketServerProcessEtc(options));
 
         ret.rootBinder = ret.proc->sessions.empty() ? nullptr : ret.proc->sessions.at(0).root;
         ret.rootIface = interface_cast<IBinderRpcTest>(ret.rootBinder);
@@ -133,9 +147,26 @@ public:
         return ret;
     }
 
-    static std::string PrintParamInfo(const testing::TestParamInfo<ParamType>& info);
+    static std::string PrintParamInfo(const testing::TestParamInfo<ParamType>& info) {
+        auto [type, security, clientVersion, serverVersion, singleThreaded, noKernel] = info.param;
+        auto ret = PrintToString(type) + "_" + newFactory(security)->toCString() + "_clientV" +
+                std::to_string(clientVersion) + "_serverV" + std::to_string(serverVersion);
+        if (singleThreaded) {
+            ret += "_single_threaded";
+        } else {
+            ret += "_multi_threaded";
+        }
+        if (noKernel) {
+            ret += "_no_kernel";
+        } else {
+            ret += "_with_kernel";
+        }
+        return ret;
+    }
 
 protected:
+    static std::unique_ptr<RpcTransportCtxFactory> newFactory(RpcSecurity rpcSecurity);
+
     std::unique_ptr<ProcessSession> createRpcTestSocketServerProcessEtc(
             const BinderRpcOptions& options);
 };

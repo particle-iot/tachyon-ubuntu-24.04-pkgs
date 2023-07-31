@@ -498,7 +498,7 @@ bool OpenSplitPolicy(PolicyFile* policy_file) {
 bool OpenMonolithicPolicy(PolicyFile* policy_file) {
     static constexpr char kSepolicyFile[] = "/sepolicy";
 
-    LOG(VERBOSE) << "Opening SELinux policy from monolithic file";
+    LOG(INFO) << "Opening SELinux policy from monolithic file " << kSepolicyFile;
     policy_file->fd.reset(open(kSepolicyFile, O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     if (policy_file->fd < 0) {
         PLOG(ERROR) << "Failed to open monolithic SELinux policy";
@@ -629,7 +629,7 @@ Result<void> LoadSepolicyApexCerts() {
 }
 
 Result<void> SepolicyFsVerityCheck() {
-    return Error() << "TODO implementent support for fsverity SEPolicy.";
+    return Error() << "TODO implement support for fsverity SEPolicy.";
 }
 
 Result<void> SepolicyCheckSignature(const std::string& dir) {
@@ -761,15 +761,7 @@ void SelinuxSetEnforcement() {
 
 constexpr size_t kKlogMessageSize = 1024;
 
-void SelinuxAvcLog(char* buf, size_t buf_len) {
-    CHECK_GT(buf_len, 0u);
-
-    size_t str_len = strnlen(buf, buf_len);
-    // trim newline at end of string
-    if (buf[str_len - 1] == '\n') {
-        buf[str_len - 1] = '\0';
-    }
-
+void SelinuxAvcLog(char* buf) {
     struct NetlinkMessage {
         nlmsghdr hdr;
         char buf[kKlogMessageSize];
@@ -835,8 +827,17 @@ int SelinuxKlogCallback(int type, const char* fmt, ...) {
     if (length_written <= 0) {
         return 0;
     }
+
+    // libselinux log messages usually contain a new line character, while
+    // Android LOG() does not expect it. Remove it to avoid empty lines in
+    // the log buffers.
+    size_t str_len = strlen(buf);
+    if (buf[str_len - 1] == '\n') {
+        buf[str_len - 1] = '\0';
+    }
+
     if (type == SELINUX_AVC) {
-        SelinuxAvcLog(buf, sizeof(buf));
+        SelinuxAvcLog(buf);
     } else {
         android::base::KernelLogger(android::base::MAIN, severity, "selinux", nullptr, 0, buf);
     }
@@ -850,6 +851,10 @@ void SelinuxSetupKernelLogging() {
 }
 
 int SelinuxGetVendorAndroidVersion() {
+    if (IsMicrodroid()) {
+        // As of now Microdroid doesn't have any vendor code.
+        return __ANDROID_API_FUTURE__;
+    }
     static int vendor_android_version = [] {
         if (!IsSplitPolicyDevice()) {
             // If this device does not split sepolicy files, it's not a Treble device and therefore,
@@ -897,29 +902,31 @@ void MountMissingSystemPartitions() {
             continue;
         }
 
-        auto system_entry = GetEntryForMountPoint(&fstab, "/system");
-        if (!system_entry) {
-            LOG(ERROR) << "Could not find mount entry for /system";
-            break;
-        }
-        if (!system_entry->fs_mgr_flags.logical) {
-            LOG(INFO) << "Skipping mount of " << name << ", system is not dynamic.";
-            break;
-        }
+        auto system_entries = GetEntriesForMountPoint(&fstab, "/system");
+        for (auto& system_entry : system_entries) {
+            if (!system_entry) {
+                LOG(ERROR) << "Could not find mount entry for /system";
+                break;
+            }
+            if (!system_entry->fs_mgr_flags.logical) {
+                LOG(INFO) << "Skipping mount of " << name << ", system is not dynamic.";
+                break;
+            }
 
-        auto entry = *system_entry;
-        auto partition_name = name + fs_mgr_get_slot_suffix();
-        auto replace_name = "system"s + fs_mgr_get_slot_suffix();
+            auto entry = *system_entry;
+            auto partition_name = name + fs_mgr_get_slot_suffix();
+            auto replace_name = "system"s + fs_mgr_get_slot_suffix();
 
-        entry.mount_point = "/"s + name;
-        entry.blk_device =
+            entry.mount_point = "/"s + name;
+            entry.blk_device =
                 android::base::StringReplace(entry.blk_device, replace_name, partition_name, false);
-        if (!fs_mgr_update_logical_partition(&entry)) {
-            LOG(ERROR) << "Could not update logical partition";
-            continue;
-        }
+            if (!fs_mgr_update_logical_partition(&entry)) {
+                LOG(ERROR) << "Could not update logical partition";
+                continue;
+            }
 
-        extra_fstab.emplace_back(std::move(entry));
+            extra_fstab.emplace_back(std::move(entry));
+        }
     }
 
     SkipMountingPartitions(&extra_fstab, true /* verbose */);
@@ -951,6 +958,26 @@ static void LoadSelinuxPolicy(std::string& policy) {
     }
 }
 
+// Encapsulates steps to load SELinux policy in Microdroid.
+// So far the process is very straightforward - just load the precompiled policy from /system.
+void LoadSelinuxPolicyMicrodroid() {
+    constexpr const char kMicrodroidPrecompiledSepolicy[] =
+            "/system/etc/selinux/microdroid_precompiled_sepolicy";
+
+    LOG(INFO) << "Opening SELinux policy from " << kMicrodroidPrecompiledSepolicy;
+    unique_fd policy_fd(open(kMicrodroidPrecompiledSepolicy, O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+    if (policy_fd < 0) {
+        PLOG(FATAL) << "Failed to open " << kMicrodroidPrecompiledSepolicy;
+    }
+
+    std::string policy;
+    if (!android::base::ReadFdToString(policy_fd, &policy)) {
+        PLOG(FATAL) << "Failed to read policy file: " << kMicrodroidPrecompiledSepolicy;
+    }
+
+    LoadSelinuxPolicy(policy);
+}
+
 // The SELinux setup process is carefully orchestrated around snapuserd. Policy
 // must be loaded off dynamic partitions, and during an OTA, those partitions
 // cannot be read without snapuserd. But, with kernel-privileged snapuserd
@@ -966,19 +993,8 @@ static void LoadSelinuxPolicy(std::string& policy) {
 //  (5) Re-launch snapuserd and attach it to the dm-user devices from step (2).
 //
 // After this sequence, it is safe to enable enforcing mode and continue booting.
-int SetupSelinux(char** argv) {
-    SetStdioToDevNull(argv);
-    InitKernelLogging(argv);
-
-    if (REBOOT_BOOTLOADER_ON_PANIC) {
-        InstallRebootSignalHandlers();
-    }
-
-    boot_clock::time_point start_time = boot_clock::now();
-
+void LoadSelinuxPolicyAndroid() {
     MountMissingSystemPartitions();
-
-    SelinuxSetupKernelLogging();
 
     LOG(INFO) << "Opening SELinux policy";
 
@@ -991,9 +1007,8 @@ int SetupSelinux(char** argv) {
 
     auto snapuserd_helper = SnapuserdSelinuxHelper::CreateIfNeeded();
     if (snapuserd_helper) {
-        // Kill the old snapused to avoid audit messages. After this we cannot
-        // read from /system (or other dynamic partitions) until we call
-        // FinishTransition().
+        // Kill the old snapused to avoid audit messages. After this we cannot read from /system
+        // (or other dynamic partitions) until we call FinishTransition().
         snapuserd_helper->StartTransition();
     }
 
@@ -1010,6 +1025,26 @@ int SetupSelinux(char** argv) {
     // any process after selinux is set into enforcing mode.
     if (selinux_android_restorecon("/dev/selinux/", SELINUX_ANDROID_RESTORECON_RECURSE) == -1) {
         PLOG(FATAL) << "restorecon failed of /dev/selinux failed";
+    }
+}
+
+int SetupSelinux(char** argv) {
+    SetStdioToDevNull(argv);
+    InitKernelLogging(argv);
+
+    if (REBOOT_BOOTLOADER_ON_PANIC) {
+        InstallRebootSignalHandlers();
+    }
+
+    boot_clock::time_point start_time = boot_clock::now();
+
+    SelinuxSetupKernelLogging();
+
+    // TODO(b/287206497): refactor into different headers to only include what we need.
+    if (IsMicrodroid()) {
+        LoadSelinuxPolicyMicrodroid();
+    } else {
+        LoadSelinuxPolicyAndroid();
     }
 
     SelinuxSetEnforcement();

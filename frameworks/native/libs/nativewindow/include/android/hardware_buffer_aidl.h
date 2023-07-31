@@ -34,6 +34,10 @@
 #include <android/hardware_buffer.h>
 #include <sys/cdefs.h>
 
+#ifdef __cplusplus
+#include <string>
+#endif
+
 __BEGIN_DECLS
 
 /**
@@ -119,6 +123,13 @@ public:
     inline AHardwareBuffer* _Nullable get() const { return mBuffer; }
     inline explicit operator bool () const { return mBuffer != nullptr; }
 
+    inline bool operator!=(const HardwareBuffer& rhs) const { return get() != rhs.get(); }
+    inline bool operator<(const HardwareBuffer& rhs) const { return get() < rhs.get(); }
+    inline bool operator<=(const HardwareBuffer& rhs) const { return get() <= rhs.get(); }
+    inline bool operator==(const HardwareBuffer& rhs) const { return get() == rhs.get(); }
+    inline bool operator>(const HardwareBuffer& rhs) const { return get() > rhs.get(); }
+    inline bool operator>=(const HardwareBuffer& rhs) const { return get() >= rhs.get(); }
+
     HardwareBuffer& operator=(HardwareBuffer&& other) noexcept {
         reset(other.release());
         return *this;
@@ -133,6 +144,15 @@ public:
         AHardwareBuffer* _Nullable ret = mBuffer;
         mBuffer = nullptr;
         return ret;
+    }
+
+    inline std::string toString() const {
+        if (!mBuffer) {
+            return "<HardwareBuffer: Invalid>";
+        }
+        uint64_t id = 0;
+        AHardwareBuffer_getId(mBuffer, &id);
+        return "<HardwareBuffer " + std::to_string(id) + ">";
     }
 
 private:

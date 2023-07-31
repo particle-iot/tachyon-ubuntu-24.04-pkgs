@@ -57,6 +57,11 @@
 #include <private/android_logger.h>
 #include <processgroup/sched_policy.h>
 #include <system/thread_defs.h>
+#include "logcat.pb.h"
+#include "process_names.h"
+
+using com::android::logcat::proto::LogcatEntryProto;
+using com::android::logcat::proto::LogcatPriorityProto;
 
 #define DEFAULT_MAX_ROTATED_LOGS 4
 
@@ -68,6 +73,15 @@ using android::base::StringPrintf;
 using android::base::WaitForProperty;
 using android::base::WriteFully;
 
+namespace {
+enum OutputType {
+    TEXT,    // Human-readable formatted
+    BINARY,  // Raw struct log_msg as obtained from logd
+    PROTO    // Protobuffer format. See logcat.proto for details. Each message is prefixed with
+             // 8 bytes (little endian) size of the message.
+};
+}  // namespace
+
 class Logcat {
   public:
     int Run(int argc, char** argv);
@@ -75,6 +89,8 @@ class Logcat {
   private:
     void RotateLogs();
     void ProcessBuffer(struct log_msg* buf);
+    LogcatPriorityProto GetProtoPriority(const AndroidLogEntry& entry);
+    uint64_t PrintToProto(const AndroidLogEntry& entry);
     void PrintDividers(log_id_t log_id, bool print_dividers);
     void SetupOutputAndSchedulingPolicy(bool blocking);
     int SetLogFormat(const char* format_string);
@@ -97,8 +113,9 @@ class Logcat {
     size_t max_rotated_logs_ = DEFAULT_MAX_ROTATED_LOGS;  // 0 means "unbounded"
     uint64_t out_byte_count_ = 0;
 
+    enum OutputType output_type_ = TEXT;
+
     // For binary log buffers
-    int print_binary_ = 0;
     std::unique_ptr<EventTagMap, decltype(&android_closeEventTagMap)> event_tag_map_{
             nullptr, &android_closeEventTagMap};
     bool has_opened_event_tag_map_ = false;
@@ -115,6 +132,8 @@ class Logcat {
     bool printed_start_[LOG_ID_MAX] = {};
 
     bool debug_ = false;
+
+    ProcessNames process_names_;
 };
 
 static void pinLogFile(int fd, size_t sizeKB) {
@@ -216,14 +235,80 @@ void Logcat::ProcessBuffer(struct log_msg* buf) {
 
         print_count_ += match;
         if (match || print_it_anyway_) {
-            PrintDividers(buf->id(), print_dividers_);
-            out_byte_count_ += android_log_printLogLine(logformat_.get(), output_file_, &entry);
+            switch (output_type_) {
+                case TEXT: {
+                    PrintDividers(buf->id(), print_dividers_);
+                    out_byte_count_ +=
+                            android_log_printLogLine(logformat_.get(), output_file_, &entry);
+                    break;
+                }
+                case PROTO: {
+                    out_byte_count_ += PrintToProto(entry);
+                    break;
+                }
+                case BINARY: {
+                    error(EXIT_FAILURE, errno, "Binary output reached ProcessBuffer");
+                }
+            }
         }
     }
 
     if (log_rotate_size_kb_ > 0 && (out_byte_count_ / 1024) >= log_rotate_size_kb_) {
         RotateLogs();
     }
+}
+
+LogcatPriorityProto Logcat::GetProtoPriority(const AndroidLogEntry& entry) {
+    switch (entry.priority) {
+        case ANDROID_LOG_UNKNOWN:
+            return com::android::logcat::proto::UNKNOWN;
+        case ANDROID_LOG_DEFAULT:
+            return com::android::logcat::proto::DEFAULT;
+        case ANDROID_LOG_VERBOSE:
+            return com::android::logcat::proto::VERBOSE;
+        case ANDROID_LOG_DEBUG:
+            return com::android::logcat::proto::DEBUG;
+        case ANDROID_LOG_INFO:
+            return com::android::logcat::proto::INFO;
+        case ANDROID_LOG_WARN:
+            return com::android::logcat::proto::WARN;
+        case ANDROID_LOG_ERROR:
+            return com::android::logcat::proto::ERROR;
+        case ANDROID_LOG_FATAL:
+            return com::android::logcat::proto::FATAL;
+        case ANDROID_LOG_SILENT:
+            return com::android::logcat::proto::SILENT;
+    }
+    return com::android::logcat::proto::UNKNOWN;
+}
+uint64_t Logcat::PrintToProto(const AndroidLogEntry& entry) {
+    // Convert AndroidLogEntry to LogcatEntryProto
+    LogcatEntryProto proto;
+    proto.set_time_sec(entry.tv_sec);
+    proto.set_time_nsec(entry.tv_nsec);
+    proto.set_priority(GetProtoPriority(entry));
+    proto.set_uid(entry.uid);
+    proto.set_pid(entry.pid);
+    proto.set_tid(entry.tid);
+    proto.set_tag(entry.tag, entry.tagLen);
+    proto.set_message(entry.message, entry.messageLen);
+    const std::string name = process_names_.Get(entry.pid);
+    if (!name.empty()) {
+        proto.set_process_name(name);
+    }
+
+    // Serialize
+    std::string data;
+    proto.SerializeToString(&data);
+
+    uint64_t size = data.length();
+    WriteFully(&size, sizeof(size));
+
+    // Write proto
+    WriteFully(data.data(), data.length());
+
+    // Return how many bytes we wrote so log file rotation can happen
+    return sizeof(size) + sizeof(data.length());
 }
 
 void Logcat::PrintDividers(log_id_t log_id, bool print_dividers) {
@@ -272,137 +357,144 @@ void Logcat::SetupOutputAndSchedulingPolicy(bool blocking) {
 
 // clang-format off
 static void show_help() {
-    const char* cmd = getprogname();
+    printf(R"logcat(
+  Usage: logcat [OPTION]... [FILTERSPEC]...
 
-    fprintf(stderr, "Usage: %s [options] [filterspecs]\n", cmd);
+  General options:
 
-    fprintf(stderr, R"init(
-General options:
-  -b, --buffer=<buffer>       Request alternate ring buffer(s):
-                                main system radio events crash default all
-                              Additionally, 'kernel' for userdebug and eng builds, and
-                              'security' for Device Owner installations.
-                              Multiple -b parameters or comma separated list of buffers are
-                              allowed. Buffers are interleaved.
-                              Default -b main,system,crash,kernel.
-  -L, --last                  Dump logs from prior to last reboot from pstore.
-  -c, --clear                 Clear (flush) the entire log and exit.
-                              if -f is specified, clear the specified file and its related rotated
-                              log files instead.
-                              if -L is specified, clear pstore log instead.
-  -d                          Dump the log and then exit (don't block).
-  --pid=<pid>                 Only print logs from the given pid.
-  --wrap                      Sleep for 2 hours or when buffer about to wrap whichever
-                              comes first. Improves efficiency of polling by providing
-                              an about-to-wrap wakeup.
+  -b BUFFER, --buffer=BUFFER
+      Request alternate ring buffer(s). Options are:
+          main system radio events crash default all
+      Additionally, 'kernel' for userdebug and eng builds, and 'security' for
+      Device Owner installations.
+      Multiple -b parameters or comma separated list of buffers are
+      allowed. Buffers are interleaved.
+      Default is "main,system,crash,kernel".
+  -c, --clear
+      Clear (flush) the entire log and exit. With -f, clear the specified file
+      and its related rotated log files instead. With -L, clear pstore instead.
+  -d            Dump the log and then exit (don't block).
+  -L, --last    Dump logs from prior to last reboot from pstore.
+  --pid=PID     Only print logs from the given pid.
+  --wrap
+      Sleep for 2 hours or until buffer about to wrap (whichever comes first).
+      Improves efficiency of polling by providing an about-to-wrap wakeup.
 
-Formatting:
-  -v, --format=<format>       Sets log print format verb and adverbs, where <format> is one of:
-                                brief help long process raw tag thread threadtime time
-                              Modifying adverbs can be added:
-                                color descriptive epoch monotonic printable uid usec UTC year zone
-                              Multiple -v parameters or comma separated list of format and format
-                              modifiers are allowed.
+  Formatting:
+
+  -v, --format=FORMAT         Sets log print format. See FORMAT below.
   -D, --dividers              Print dividers between each log buffer.
   -B, --binary                Output the log in binary.
+      --proto                 Output the log in protobuffer.
 
-Outfile files:
-  -f, --file=<file>           Log to file instead of stdout.
-  -r, --rotate-kbytes=<n>     Rotate log every <n> kbytes. Requires -f option.
-  -n, --rotate-count=<count>  Sets max number of rotated logs to <count>, default 4.
-  --id=<id>                   If the signature <id> for logging to file changes, then clear the
-                              associated files and continue.
+  Output files:
 
-Logd control:
- These options send a control message to the logd daemon on device, print its return message if
- applicable, then exit. They are incompatible with -L, as these attributes do not apply to pstore.
-  -g, --buffer-size           Get the size of the ring buffers within logd.
-  -G, --buffer-size=<size>    Set size of a ring buffer in logd. May suffix with K or M.
-                              This can individually control each buffer's size with -b.
-  -S, --statistics            Output statistics.
-                              --pid can be used to provide pid specific stats.
-  -p, --prune                 Print prune rules. Each rule is specified as UID, UID/PID or /PID. A
-                              '~' prefix indicates that elements matching the rule should be pruned
-                              with higher priority otherwise they're pruned with lower priority. All
-                              other pruning activity is oldest first. Special case ~! represents an
-                              automatic pruning for the noisiest UID as determined by the current
-                              statistics.  Special case ~1000/! represents pruning of the worst PID
-                              within AID_SYSTEM when AID_SYSTEM is the noisiest UID.
-  -P, --prune='<list> ...'    Set prune rules, using same format as listed above. Must be quoted.
+  -f, --file=FILE             Log to FILE instead of stdout.
+  -r, --rotate-kbytes=N       Rotate log every N KiB. Requires -f.
+  -n, --rotate-count=N        Sets max number of rotated logs, default 4.
+  --id=<id>
+      Clears the associated files if the signature <id> for logging to file
+      changes.
 
-Filtering:
-  -s                          Set default filter to silent. Equivalent to filterspec '*:S'
-  -e, --regex=<expr>          Only print lines where the log message matches <expr> where <expr> is
-                              an ECMAScript regular expression.
-  -m, --max-count=<count>     Quit after printing <count> lines. This is meant to be paired with
-                              --regex, but will work on its own.
-  --print                     This option is only applicable when --regex is set and only useful if
-                              --max-count is also provided.
-                              With --print, logcat will print all messages even if they do not
-                              match the regex. Logcat will quit after printing the max-count number
-                              of lines that match the regex.
-  -t <count>                  Print only the most recent <count> lines (implies -d).
-  -t '<time>'                 Print the lines since specified time (implies -d).
-  -T <count>                  Print only the most recent <count> lines (does not imply -d).
-  -T '<time>'                 Print the lines since specified time (not imply -d).
-                              count is pure numerical, time is 'MM-DD hh:mm:ss.mmm...'
-                              'YYYY-MM-DD hh:mm:ss.mmm...' or 'sssss.mmm...' format.
-  --uid=<uids>                Only display log messages from UIDs present in the comma separate list
-                              <uids>. No name look-up is performed, so UIDs must be provided as
-                              numeric values. This option is only useful for the 'root', 'log', and
-                              'system' users since only those users can view logs from other users.
-)init");
+  Logd control:
 
-    fprintf(stderr, "\nfilterspecs are a series of \n"
-                   "  <tag>[:priority]\n\n"
-                   "where <tag> is a log component tag (or * for all) and priority is:\n"
-                   "  V    Verbose (default for <tag>)\n"
-                   "  D    Debug (default for '*')\n"
-                   "  I    Info\n"
-                   "  W    Warn\n"
-                   "  E    Error\n"
-                   "  F    Fatal\n"
-                   "  S    Silent (suppress all output)\n"
-                   "\n'*' by itself means '*:D' and <tag> by itself means <tag>:V.\n"
-                   "If no '*' filterspec or -s on command line, all filter defaults to '*:V'.\n"
-                   "eg: '*:S <tag>' prints only <tag>, '<tag>:S' suppresses all <tag> log messages.\n"
-                   "\nIf not specified on the command line, filterspec is set from ANDROID_LOG_TAGS.\n"
-                   "\nIf not specified with -v on command line, format is set from ANDROID_PRINTF_LOG\n"
-                   "or defaults to \"threadtime\"\n\n");
-}
+  These options send a control message to the logd daemon on device, print its
+  return message if applicable, then exit. They are incompatible with -L
+  because these attributes do not apply to pstore.
 
-static void show_format_help() {
-    fprintf(stderr,
-        "-v <format>, --format=<format> options:\n"
-        "  Sets log print format verb and adverbs, where <format> is:\n"
-        "    brief long process raw tag thread threadtime time\n"
-        "  and individually flagged modifying adverbs can be added:\n"
-        "    color descriptive epoch monotonic printable uid usec UTC year zone\n"
-        "\nSingle format verbs:\n"
-        "  brief      — Display priority/tag and PID of the process issuing the message.\n"
-        "  long       — Display all metadata fields, separate messages with blank lines.\n"
-        "  process    — Display PID only.\n"
-        "  raw        — Display the raw log message, with no other metadata fields.\n"
-        "  tag        — Display the priority/tag only.\n"
-        "  thread     — Display priority, PID and TID of process issuing the message.\n"
-        "  threadtime — Display the date, invocation time, priority, tag, and the PID\n"
-        "               and TID of the thread issuing the message. (the default format).\n"
-        "  time       — Display the date, invocation time, priority/tag, and PID of the\n"
-        "             process issuing the message.\n"
-        "\nAdverb modifiers can be used in combination:\n"
-        "  color       — Display in highlighted color to match priority. i.e. \x1B[39mVERBOSE\n"
-        "                \x1B[34mDEBUG \x1B[32mINFO \x1B[33mWARNING \x1B[31mERROR FATAL\x1B[0m\n"
-        "  descriptive — events logs only, descriptions from event-log-tags database.\n"
-        "  epoch       — Display time as seconds since Jan 1 1970.\n"
-        "  monotonic   — Display time as cpu seconds since last boot.\n"
-        "  printable   — Ensure that any binary logging content is escaped.\n"
-        "  uid         — If permitted, display the UID or Android ID of logged process.\n"
-        "  usec        — Display time down the microsecond precision.\n"
-        "  UTC         — Display time as UTC.\n"
-        "  year        — Add the year to the displayed time.\n"
-        "  zone        — Add the local timezone to the displayed time.\n"
-        "  \"<zone>\"    — Print using this public named timezone (experimental).\n\n"
-    );
+  -g, --buffer-size
+      Get size of the ring buffers within logd.
+  -G, --buffer-size=SIZE
+      Set size of a ring buffer in logd. May suffix with K or M.
+      This can individually control each buffer's size with -b.
+  -p, --prune
+      Get prune rules. Each rule is specified as UID, UID/PID or /PID. A
+      '~' prefix indicates that elements matching the rule should be pruned
+      with higher priority otherwise they're pruned with lower priority. All
+      other pruning activity is oldest first. Special case ~! represents an
+      automatic pruning for the noisiest UID as determined by the current
+      statistics. Special case ~1000/! represents pruning of the worst PID
+      within AID_SYSTEM when AID_SYSTEM is the noisiest UID.
+  -P, --prune='LIST ...'
+      Set prune rules, using same format as listed above. Must be quoted.
+  -S, --statistics
+      Output statistics. With --pid provides pid-specific stats.
+
+  Filtering:
+
+  -s                   Set default filter to silent (like filterspec '*:S').
+  -e, --regex=EXPR     Only print lines matching ECMAScript regex.
+  -m, --max-count=N    Exit after printing <count> lines.
+  --print              With --regex and --max-count, prints all messages
+                       even if they do not match the regex, but exits after
+                       printing max-count matching lines.
+  -t N                 Print most recent <count> lines (implies -d).
+  -T N                 Print most recent <count> lines (does not imply -d).
+  -t TIME              Print lines since specified time (implies -d).
+  -T TIME              Print lines since specified time (not imply -d).
+                       Time format is 'MM-DD hh:mm:ss.mmm...',
+                       'YYYY-MM-DD hh:mm:ss.mmm...', or 'sssss.mmm...'.
+  --uid=UIDS
+      Only display log messages from UIDs in the comma-separated list UIDS.
+      UIDs must be numeric because no name lookup is performed.
+      Note that only root/log/system users can view logs from other users.
+
+  FILTERSPEC:
+
+  Filter specifications are a series of
+
+    <tag>[:priority]
+
+  where <tag> is a log component tag (or * for all) and priority is:
+
+    V    Verbose (default for <tag>)
+    D    Debug (default for '*')
+    I    Info
+    W    Warn
+    E    Error
+    F    Fatal
+    S    Silent (suppress all output)
+
+  '*' by itself means '*:D' and <tag> by itself means <tag>:V.
+  If no '*' filterspec or -s on command line, all filter defaults to '*:V'.
+  '*:S <tag>' prints only <tag>, '<tag>:S' suppresses all <tag> log messages.
+
+  If not specified on the command line, FILTERSPEC is $ANDROID_LOG_TAGS.
+
+  FORMAT:
+
+  Formats are a comma-separated sequence of verbs and adverbs.
+
+  Single format verbs:
+
+    brief      Show priority, tag, and PID of the process issuing the message.
+    long       Show all metadata fields and separate messages with blank lines.
+    process    Show PID only.
+    raw        Show the raw log message with no other metadata fields.
+    tag        Show the priority and tag only.
+    thread     Show priority, PID, and TID of the thread issuing the message.
+    threadtime Show the date, invocation time, priority, tag, PID, and TID of
+               the thread issuing the message. (This is the default.)
+    time       Show the date, invocation time, priority, tag, and PID of the
+               process issuing the message.
+
+  Adverb modifiers can be used in combination:
+
+    color       Show each priority with a different color.
+    descriptive Show event descriptions from event-log-tags database.
+    epoch       Show time as seconds since 1970-01-01 (Unix epoch).
+    monotonic   Show time as CPU seconds since boot.
+    printable   Ensure that any binary logging content is escaped.
+    uid         Show UID or Android ID of logged process (if permitted).
+    usec        Show time with microsecond precision.
+    UTC         Show time as UTC.
+    year        Add the year to the displayed time.
+    zone        Add the local timezone to the displayed time.
+    \"<ZONE>\"  Print using this named timezone (experimental).
+
+  If not specified with -v on command line, FORMAT is $ANDROID_PRINTF_LOG or
+  defaults to "threadtime".
+)logcat");
 }
 // clang-format on
 
@@ -548,6 +640,7 @@ int Logcat::Run(int argc, char** argv) {
         static const char wrap_str[] = "wrap";
         static const char print_str[] = "print";
         static const char uid_str[] = "uid";
+        static const char proto_str[] = "proto";
         // clang-format off
         static const struct option long_options[] = {
           { "binary",        no_argument,       nullptr, 'B' },
@@ -569,6 +662,7 @@ int Logcat::Run(int argc, char** argv) {
           { pid_str,         required_argument, nullptr, 0 },
           { print_str,       no_argument,       nullptr, 0 },
           { "prune",         optional_argument, nullptr, 'p' },
+          { proto_str,         no_argument,       nullptr, 0 },
           { "regex",         required_argument, nullptr, 'e' },
           { "rotate-count",  required_argument, nullptr, 'n' },
           { "rotate-kbytes", required_argument, nullptr, 'r' },
@@ -595,8 +689,7 @@ int Logcat::Run(int argc, char** argv) {
                     }
 
                     if (!ParseUint(optarg, &pid) || pid < 1) {
-                        error(EXIT_FAILURE, 0, "%s %s out of range.",
-                              long_options[option_index].name, optarg);
+                        error(EXIT_FAILURE, 0, "pid '%s' out of range.", optarg);
                     }
                     break;
                 }
@@ -605,13 +698,11 @@ int Logcat::Run(int argc, char** argv) {
                     // ToDo: implement API that supports setting a wrap timeout
                     size_t timeout = ANDROID_LOG_WRAP_DEFAULT_TIMEOUT;
                     if (optarg && (!ParseUint(optarg, &timeout) || timeout < 1)) {
-                        error(EXIT_FAILURE, 0, "%s %s out of range.",
-                              long_options[option_index].name, optarg);
+                        error(EXIT_FAILURE, 0, "wrap timeout '%s' out of range.", optarg);
                     }
                     if (timeout != ANDROID_LOG_WRAP_DEFAULT_TIMEOUT) {
-                        fprintf(stderr, "WARNING: %s %u seconds, ignoring %zu\n",
-                                long_options[option_index].name, ANDROID_LOG_WRAP_DEFAULT_TIMEOUT,
-                                timeout);
+                        fprintf(stderr, "WARNING: wrap timeout %zus, not default %us\n", timeout,
+                                ANDROID_LOG_WRAP_DEFAULT_TIMEOUT);
                     }
                     break;
                 }
@@ -635,6 +726,10 @@ int Logcat::Run(int argc, char** argv) {
                         }
                         uids.emplace(uid);
                     }
+                    break;
+                }
+                if (long_options[option_index].name == proto_str) {
+                    output_type_ = PROTO;
                     break;
                 }
                 break;
@@ -729,8 +824,7 @@ int Logcat::Run(int argc, char** argv) {
                     } else {
                         log_id_t log_id = android_name_to_log_id(buffer.c_str());
                         if (log_id >= LOG_ID_MAX) {
-                            error(EXIT_FAILURE, 0, "Unknown buffer '%s' listed for -b.",
-                                  buffer.c_str());
+                            error(EXIT_FAILURE, 0, "Unknown -b buffer '%s'.", buffer.c_str());
                         }
                         if (log_id == LOG_ID_SECURITY) {
                             security_buffer_selected = true;
@@ -741,7 +835,7 @@ int Logcat::Run(int argc, char** argv) {
                 break;
 
             case 'B':
-                print_binary_ = 1;
+                output_type_ = BINARY;
                 break;
 
             case 'f':
@@ -754,25 +848,21 @@ int Logcat::Run(int argc, char** argv) {
 
             case 'r':
                 if (!ParseUint(optarg, &log_rotate_size_kb_) || log_rotate_size_kb_ < 1) {
-                    error(EXIT_FAILURE, 0, "Invalid parameter '%s' to -r.", optarg);
+                    error(EXIT_FAILURE, 0, "Invalid -r '%s'.", optarg);
                 }
                 break;
 
             case 'n':
                 if (!ParseUint(optarg, &max_rotated_logs_) || max_rotated_logs_ < 1) {
-                    error(EXIT_FAILURE, 0, "Invalid parameter '%s' to -n.", optarg);
+                    error(EXIT_FAILURE, 0, "Invalid -n '%s'.", optarg);
                 }
                 break;
 
             case 'v':
-                if (!strcmp(optarg, "help") || !strcmp(optarg, "--help")) {
-                    show_format_help();
-                    return EXIT_SUCCESS;
-                }
                 for (const auto& arg : Split(optarg, delimiters)) {
                     int err = SetLogFormat(arg.c_str());
                     if (err < 0) {
-                        error(EXIT_FAILURE, 0, "Invalid parameter '%s' to -v.", arg.c_str());
+                        error(EXIT_FAILURE, 0, "Invalid -v '%s'.", arg.c_str());
                     }
                     if (err) hasSetLogFormat = true;
                 }
@@ -788,11 +878,10 @@ int Logcat::Run(int argc, char** argv) {
 
             case 'h':
                 show_help();
-                show_format_help();
                 return EXIT_SUCCESS;
 
             case '?':
-                error(EXIT_FAILURE, 0, "Unknown option '%s'.", argv[optind - 1]);
+                error(EXIT_FAILURE, 0, "Unknown option '%s'.", argv[optind]);
                 break;
 
             default:
@@ -858,7 +947,8 @@ int Logcat::Run(int argc, char** argv) {
     if (forceFilters.size()) {
         int err = android_log_addFilterString(logformat_.get(), forceFilters.c_str());
         if (err < 0) {
-            error(EXIT_FAILURE, 0, "Invalid filter expression in logcat args.");
+            error(EXIT_FAILURE, 0, "Invalid filter expression '%s' in logcat args.",
+                  forceFilters.c_str());
         }
     } else if (argc == optind) {
         // Add from environment variable
@@ -868,7 +958,8 @@ int Logcat::Run(int argc, char** argv) {
             int err = android_log_addFilterString(logformat_.get(), env_tags_orig);
 
             if (err < 0) {
-                error(EXIT_FAILURE, 0, "Invalid filter expression in ANDROID_LOG_TAGS.");
+                error(EXIT_FAILURE, 0, "Invalid filter expression '%s' in ANDROID_LOG_TAGS.",
+                      env_tags_orig);
             }
         }
     } else {
@@ -1005,7 +1096,7 @@ int Logcat::Run(int argc, char** argv) {
     if (setPruneList) {
         size_t len = strlen(setPruneList);
         if (android_logger_set_prune_list(logger_list.get(), setPruneList, len)) {
-            error(EXIT_FAILURE, 0, "Failed to set the prune list.");
+            error(EXIT_FAILURE, 0, "Failed to set the prune list to '%s'.", setPruneList);
         }
         return EXIT_SUCCESS;
     }
@@ -1094,12 +1185,16 @@ If you have enabled significant logging, look into using the -G option to increa
             continue;
         }
 
-        if (print_binary_) {
-            WriteFully(&log_msg, log_msg.len());
-        } else {
-            ProcessBuffer(&log_msg);
-            if (blocking && output_file_ == stdout) fflush(stdout);
+        switch (output_type_) {
+            case BINARY:
+                WriteFully(&log_msg, log_msg.len());
+                break;
+            case TEXT:
+            case PROTO:
+                ProcessBuffer(&log_msg);
+                break;
         }
+        if (blocking && output_file_ == stdout) fflush(stdout);
     }
     return EXIT_SUCCESS;
 }

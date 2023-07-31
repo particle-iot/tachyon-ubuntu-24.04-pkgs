@@ -185,6 +185,7 @@ void add_mountinfo();
 #define SYSTEM_TRACE_SNAPSHOT "/data/misc/perfetto-traces/bugreport/systrace.pftrace"
 #define CGROUPFS_DIR "/sys/fs/cgroup"
 #define SDK_EXT_INFO "/apex/com.android.sdkext/bin/derive_sdk"
+#define DROPBOX_DIR "/data/system/dropbox"
 
 // TODO(narayan): Since this information has to be kept in sync
 // with tombstoned, we should just put it in a common header.
@@ -524,6 +525,15 @@ static bool skip_not_stat(const char *path) {
     return strcmp(path + len - sizeof(stat) + 1, stat); /* .../stat? */
 }
 
+static bool skip_wtf_strictmode(const char *path) {
+    if (strstr(path, "_wtf")) {
+        return true;
+    } else if (strstr(path, "_strictmode")) {
+        return true;
+    }
+    return false;
+}
+
 static bool skip_none(const char* path __attribute__((unused))) {
     return false;
 }
@@ -804,6 +814,8 @@ void Dumpstate::PrintHeader() const {
     printf("Kernel: ");
     DumpFileToFd(STDOUT_FILENO, "", "/proc/version");
     printf("Command line: %s\n", strtok(cmdline_buf, "\n"));
+    printf("Bootconfig: ");
+    DumpFileToFd(STDOUT_FILENO, "", "/proc/bootconfig");
     printf("Uptime: ");
     RunCommandToFd(STDOUT_FILENO, "", {"uptime", "-p"},
                    CommandOptions::WithTimeout(1).Always().Build());
@@ -1242,8 +1254,10 @@ static Dumpstate::RunStatus RunDumpsysTextByPriority(const std::string& title, i
              dumpsys.writeDumpHeader(STDOUT_FILENO, service, priority);
              dumpsys.writeDumpFooter(STDOUT_FILENO, service, std::chrono::milliseconds(1));
         } else {
-            status_t status = dumpsys.startDumpThread(Dumpsys::TYPE_DUMP, service, args);
-            if (status == OK) {
+             status_t status = dumpsys.startDumpThread(Dumpsys::TYPE_DUMP | Dumpsys::TYPE_PID |
+                                                       Dumpsys::TYPE_CLIENTS | Dumpsys::TYPE_THREAD,
+                                                       service, args);
+             if (status == OK) {
                 dumpsys.writeDumpHeader(STDOUT_FILENO, service, priority);
                 std::chrono::duration<double> elapsed_seconds;
                 if (priority == IServiceManager::DUMP_FLAG_PRIORITY_HIGH &&
@@ -1260,6 +1274,9 @@ static Dumpstate::RunStatus RunDumpsysTextByPriority(const std::string& title, i
                 dumpsys.writeDumpFooter(STDOUT_FILENO, service, elapsed_seconds);
                 bool dump_complete = (status == OK);
                 dumpsys.stopDumpThread(dump_complete);
+            } else {
+                MYLOGE("Failed to start dump thread for service: %s, status: %d",
+                       String8(service).c_str(), status);
             }
         }
 
@@ -1885,9 +1902,17 @@ Dumpstate::RunStatus Dumpstate::DumpstateDefaultAfterCritical() {
     }
     ds.AddDir(PREREBOOT_DATA_DIR, false);
     add_mountinfo();
+    for (const char* path : {"/proc/cpuinfo", "/proc/meminfo"}) {
+        ds.AddZipEntry(ZIP_ROOT_DIR + path, path);
+    }
     DumpIpTablesAsRoot();
     DumpDynamicPartitionInfo();
     ds.AddDir(OTA_METADATA_DIR, true);
+    if (!PropertiesHelper::IsUserBuild()) {
+        // Include dropbox entry files inside ZIP, but exclude
+        // noisy WTF and StrictMode entries
+        dump_files("", DROPBOX_DIR, skip_wtf_strictmode, _add_file_from_fd);
+    }
 
     // Capture any IPSec policies in play. No keys are exposed here.
     RunCommand("IP XFRM POLICY", {"ip", "xfrm", "policy"}, CommandOptions::WithTimeout(10).Build());
@@ -2040,6 +2065,10 @@ static void DumpstateTelephonyOnly(const std::string& calling_package) {
                SEC_TO_MSEC(10));
     RunDumpsys("DUMPSYS", {"telephony.registry"}, CommandOptions::WithTimeout(90).Build(),
                SEC_TO_MSEC(10));
+    RunDumpsys("DUMPSYS", {"isub"}, CommandOptions::WithTimeout(90).Build(),
+               SEC_TO_MSEC(10));
+    RunDumpsys("DUMPSYS", {"telecom"}, CommandOptions::WithTimeout(90).Build(),
+               SEC_TO_MSEC(10));
     if (include_sensitive_info) {
         // Contains raw IP addresses, omit from reports on user builds.
         RunDumpsys("DUMPSYS", {"netd"}, CommandOptions::WithTimeout(90).Build(), SEC_TO_MSEC(10));
@@ -2170,6 +2199,16 @@ Dumpstate::RunStatus Dumpstate::DumpTraces(const char** path) {
             continue;
         }
 
+        // Skip cached processes.
+        if (IsCached(pid)) {
+            // For consistency, the header and footer to this message match those
+            // dumped by debuggerd in the success case.
+            dprintf(fd, "\n---- pid %d at [unknown] ----\n", pid);
+            dprintf(fd, "Dump skipped for cached process.\n");
+            dprintf(fd, "---- end %d ----", pid);
+            continue;
+        }
+
         const std::string link_name = android::base::StringPrintf("/proc/%d/exe", pid);
         std::string exe;
         if (!android::base::Readlink(link_name, &exe)) {
@@ -2200,8 +2239,7 @@ Dumpstate::RunStatus Dumpstate::DumpTraces(const char** path) {
 
         const uint64_t start = Nanotime();
         const int ret = dump_backtrace_to_file_timeout(
-            pid, is_java_process ? kDebuggerdJavaBacktrace : kDebuggerdNativeBacktrace,
-            is_java_process ? 5 : 20, fd);
+            pid, is_java_process ? kDebuggerdJavaBacktrace : kDebuggerdNativeBacktrace, 3, fd);
 
         if (ret == -1) {
             // For consistency, the header and footer to this message match those
@@ -2772,6 +2810,7 @@ static void SetOptionsFromMode(Dumpstate::BugreportMode mode, Dumpstate::DumpOpt
             options->do_screenshot = false;
             break;
         case Dumpstate::BugreportMode::BUGREPORT_WEAR:
+            options->do_vibrate = false;
             options->do_progress_updates = true;
             options->do_screenshot = is_screenshot_requested;
             break;
@@ -3244,6 +3283,15 @@ void Dumpstate::MaybeSnapshotSystemTrace() {
 }
 
 void Dumpstate::MaybeSnapshotWinTrace() {
+    // Include the proto logging from WMShell.
+    RunCommand(
+        // Empty name because it's not intended to be classified as a bugreport section.
+        // Actual logging files can be found as "/data/misc/wmtrace/shell_log.winscope"
+        // in the bugreport.
+        "", {"dumpsys", "activity", "service", "SystemUIService",
+             "WMShell", "protolog", "save-for-bugreport"},
+        CommandOptions::WithTimeout(10).Always().DropRoot().RedirectStderr().Build());
+
     // Currently WindowManagerService and InputMethodManagerSerivice support WinScope protocol.
     for (const auto& service : {"window", "input_method"}) {
         RunCommand(

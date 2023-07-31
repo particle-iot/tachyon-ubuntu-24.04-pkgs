@@ -38,7 +38,6 @@ CPPFLAGS += \
   -Isystem/incremental_delivery/incfs/util/include \
   -Isystem/libbase/include \
   -Isystem/logging/liblog/include \
-  -Isystem/unwinding/libbacktrace/include \
 
 LDFLAGS += \
   -Ldebian/out/system \

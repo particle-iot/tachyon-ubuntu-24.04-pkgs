@@ -2,6 +2,7 @@ revert/Revert-Remove-mips-build.patch
 revert/Revert-Remove-mips-support-fr.patch
 revert/Revert-Remove-a-file-we-haven-t-built-since-2013.patch
 revert/support-mips.patch
+revert/Revert-Order-events-returned-by-fdevent_epoll.patch
 gcc-only/stdatomic.patch
 gcc-only/workaround__builtin_available.patch
 gcc-only/Nullable.patch

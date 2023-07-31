@@ -71,13 +71,18 @@ cc_library_static {
         "SerializedLogBuffer.cpp",
         "SerializedLogChunk.cpp",
         "SimpleLogBuffer.cpp",
-        ":ILogcatManagerService_aidl"
     ],
     static_libs: ["liblog"],
     shared_libs: ["libbinder"],
     logtags: ["event.logtags"],
 
     export_include_dirs: ["."],
+
+    aidl: {
+        libs: [
+            "ILogcatManagerService_aidl",
+        ],
+    },
 }
 
 cc_binary {
@@ -97,7 +102,6 @@ cc_binary {
         "LogReader.cpp",
         "TrustyLog.cpp",
         "PkgIds.cpp",
-        ":ILogcatManagerService_aidl"
     ],
 
     static_libs: [
@@ -115,6 +119,11 @@ cc_binary {
         "libcap",
         "libutils",
     ],
+    aidl: {
+        libs: [
+            "ILogcatManagerService_aidl",
+        ]
+    }
 }
 
 cc_binary {

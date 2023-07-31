@@ -61,7 +61,8 @@ std::string GetLargeEhFrameElfFile() {
 #include <meminfo/procmeminfo.h>
 #include <procinfo/process_map.h>
 
-void GatherRss(uint64_t* rss_bytes) {
+uint64_t GetRSSBytes() {
+  uint64_t total_bytes = 0;
   android::meminfo::ProcMemInfo proc_mem(getpid());
   const std::vector<android::meminfo::Vma>& maps = proc_mem.MapsWithoutUsageStats();
   for (auto& vma : maps) {
@@ -71,46 +72,52 @@ void GatherRss(uint64_t* rss_bytes) {
       if (!proc_mem.FillInVmaStats(update_vma)) {
         err(1, "FillInVmaStats failed\n");
       }
-      *rss_bytes += update_vma.usage.rss;
+      total_bytes += update_vma.usage.rss;
     }
   }
+  return total_bytes;
 }
 #endif
 
 void MemoryTracker::SetBenchmarkCounters(benchmark::State& state) {
-  total_iterations_ += state.iterations();
+  double total_iterations = static_cast<double>(state.iterations());
 #if defined(__BIONIC__)
-  state.counters["MEAN_RSS_BYTES"] = total_rss_bytes_ / static_cast<double>(total_iterations_);
+  state.counters["AVG_RSS_BYTES"] = total_rss_bytes_ / total_iterations;
   state.counters["MAX_RSS_BYTES"] = max_rss_bytes_;
   state.counters["MIN_RSS_BYTES"] = min_rss_bytes_;
 #endif
-  state.counters["MEAN_ALLOCATED_BYTES"] =
-      total_alloc_bytes_ / static_cast<double>(total_iterations_);
+  state.counters["AVG_ALLOCATED_BYTES"] = total_alloc_bytes_ / total_iterations;
   state.counters["MAX_ALLOCATED_BYTES"] = max_alloc_bytes_;
   state.counters["MIN_ALLOCATED_BYTES"] = min_alloc_bytes_;
 }
 
 void MemoryTracker::StartTrackingAllocations() {
 #if defined(__BIONIC__)
-  mallopt(M_PURGE, 0);
-  rss_bytes_before_ = 0;
-  GatherRss(&rss_bytes_before_);
+  mallopt(M_PURGE_ALL, 0);
+  rss_bytes_before_ = GetRSSBytes();
 #endif
   alloc_bytes_before_ = mallinfo().uordblks;
 }
 
 void MemoryTracker::StopTrackingAllocations() {
 #if defined(__BIONIC__)
-  mallopt(M_PURGE, 0);
+  mallopt(M_PURGE_ALL, 0);
 #endif
-  uint64_t bytes_alloced = mallinfo().uordblks - alloc_bytes_before_;
-  total_alloc_bytes_ += bytes_alloced;
-  if (bytes_alloced > max_alloc_bytes_) max_alloc_bytes_ = bytes_alloced;
-  if (bytes_alloced < min_alloc_bytes_) min_alloc_bytes_ = bytes_alloced;
+  uint64_t alloc_bytes = 0;
+  uint64_t alloc_bytes_after = mallinfo().uordblks;
+  if (alloc_bytes_after > alloc_bytes_before_) {
+    alloc_bytes = alloc_bytes_after - alloc_bytes_before_;
+  }
+  total_alloc_bytes_ += alloc_bytes;
+  if (alloc_bytes > max_alloc_bytes_) max_alloc_bytes_ = alloc_bytes;
+  if (alloc_bytes < min_alloc_bytes_) min_alloc_bytes_ = alloc_bytes;
 #if defined(__BIONIC__)
   uint64_t rss_bytes = 0;
-  GatherRss(&rss_bytes);
-  total_rss_bytes_ += rss_bytes - rss_bytes_before_;
+  uint64_t rss_bytes_after = GetRSSBytes();
+  if (rss_bytes_after > rss_bytes_before_) {
+    rss_bytes = rss_bytes_after - rss_bytes_before_;
+  }
+  total_rss_bytes_ += rss_bytes;
   if (rss_bytes > max_rss_bytes_) max_rss_bytes_ = rss_bytes;
   if (rss_bytes < min_rss_bytes_) min_rss_bytes_ = rss_bytes;
 #endif

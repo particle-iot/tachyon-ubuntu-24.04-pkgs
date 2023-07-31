@@ -75,6 +75,9 @@ bool WaitForPropertyCreation(const std::string& key, std::chrono::milliseconds r
 // this class helps optimize those lookups.
 class CachedProperty {
  public:
+  explicit CachedProperty(std::string property_name);
+
+  // Kept for ABI compatibility.
   explicit CachedProperty(const char* property_name);
 
   // Returns the current value of the underlying system property as cheaply as possible.
@@ -85,6 +88,14 @@ class CachedProperty {
   //
   // Note: *changed can be set to true even if the contents of the property remain the same.
   const char* Get(bool* changed = nullptr);
+
+  // Waits for the property to be changed and then reads its value.
+  // Times out returning nullptr, after `relative_timeout`
+  //
+  // Note: this can return the same value multiple times in a row if the property was set to the
+  // same value or if multiple changes happened before the current thread was resumed.
+  const char* WaitForChange(
+      std::chrono::milliseconds relative_timeout = std::chrono::milliseconds::max());
 
  private:
   std::string property_name_;

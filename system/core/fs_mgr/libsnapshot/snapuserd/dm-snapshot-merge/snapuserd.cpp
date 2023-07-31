@@ -347,10 +347,9 @@ void Snapuserd::CheckMergeCompletionStatus() {
  */
 bool Snapuserd::ReadMetadata() {
     reader_ = std::make_unique<CowReader>();
-    CowHeader header;
     CowOptions options;
     bool metadata_found = false;
-    int replace_ops = 0, zero_ops = 0, copy_ops = 0, xor_ops = 0;
+    int replace_ops = 0, zero_ops = 0, copy_ops = 0;
 
     SNAP_LOG(DEBUG) << "ReadMetadata: Parsing cow file";
 
@@ -359,11 +358,7 @@ bool Snapuserd::ReadMetadata() {
         return false;
     }
 
-    if (!reader_->GetHeader(&header)) {
-        SNAP_LOG(ERROR) << "Failed to get header";
-        return false;
-    }
-
+    const auto& header = reader_->GetHeader();
     if (!(header.block_size == BLOCK_SZ)) {
         SNAP_LOG(ERROR) << "Invalid header block size found: " << header.block_size;
         return false;
@@ -395,8 +390,8 @@ bool Snapuserd::ReadMetadata() {
     // this memset will ensure that metadata read is completed.
     memset(de_ptr.get(), 0, (exceptions_per_area_ * sizeof(struct disk_exception)));
 
-    while (!cowop_rm_iter->Done()) {
-        const CowOperation* cow_op = &cowop_rm_iter->Get();
+    while (!cowop_rm_iter->AtEnd()) {
+        const CowOperation* cow_op = cowop_rm_iter->Get();
         struct disk_exception* de =
                 reinterpret_cast<struct disk_exception*>((char*)de_ptr.get() + offset);
 
@@ -442,7 +437,7 @@ bool Snapuserd::ReadMetadata() {
                                                  sizeof(struct disk_exception));
             memset(de_ptr.get(), 0, (exceptions_per_area_ * sizeof(struct disk_exception)));
 
-            if (cowop_rm_iter->Done()) {
+            if (cowop_rm_iter->AtEnd()) {
                 vec_.push_back(std::move(de_ptr));
             }
         }
@@ -462,9 +457,9 @@ bool Snapuserd::ReadMetadata() {
                     << " Number of replace/zero ops completed in this area: " << num_ops
                     << " Pending copy ops for this area: " << pending_ordered_ops;
 
-    while (!cowop_rm_iter->Done()) {
+    while (!cowop_rm_iter->AtEnd()) {
         do {
-            const CowOperation* cow_op = &cowop_rm_iter->Get();
+            const CowOperation* cow_op = cowop_rm_iter->Get();
 
             // We have two cases specific cases:
             //
@@ -513,15 +508,9 @@ bool Snapuserd::ReadMetadata() {
             // the merge of operations are done based on the ops present
             // in the file.
             //===========================================================
-            uint64_t block_source = cow_op->source;
-            uint64_t block_offset = 0;
-            if (cow_op->type == kCowXorOp) {
-                block_source /= BLOCK_SZ;
-                block_offset = cow_op->source % BLOCK_SZ;
-            }
+            uint64_t block_source = GetCowOpSourceInfoData(cow_op);
             if (prev_id.has_value()) {
-                if (dest_blocks.count(cow_op->new_block) || source_blocks.count(block_source) ||
-                    (block_offset > 0 && source_blocks.count(block_source + 1))) {
+                if (dest_blocks.count(cow_op->new_block) || source_blocks.count(block_source)) {
                     break;
                 }
             }
@@ -529,16 +518,13 @@ bool Snapuserd::ReadMetadata() {
             pending_ordered_ops -= 1;
             vec.push_back(cow_op);
             dest_blocks.insert(block_source);
-            if (block_offset > 0) {
-                dest_blocks.insert(block_source + 1);
-            }
             source_blocks.insert(cow_op->new_block);
             prev_id = cow_op->new_block;
             cowop_rm_iter->Next();
-        } while (!cowop_rm_iter->Done() && pending_ordered_ops);
+        } while (!cowop_rm_iter->AtEnd() && pending_ordered_ops);
 
         data_chunk_id = GetNextAllocatableChunkId(data_chunk_id);
-        SNAP_LOG(DEBUG) << "Batch Merge copy-ops/xor-ops of size: " << vec.size()
+        SNAP_LOG(DEBUG) << "Batch Merge copy-ops of size: " << vec.size()
                         << " Area: " << vec_.size() << " Area offset: " << offset
                         << " Pending-ordered-ops in this area: " << pending_ordered_ops;
 
@@ -556,8 +542,6 @@ bool Snapuserd::ReadMetadata() {
             num_ops += 1;
             if (cow_op->type == kCowCopyOp) {
                 copy_ops++;
-            } else {  // it->second->type == kCowXorOp
-                xor_ops++;
             }
 
             if (read_ahead_feature_) {
@@ -580,7 +564,7 @@ bool Snapuserd::ReadMetadata() {
                                                      sizeof(struct disk_exception));
                 memset(de_ptr.get(), 0, (exceptions_per_area_ * sizeof(struct disk_exception)));
 
-                if (cowop_rm_iter->Done()) {
+                if (cowop_rm_iter->AtEnd()) {
                     vec_.push_back(std::move(de_ptr));
                     SNAP_LOG(DEBUG) << "ReadMetadata() completed; Number of Areas: " << vec_.size();
                 }
@@ -629,8 +613,8 @@ bool Snapuserd::ReadMetadata() {
     SNAP_LOG(INFO) << "ReadMetadata completed. Final-chunk-id: " << data_chunk_id
                    << " Num Sector: " << ChunkToSector(data_chunk_id)
                    << " Replace-ops: " << replace_ops << " Zero-ops: " << zero_ops
-                   << " Copy-ops: " << copy_ops << " Xor-ops: " << xor_ops
-                   << " Areas: " << vec_.size() << " Num-ops-merged: " << header.num_merge_ops
+                   << " Copy-ops: " << copy_ops << " Areas: " << vec_.size()
+                   << " Num-ops-merged: " << header.num_merge_ops
                    << " Total-data-ops: " << reader_->get_num_total_data_ops();
 
     // Total number of sectors required for creating dm-user device
@@ -642,11 +626,10 @@ bool Snapuserd::ReadMetadata() {
 }
 
 bool Snapuserd::MmapMetadata() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    if (header.major_version >= 2 && header.buffer_size > 0) {
-        total_mapped_addr_length_ = header.header_size + BUFFER_REGION_DEFAULT_SIZE;
+    if (header.prefix.major_version >= 2 && header.buffer_size > 0) {
+        total_mapped_addr_length_ = header.prefix.header_size + BUFFER_REGION_DEFAULT_SIZE;
         read_ahead_feature_ = true;
     } else {
         // mmap the first 4k page - older COW format
@@ -838,10 +821,9 @@ bool Snapuserd::Start() {
 }
 
 uint64_t Snapuserd::GetBufferMetadataOffset() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    size_t size = header.header_size + sizeof(BufferState);
+    size_t size = header.prefix.header_size + sizeof(BufferState);
     return size;
 }
 
@@ -854,37 +836,33 @@ uint64_t Snapuserd::GetBufferMetadataOffset() {
  *
  */
 size_t Snapuserd::GetBufferMetadataSize() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
     size_t metadata_bytes = (header.buffer_size * sizeof(struct ScratchMetadata)) / BLOCK_SZ;
     return metadata_bytes;
 }
 
 size_t Snapuserd::GetBufferDataOffset() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
-    return (header.header_size + GetBufferMetadataSize());
+    return (header.prefix.header_size + GetBufferMetadataSize());
 }
 
 /*
  * (2MB - 8K = 2088960 bytes) will be the buffer region to hold the data.
  */
 size_t Snapuserd::GetBufferDataSize() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
     size_t size = header.buffer_size - GetBufferMetadataSize();
     return size;
 }
 
 struct BufferState* Snapuserd::GetBufferState() {
-    CowHeader header;
-    reader_->GetHeader(&header);
+    const auto& header = reader_->GetHeader();
 
     struct BufferState* ra_state =
-            reinterpret_cast<struct BufferState*>((char*)mapped_addr_ + header.header_size);
+            reinterpret_cast<struct BufferState*>((char*)mapped_addr_ + header.prefix.header_size);
     return ra_state;
 }
 

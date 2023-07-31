@@ -49,9 +49,8 @@ class OfflineUnwindBenchmark : public benchmark::Fixture {
     Elf::SetCachingEnabled(false);
   }
 
-  void TearDown(benchmark::State& state) override {
+  void TearDown(const benchmark::State&) override {
     offline_utils_.ReturnToCurrentWorkingDirectory();
-    mem_tracker_.SetBenchmarkCounters(state);
   }
 
   void SingleUnwindBenchmark(benchmark::State& state, const UnwindSampleInfo& sample_info) {
@@ -77,6 +76,7 @@ class OfflineUnwindBenchmark : public benchmark::Fixture {
   void BenchmarkOfflineUnwindMultipleSamples(benchmark::State& state,
                                              const std::vector<UnwindSampleInfo>& sample_infos) {
     std::string error_msg;
+    MemoryTracker mem_tracker;
     auto offline_unwind_multiple_samples = [&](bool benchmarking_unwind) {
       // The benchmark should only measure the time / memory usage for the creation of
       // each Unwinder object and the corresponding unwind as close as possible.
@@ -123,7 +123,7 @@ class OfflineUnwindBenchmark : public benchmark::Fixture {
         }
       }
 
-      if (benchmarking_unwind) mem_tracker_.StartTrackingAllocations();
+      if (benchmarking_unwind) mem_tracker.StartTrackingAllocations();
       for (const auto& sample_info : sample_infos) {
         const std::string& sample_name = sample_info.offline_files_dir;
         // Need to change to sample directory for Unwinder to properly init ELF objects.
@@ -159,16 +159,20 @@ class OfflineUnwindBenchmark : public benchmark::Fixture {
           return;
         }
       }
-      if (benchmarking_unwind) mem_tracker_.StopTrackingAllocations();
+      if (benchmarking_unwind) {
+        mem_tracker.StopTrackingAllocations();
+        state.ResumeTiming();
+      }
     };
 
     if (unwind_case_ == kSteadyState) {
       WarmUpUnwindCaches(offline_unwind_multiple_samples);
     }
 
-    for (auto _ : state) {
+    for (const auto& _ : state) {
       offline_unwind_multiple_samples(/*benchmarking_unwind=*/true);
     }
+    mem_tracker.SetBenchmarkCounters(state);
   }
 
   // This functions main purpose is to enable ELF caching for the steady state unwind case
@@ -185,7 +189,6 @@ class OfflineUnwindBenchmark : public benchmark::Fixture {
 
   std::string unwind_case_;
   bool resolve_names_;
-  MemoryTracker mem_tracker_;
   OfflineUnwindUtils offline_utils_;
 };
 

@@ -24,47 +24,24 @@
 #include <android-base/unique_fd.h>
 #include <libsnapshot/cow_format.h>
 
+namespace chromeos_update_engine {
+class FileDescriptor;
+}  // namespace chromeos_update_engine
+
 namespace android {
 namespace snapshot {
 
 class ICowOpIter;
 
-// A ByteSink object handles requests for a buffer of a specific size. It
-// always owns the underlying buffer. It's designed to minimize potential
-// copying as we parse or decompress the COW.
-class IByteSink {
-  public:
-    virtual ~IByteSink() {}
-
-    // Called when the reader has data. The size of the request is given. The
-    // sink must return a valid pointer (or null on failure), and return the
-    // maximum number of bytes that can be written to the returned buffer.
-    //
-    // The returned buffer is owned by IByteSink, but must remain valid until
-    // the read operation has completed (or the entire buffer has been
-    // covered by calls to ReturnData).
-    //
-    // After calling GetBuffer(), all previous buffers returned are no longer
-    // valid.
-    //
-    // GetBuffer() is intended to be sequential. A returned size of N indicates
-    // that the output stream will advance by N bytes, and the ReturnData call
-    // indicates that those bytes have been fulfilled. Therefore, it is
-    // possible to have ReturnBuffer do nothing, if the implementation doesn't
-    // care about incremental writes.
-    virtual void* GetBuffer(size_t requested, size_t* actual) = 0;
-
-    // Called when a section returned by |GetBuffer| has been filled with data.
-    virtual bool ReturnData(void* buffer, size_t length) = 0;
-};
-
 // Interface for reading from a snapuserd COW.
 class ICowReader {
   public:
+    using FileDescriptor = chromeos_update_engine::FileDescriptor;
+
     virtual ~ICowReader() {}
 
     // Return the file header.
-    virtual bool GetHeader(CowHeader* header) = 0;
+    virtual CowHeader& GetHeader() = 0;
 
     // Return the file footer.
     virtual bool GetFooter(CowFooter* footer) = 0;
@@ -83,29 +60,55 @@ class ICowReader {
     virtual std::unique_ptr<ICowOpIter> GetMergeOpIter(bool ignore_progress) = 0;
 
     // Get decoded bytes from the data section, handling any decompression.
-    // All retrieved data is passed to the sink.
-    virtual bool ReadData(const CowOperation& op, IByteSink* sink) = 0;
+    //
+    // If ignore_bytes is non-zero, it specifies the initial number of bytes
+    // to skip writing to |buffer|.
+    //
+    // Returns the number of bytes written to |buffer|, or -1 on failure.
+    // errno is NOT set.
+    //
+    // Partial reads are not possible unless |buffer_size| is less than the
+    // operation block size.
+    //
+    // The operation pointer must derive from ICowOpIter::Get().
+    virtual ssize_t ReadData(const CowOperation* op, void* buffer, size_t buffer_size,
+                             size_t ignore_bytes = 0) = 0;
+
+    // Get the absolute source offset, in bytes, of a CowOperation. Returns
+    // false if the operation does not read from source partitions.
+    virtual bool GetSourceOffset(const CowOperation* op, uint64_t* source_offset) = 0;
 };
 
-// Iterate over a sequence of COW operations.
+static constexpr uint64_t GetBlockFromOffset(const CowHeader& header, uint64_t offset) {
+    return offset / header.block_size;
+}
+
+static constexpr uint64_t GetBlockRelativeOffset(const CowHeader& header, uint64_t offset) {
+    return offset % header.block_size;
+}
+
+// Iterate over a sequence of COW operations. The iterator is bidirectional.
 class ICowOpIter {
   public:
     virtual ~ICowOpIter() {}
 
-    // True if there are no more items to read forward, false otherwise.
-    virtual bool Done() = 0;
+    // Returns true if the iterator is at the end of the operation list.
+    // If true, Get() and Next() must not be called.
+    virtual bool AtEnd() = 0;
 
     // Read the current operation.
-    virtual const CowOperation& Get() = 0;
+    virtual const CowOperation* Get() = 0;
 
     // Advance to the next item.
     virtual void Next() = 0;
 
+    // Returns true if the iterator is at the beginning of the operation list.
+    // If true, Prev() must not be called; Get() however will be valid if
+    // AtEnd() is not true.
+    virtual bool AtBegin() = 0;
+
     // Advance to the previous item.
     virtual void Prev() = 0;
-
-    // True if there are no more items to read backwards, false otherwise
-    virtual bool RDone() = 0;
 };
 
 class CowReader final : public ICowReader {
@@ -124,12 +127,11 @@ class CowReader final : public ICowReader {
     bool Parse(android::base::borrowed_fd fd, std::optional<uint64_t> label = {});
 
     bool InitForMerge(android::base::unique_fd&& fd);
+
     bool VerifyMergeOps() override;
-
-    bool GetHeader(CowHeader* header) override;
     bool GetFooter(CowFooter* footer) override;
-
     bool GetLastLabel(uint64_t* label) override;
+    bool GetSourceOffset(const CowOperation* op, uint64_t* source_offset) override;
 
     // Create a CowOpIter object which contains footer_.num_ops
     // CowOperation objects. Get() returns a unique CowOperation object
@@ -139,8 +141,12 @@ class CowReader final : public ICowReader {
     std::unique_ptr<ICowOpIter> GetRevMergeOpIter(bool ignore_progress = false) override;
     std::unique_ptr<ICowOpIter> GetMergeOpIter(bool ignore_progress = false) override;
 
-    bool ReadData(const CowOperation& op, IByteSink* sink) override;
+    ssize_t ReadData(const CowOperation* op, void* buffer, size_t buffer_size,
+                     size_t ignore_bytes = 0) override;
 
+    CowHeader& GetHeader() override { return header_; }
+
+    bool GetRawBytes(const CowOperation* op, void* buffer, size_t len, size_t* read);
     bool GetRawBytes(uint64_t offset, void* buffer, size_t len, size_t* read);
 
     // Returns the total number of data ops that should be merged. This is the
@@ -162,6 +168,7 @@ class CowReader final : public ICowReader {
     bool ParseOps(std::optional<uint64_t> label);
     bool PrepMergeOps();
     uint64_t FindNumCopyops();
+    uint8_t GetCompressionType(const CowOperation* op);
 
     android::base::unique_fd owned_fd_;
     android::base::borrowed_fd fd_;

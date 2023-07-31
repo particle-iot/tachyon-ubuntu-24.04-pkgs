@@ -65,6 +65,10 @@ RpcServerTrusty::RpcServerTrusty(std::unique_ptr<RpcTransportCtx> ctx, std::stri
     mTipcPort.msg_queue_len = 6; // Three each way
     mTipcPort.priv = this;
 
+    // TODO(b/266741352): follow-up to prevent needing this in the future
+    // Trusty needs to be set to the latest stable version that is in prebuilts there.
+    LOG_ALWAYS_FATAL_IF(!mRpcServer->setProtocolVersion(0));
+
     if (mPortAcl) {
         // Initialize the array of pointers to uuids.
         // The pointers in mUuidPtrs should stay valid across moves of
@@ -154,8 +158,18 @@ int RpcServerTrusty::handleMessage(const tipc_port* /*port*/, handle_t /*chan*/,
     return NO_ERROR;
 }
 
-void RpcServerTrusty::handleDisconnect(const tipc_port* /*port*/, handle_t /*chan*/,
-                                       void* /*ctx*/) {}
+void RpcServerTrusty::handleDisconnect(const tipc_port* /*port*/, handle_t /*chan*/, void* ctx) {
+    auto* channelContext = reinterpret_cast<ChannelContext*>(ctx);
+    if (channelContext == nullptr) {
+        // Connections marked "incoming" (outgoing from the server's side)
+        // do not have a valid channel context because joinFn does not get
+        // called for them. We ignore them here.
+        return;
+    }
+
+    auto& session = channelContext->session;
+    (void)session->shutdownAndWait(false);
+}
 
 void RpcServerTrusty::handleChannelCleanup(void* ctx) {
     auto* channelContext = reinterpret_cast<ChannelContext*>(ctx);

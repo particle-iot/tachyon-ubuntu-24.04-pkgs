@@ -650,16 +650,13 @@ std::string LogStatistics::Format(uid_t uid, pid_t pid, unsigned int logMask) co
         if (!(logMask & (1 << id))) continue;
 
         size_t els = mElements[id];
-        if (els) {
-            oldLength = output.length();
-            if (spaces < 0) spaces = 0;
-            size_t szs = mSizes[id];
-            totalSize += szs;
-            totalEls += els;
-            output +=
-                android::base::StringPrintf("%*s%zu/%zu", spaces, "", szs, els);
-            spaces -= output.length() - oldLength;
-        }
+        oldLength = output.length();
+        if (spaces < 0) spaces = 0;
+        size_t szs = mSizes[id];
+        totalSize += szs;
+        totalEls += els;
+        output += android::base::StringPrintf("%*s%zu/%zu", spaces, "", szs, els);
+        spaces -= output.length() - oldLength;
         spaces += spaces_total;
     }
     if (spaces < 0) spaces = 0;

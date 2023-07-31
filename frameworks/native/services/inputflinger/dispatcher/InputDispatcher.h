@@ -240,11 +240,11 @@ private:
     std::shared_ptr<EventEntry> mNextUnblockedEvent GUARDED_BY(mLock);
 
     sp<android::gui::WindowInfoHandle> findTouchedWindowAtLocked(
-            int32_t displayId, int32_t x, int32_t y, TouchState* touchState, bool isStylus = false,
+            int32_t displayId, float x, float y, TouchState* touchState, bool isStylus = false,
             bool addOutsideTargets = false, bool ignoreDragWindow = false) REQUIRES(mLock);
 
     std::vector<sp<android::gui::WindowInfoHandle>> findTouchedSpyWindowsAtLocked(
-            int32_t displayId, int32_t x, int32_t y, bool isStylus) const REQUIRES(mLock);
+            int32_t displayId, float x, float y, bool isStylus) const REQUIRES(mLock);
 
     sp<android::gui::WindowInfoHandle> findTouchedForegroundWindowLocked(int32_t displayId) const
             REQUIRES(mLock);
@@ -370,6 +370,7 @@ private:
             int32_t displayId) const REQUIRES(mLock);
     sp<android::gui::WindowInfoHandle> getWindowHandleLocked(
             const sp<IBinder>& windowHandleToken) const REQUIRES(mLock);
+    ui::Transform getTransformLocked(int32_t displayId) const REQUIRES(mLock);
 
     // Same function as above, but faster. Since displayId is provided, this avoids the need
     // to loop through all displays.
@@ -621,8 +622,12 @@ private:
                                                         const CancelationOptions& options)
             REQUIRES(mLock);
 
-    void synthesizePointerDownEventsForConnectionLocked(const sp<Connection>& connection)
-            REQUIRES(mLock);
+    void synthesizePointerDownEventsForConnectionLocked(const sp<Connection>& connection,
+                                                        int32_t targetFlags) REQUIRES(mLock);
+
+    void synthesizeCancelationEventsForWindowLocked(
+            const sp<android::gui::WindowInfoHandle>& windowHandle,
+            const CancelationOptions& options) REQUIRES(mLock);
 
     // Splitting motion events across windows.
     std::unique_ptr<MotionEntry> splitMotionEvent(const MotionEntry& originalMotionEntry,
@@ -684,6 +689,18 @@ private:
     bool recentWindowsAreOwnedByLocked(int32_t pid, int32_t uid) REQUIRES(mLock);
 
     sp<InputReporterInterface> mReporter;
+
+    void slipWallpaperTouch(int32_t targetFlags,
+                            const sp<android::gui::WindowInfoHandle>& oldWindowHandle,
+                            const sp<android::gui::WindowInfoHandle>& newWindowHandle,
+                            TouchState& state, const BitSet32& pointerIds) REQUIRES(mLock);
+    void transferWallpaperTouch(int32_t oldTargetFlags, int32_t newTargetFlags,
+                                const sp<android::gui::WindowInfoHandle> fromWindowHandle,
+                                const sp<android::gui::WindowInfoHandle> toWindowHandle,
+                                TouchState& state, const BitSet32& pointerIds) REQUIRES(mLock);
+
+    sp<android::gui::WindowInfoHandle> findWallpaperWindowBelow(
+            const sp<android::gui::WindowInfoHandle>& windowHandle) const REQUIRES(mLock);
 };
 
 } // namespace android::inputdispatcher

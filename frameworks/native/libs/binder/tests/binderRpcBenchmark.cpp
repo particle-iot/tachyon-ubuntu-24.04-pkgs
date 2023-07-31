@@ -102,9 +102,11 @@ std::unique_ptr<RpcTransportCtxFactory> makeFactoryTls() {
 }
 
 static sp<RpcSession> gSession = RpcSession::make();
+static sp<IBinder> gRpcBinder;
 // Certificate validation happens during handshake and does not affect the result of benchmarks.
 // Skip certificate validation to simplify the setup process.
 static sp<RpcSession> gSessionTls = RpcSession::make(makeFactoryTls());
+static sp<IBinder> gRpcTlsBinder;
 #ifdef __BIONIC__
 static const String16 kKernelBinderInstance = String16(u"binderRpcBenchmark-control");
 static sp<IBinder> gKernelBinder;
@@ -118,12 +120,31 @@ static sp<IBinder> getBinderForOptions(benchmark::State& state) {
             return gKernelBinder;
 #endif
         case RPC:
-            return gSession->getRootObject();
+            return gRpcBinder;
         case RPC_TLS:
-            return gSessionTls->getRootObject();
+            return gRpcTlsBinder;
         default:
             LOG(FATAL) << "Unknown transport value: " << transport;
             return nullptr;
+    }
+}
+
+static void SetLabel(benchmark::State& state) {
+    Transport transport = static_cast<Transport>(state.range(0));
+    switch (transport) {
+#ifdef __BIONIC__
+        case KERNEL:
+            state.SetLabel("kernel");
+            break;
+#endif
+        case RPC:
+            state.SetLabel("rpc");
+            break;
+        case RPC_TLS:
+            state.SetLabel("rpc_tls");
+            break;
+        default:
+            LOG(FATAL) << "Unknown transport value: " << transport;
     }
 }
 
@@ -133,6 +154,8 @@ void BM_pingTransaction(benchmark::State& state) {
     while (state.KeepRunning()) {
         CHECK_EQ(OK, binder->pingBinder());
     }
+
+    SetLabel(state);
 }
 BENCHMARK(BM_pingTransaction)->ArgsProduct({kTransportList});
 
@@ -162,6 +185,8 @@ void BM_repeatTwoPageString(benchmark::State& state) {
         Status ret = iface->repeatString(str, &out);
         CHECK(ret.isOk()) << ret;
     }
+
+    SetLabel(state);
 }
 BENCHMARK(BM_repeatTwoPageString)->ArgsProduct({kTransportList});
 
@@ -180,6 +205,8 @@ void BM_throughputForTransportAndBytes(benchmark::State& state) {
         Status ret = iface->repeatBytes(bytes, &out);
         CHECK(ret.isOk()) << ret;
     }
+
+    SetLabel(state);
 }
 BENCHMARK(BM_throughputForTransportAndBytes)
         ->ArgsProduct({kTransportList,
@@ -199,6 +226,8 @@ void BM_repeatBinder(benchmark::State& state) {
         Status ret = iface->repeatBinder(binder, &out);
         CHECK(ret.isOk()) << ret;
     }
+
+    SetLabel(state);
 }
 BENCHMARK(BM_repeatBinder)->ArgsProduct({kTransportList});
 
@@ -226,11 +255,6 @@ int main(int argc, char** argv) {
     ::benchmark::Initialize(&argc, argv);
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
 
-    std::cerr << "Tests suffixes:" << std::endl;
-    std::cerr << "\t.../" << Transport::KERNEL << " is KERNEL" << std::endl;
-    std::cerr << "\t.../" << Transport::RPC << " is RPC" << std::endl;
-    std::cerr << "\t.../" << Transport::RPC_TLS << " is RPC with TLS" << std::endl;
-
 #ifdef __BIONIC__
     if (0 == fork()) {
         prctl(PR_SET_PDEATHSIG, SIGHUP); // racey, okay
@@ -254,11 +278,13 @@ int main(int argc, char** argv) {
     (void)unlink(addr.c_str());
     forkRpcServer(addr.c_str(), RpcServer::make(RpcTransportCtxFactoryRaw::make()));
     setupClient(gSession, addr.c_str());
+    gRpcBinder = gSession->getRootObject();
 
     std::string tlsAddr = tmp + "/binderRpcTlsBenchmark";
     (void)unlink(tlsAddr.c_str());
     forkRpcServer(tlsAddr.c_str(), RpcServer::make(makeFactoryTls()));
     setupClient(gSessionTls, tlsAddr.c_str());
+    gRpcTlsBinder = gSessionTls->getRootObject();
 
     ::benchmark::RunSpecifiedBenchmarks();
     return 0;

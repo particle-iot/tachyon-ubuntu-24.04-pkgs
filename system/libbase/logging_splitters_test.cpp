@@ -253,58 +253,51 @@ TEST(logging_splitters, LogdChunkSplitter_TooLongFile) {
 
 void TestStderrOutputGenerator(const char* tag, const char* file, int line, const char* message,
                                const std::string& expected) {
-  // All log messages will show "01-01 00:00:00"
-  struct tm now = {
-      .tm_sec = 0,
-      .tm_min = 0,
-      .tm_hour = 0,
-      .tm_mday = 1,
-      .tm_mon = 0,
-      .tm_year = 1970,
-  };
+  // All log messages will show "01-01 00:00:00.000"
+  struct timespec ts = {.tv_sec = 0, .tv_nsec = 0};
 
   int pid = 1234;       // All log messages will have 1234 for their PID.
   uint64_t tid = 4321;  // All log messages will have 4321 for their TID.
 
-  auto result = StderrOutputGenerator(now, pid, tid, ERROR, tag, file, line, message);
+  auto result = StderrOutputGenerator(ts, pid, tid, ERROR, tag, file, line, message);
   EXPECT_EQ(expected, result);
 }
 
 TEST(logging_splitters, StderrOutputGenerator_Basic) {
   TestStderrOutputGenerator(nullptr, nullptr, 0, "simple message",
-                            "nullptr E 01-01 00:00:00  1234  4321 simple message\n");
+                            "01-01 00:00:00.000  1234  4321 E nullptr : simple message\n");
   TestStderrOutputGenerator("tag", nullptr, 0, "simple message",
-                            "tag E 01-01 00:00:00  1234  4321 simple message\n");
+                            "01-01 00:00:00.000  1234  4321 E tag     : simple message\n");
   TestStderrOutputGenerator(
       "tag", "/path/to/some/file", 0, "simple message",
-      "tag E 01-01 00:00:00  1234  4321 /path/to/some/file:0] simple message\n");
+      "01-01 00:00:00.000  1234  4321 E tag     : /path/to/some/file:0 simple message\n");
 }
 
 TEST(logging_splitters, StderrOutputGenerator_NewlineTagAndFile) {
   TestStderrOutputGenerator("tag\n\n", nullptr, 0, "simple message",
-                            "tag\n\n E 01-01 00:00:00  1234  4321 simple message\n");
+                            "01-01 00:00:00.000  1234  4321 E tag\n\n   : simple message\n");
   TestStderrOutputGenerator(
       "tag", "/path/to/some/file\n\n", 0, "simple message",
-      "tag E 01-01 00:00:00  1234  4321 /path/to/some/file\n\n:0] simple message\n");
+      "01-01 00:00:00.000  1234  4321 E tag     : /path/to/some/file\n\n:0 simple message\n");
 }
 
 TEST(logging_splitters, StderrOutputGenerator_TrailingNewLine) {
-  TestStderrOutputGenerator(
-      "tag", nullptr, 0, "simple message\n",
-      "tag E 01-01 00:00:00  1234  4321 simple message\ntag E 01-01 00:00:00  1234  4321 \n");
+  TestStderrOutputGenerator("tag", nullptr, 0, "simple message\n",
+                            "01-01 00:00:00.000  1234  4321 E tag     : simple message\n"
+                            "01-01 00:00:00.000  1234  4321 E tag     : \n");
 }
 
 TEST(logging_splitters, StderrOutputGenerator_MultiLine) {
   const char* expected_result =
-      "tag E 01-01 00:00:00  1234  4321 simple message\n"
-      "tag E 01-01 00:00:00  1234  4321 \n"
-      "tag E 01-01 00:00:00  1234  4321 \n"
-      "tag E 01-01 00:00:00  1234  4321 another message \n"
-      "tag E 01-01 00:00:00  1234  4321 \n"
-      "tag E 01-01 00:00:00  1234  4321  final message \n"
-      "tag E 01-01 00:00:00  1234  4321 \n"
-      "tag E 01-01 00:00:00  1234  4321 \n"
-      "tag E 01-01 00:00:00  1234  4321 \n";
+      "01-01 00:00:00.000  1234  4321 E tag     : simple message\n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : another message \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n"
+      "01-01 00:00:00.000  1234  4321 E tag     :  final message \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n"
+      "01-01 00:00:00.000  1234  4321 E tag     : \n";
 
   TestStderrOutputGenerator("tag", nullptr, 0,
                             "simple message\n\n\nanother message \n\n final message \n\n\n",
@@ -316,8 +309,8 @@ TEST(logging_splitters, StderrOutputGenerator_MultiLineLong) {
   auto long_string_b = std::string(4000, 'b');
 
   auto message = long_string_a + '\n' + long_string_b;
-  auto expected_result = "tag E 01-01 00:00:00  1234  4321 " + long_string_a + '\n' +
-                         "tag E 01-01 00:00:00  1234  4321 " + long_string_b + '\n';
+  auto expected_result = "01-01 00:00:00.000  1234  4321 E tag     : " + long_string_a + '\n' +
+                         "01-01 00:00:00.000  1234  4321 E tag     : " + long_string_b + '\n';
   TestStderrOutputGenerator("tag", nullptr, 0, message.c_str(), expected_result);
 }
 

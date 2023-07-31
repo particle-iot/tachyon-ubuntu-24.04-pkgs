@@ -221,8 +221,8 @@ bool WaitForPropertyCreation(const std::string& key,
   return (WaitForPropertyCreation(key, relative_timeout, start_time) != nullptr);
 }
 
-CachedProperty::CachedProperty(const char* property_name)
-    : property_name_(property_name),
+CachedProperty::CachedProperty(std::string property_name)
+    : property_name_(std::move(property_name)),
       prop_info_(nullptr),
       cached_area_serial_(0),
       cached_property_serial_(0),
@@ -231,8 +231,11 @@ CachedProperty::CachedProperty(const char* property_name)
   static_assert(sizeof(cached_value_) == PROP_VALUE_MAX);
 }
 
+CachedProperty::CachedProperty(const char* property_name)
+    : CachedProperty(std::string(property_name)) {}
+
 const char* CachedProperty::Get(bool* changed) {
-  std::optional<uint32_t> initial_property_serial_ = cached_property_serial_;
+  std::optional<uint32_t> initial_property_serial = cached_property_serial_;
 
   // Do we have a `struct prop_info` yet?
   if (prop_info_ == nullptr) {
@@ -267,7 +270,7 @@ const char* CachedProperty::Get(bool* changed) {
   }
 
   if (changed) {
-    *changed = cached_property_serial_ != initial_property_serial_;
+    *changed = cached_property_serial_ != initial_property_serial;
   }
 
   if (is_read_only_) {
@@ -275,6 +278,25 @@ const char* CachedProperty::Get(bool* changed) {
   } else {
     return cached_value_;
   }
+}
+
+const char* CachedProperty::WaitForChange(std::chrono::milliseconds relative_timeout) {
+  if (!prop_info_) {
+    auto start_time = std::chrono::steady_clock::now();
+    prop_info_ = WaitForPropertyCreation(property_name_, relative_timeout, start_time);
+    if (!prop_info_) {
+      return nullptr;
+    }
+  } else {
+    timespec ts;
+    DurationToTimeSpec(ts, relative_timeout);
+
+    uint32_t old_serial = cached_property_serial_.value_or(0);
+    uint32_t new_serial;
+    if (!__system_property_wait(prop_info_, old_serial, &new_serial, &ts)) return nullptr;
+  }
+
+  return Get(nullptr);
 }
 
 #endif

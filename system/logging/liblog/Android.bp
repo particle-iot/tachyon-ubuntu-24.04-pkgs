@@ -217,12 +217,15 @@ rust_bindgen {
     source_stem: "bindings",
 
     bindgen_flags: [
-        "--size_t-is-usize",
         "--allowlist-function=create_android_logger",
         "--allowlist-function=android_log_destroy",
         "--allowlist-function=android_log_write_int32",
+        "--allowlist-function=android_log_write_int64",
+        "--allowlist-function=android_log_write_float32",
         "--allowlist-function=android_log_write_string8_len",
         "--allowlist-function=android_log_write_list",
+        "--allowlist-function=android_log_write_list_begin",
+        "--allowlist-function=android_log_write_list_end",
         "--allowlist-function=__android_log_security",
         "--allowlist-type=log_id",
     ],

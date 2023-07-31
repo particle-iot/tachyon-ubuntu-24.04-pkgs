@@ -35,6 +35,8 @@ bool Attach(pid_t pid);
 
 bool Detach(pid_t pid);
 
-bool RunWhenQuiesced(pid_t pid, bool leave_attached, std::function<PidRunEnum()> fn);
+bool WaitForPidState(pid_t pid, const std::function<PidRunEnum()>& state_check_func);
+
+bool WaitForPidStateAfterAttach(pid_t pid, const std::function<PidRunEnum()>& state_check_func);
 
 }  // namespace unwindstack
