@@ -6,8 +6,8 @@ include /usr/share/dpkg/pkg-info.mk
 ## Security Hardening
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
 # https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-34.0.4/cc/config/global.go#301
-export DEB_CFLAGS_MAINT_APPEND = -fPIC -gdwarf-4 -std=gnu17
-export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -gdwarf-4 -std=gnu++2a
+export DEB_CFLAGS_MAINT_APPEND = -fPIC -std=gnu17
+export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -std=gnu++2a
 export DEB_LDFLAGS_MAINT_APPEND = -fPIC
 export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -fmessage-length=0 \
@@ -16,10 +16,6 @@ export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -no-canonical-prefixes \
   \
   -Idebian/include # Workaround for #1037576 \
-
-ifneq (, $(shell which lld))
-  export DEB_LDFLAGS_MAINT_APPEND += -fuse-ld=lld -Wl,--build-id=sha1
-endif
 
 ## For get-orig-source
 export DEB_SOURCE
@@ -31,13 +27,18 @@ export DEB_VERSION
 export PLATFORM_TOOLS_VERSION = 34.0.4
 
 ifneq (, $(shell which clang))
-  export CC=clang
-  export CXX=clang++
+  export CC = clang
+  export CXX = clang++
+  export DEB_CFLAGS_MAINT_APPEND += -gdwarf-4
+  export DEB_CXXFLAGS_MAINT_APPEND += -gdwarf-4
   export DEB_CPPFLAGS_MAINT_APPEND += \
     -Wno-c99-designator \
     -Wno-gnu-designator \
     -Wno-gnu-folding-constant \
 
+endif
+ifneq (, $(shell which lld))
+  export DEB_LDFLAGS_MAINT_APPEND += -fuse-ld=lld -Wl,--build-id=sha1
 endif
 
 %:

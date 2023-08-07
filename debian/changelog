@@ -1,3 +1,12 @@
+android-platform-tools (34.0.4-1~exp2) experimental; urgency=medium
+
+  * debian/patches:
+    - Remove unused patch.
+    - Revert patch to avoid introduce new dependency.
+  * debian/rules: Sync formating with boringssl.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 07 Aug 2023 00:07:46 -0700
+
 android-platform-tools (34.0.4-1~exp1) experimental; urgency=medium
 
   * New upstream release 34.0.4

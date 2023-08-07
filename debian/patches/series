@@ -3,6 +3,7 @@ revert/Revert-Remove-mips-support-fr.patch
 revert/Revert-Remove-a-file-we-haven-t-built-since-2013.patch
 revert/support-mips.patch
 revert/Revert-Order-events-returned-by-fdevent_epoll.patch
+revert/Revert-3-Add-rust-demangling.patch
 gcc-only/stdatomic.patch
 gcc-only/workaround__builtin_available.patch
 gcc-only/Nullable.patch
@@ -13,6 +14,5 @@ system/libusb-header-path.patch
 system/throw-exception-on-unknown-os.patch
 system/hard-code-build-number.patch
 system/stub-out-fastdeploy.patch
-system/Implement-const_iterator-operator.patch
 system/Update_casting_type.patch
 development/typos.patch
