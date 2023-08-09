@@ -21,7 +21,6 @@ OBJECTS_C = $(SOURCES_C:.c=.o)
 SOURCES_CXX = $(filter %.cpp,$(SOURCES))
 OBJECTS_CXX = $(SOURCES_CXX:.cpp=.o)
 
-CXXFLAGS += -std=gnu++2a
 CPPFLAGS += \
   -D_GNU_SOURCE \
   -D_LARGEFILE64_SOURCE \

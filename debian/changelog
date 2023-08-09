@@ -1,3 +1,11 @@
+android-platform-tools (34.0.4-1~exp3) experimental; urgency=medium
+
+  * Revert "debian/patches: Remove unused patch".
+  * debian/libext4_utils.mk:
+    - Remove CXXFLAGS already existing in debian/rules.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 08 Aug 2023 22:40:56 -0700
+
 android-platform-tools (34.0.4-1~exp2) experimental; urgency=medium
 
   * debian/patches:

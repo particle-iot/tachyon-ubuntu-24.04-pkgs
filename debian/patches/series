@@ -14,5 +14,6 @@ system/libusb-header-path.patch
 system/throw-exception-on-unknown-os.patch
 system/hard-code-build-number.patch
 system/stub-out-fastdeploy.patch
+system/Implement-const_iterator-operator.patch
 system/Update_casting_type.patch
 development/typos.patch
