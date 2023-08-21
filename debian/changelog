@@ -1,3 +1,9 @@
+android-platform-tools (34.0.4-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 21 Aug 2023 00:22:39 -0700
+
 android-platform-tools (34.0.4-1~exp3) experimental; urgency=medium
 
   * Revert "debian/patches: Remove unused patch".
