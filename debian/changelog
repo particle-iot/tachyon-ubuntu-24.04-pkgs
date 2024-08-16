@@ -1,3 +1,10 @@
+android-platform-tools (34.0.4-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Add patch to build against GCC-14 (Closes: #1074811)
+
+ -- tony mancill <tmancill@debian.org>  Thu, 15 Aug 2024 21:12:28 -0700
+
 android-platform-tools (34.0.4-1) unstable; urgency=medium
 
   * Upload to unstable.

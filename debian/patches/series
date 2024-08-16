@@ -17,3 +17,4 @@ system/stub-out-fastdeploy.patch
 system/Implement-const_iterator-operator.patch
 system/Update_casting_type.patch
 development/typos.patch
+20-gcc-14.patch
