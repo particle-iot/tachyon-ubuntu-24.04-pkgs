@@ -23,7 +23,7 @@ Build-Depends-Arch:
  pandoc [amd64 i386 armel armhf arm64 ia64 mipsel mips64el ppc64el s390x ppc64],
  protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  python3 [amd64 i386 arm64],
- ronn [alpha arc hppa hurd-i386 kfreebsd-amd64 kfreebsd-i386 m68k powerpc riscv64 sh4 sparc64 x32],
+ ronn [alpha arc hppa hurd-i386 kfreebsd-amd64 kfreebsd-i386 loong64 m68k powerpc riscv64 sh4 sparc64 x32],
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/android-tools-team/android-platform-tools.git

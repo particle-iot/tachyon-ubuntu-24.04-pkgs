@@ -1,3 +1,27 @@
+android-platform-tools (34.0.4-2) unstable; urgency=medium
+
+  [ Anurag Kumar ]
+  * fix(adb bash-completion): remove old/deprecated commands and add new ones
+  * fix(adb bash-completion): add device, forward subcommand & options
+  * adb completion: add adb reverse command and suboptions
+  * adb completion: add mdns command and suboptions
+  * adb bash-completion: remove adb backup command: deprecated
+  * adb bash-completion: add options in pull command
+  * adb bash-comp: refactor adb push
+  * adb bash-comp: add adb sync command and suboptions
+  * adb bash-comp: add adb shell command suboptions
+  * adb bash-comp: refactor adb install/uninstall subcommands
+  * adb bash-comp: add remaining commands
+  * adb bash-comp: remove mdns commands for now
+
+  [ Arnaud Ferraris ]
+  * d/patches: Drop gki dependency from mkbootimg (Closes: #1050300)
+
+  [ Roger Shimizu ]
+  * d/control: Fix ftbfs issue on loong64 (Closes: #1069143)
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 18 Sep 2024 00:37:52 -0700
+
 android-platform-tools (34.0.4-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.

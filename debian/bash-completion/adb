@@ -20,155 +20,332 @@
 ## OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 ## THE SOFTWARE.
 
-function _adb()
-{
-  local cur prev opts cmds c subcommand device_selected
-  COMPREPLY=()
-  cur="${COMP_WORDS[COMP_CWORD]}"
-  prev="${COMP_WORDS[COMP_CWORD-1]}"
-  opts="-d -e -s -p"
-  cmds="backup bugreport connect devices disable-verity disconnect emu \
-        enable-verity features forward get-devpath get-serialno get-state \
-        help host-features install install-multiple jdwp keygen \
-        kill-server logcat longcat ls ppp pull push reboot \
-        reboot-bootloader reconnect remount restore reverse root shell \
-        sideload start-server sync tcpip track-devices track-jdwp \
-        uninstall unroot usb version wait-for-bootloader wait-for-device \
-        wait-for-recovery wait-for-sideload"
-  cmds_not_need_device="connect devices disconnect help keygen kill-server \
-                        start-server version"
-  subcommand=""
-  device_selected=""
+function _adb() {
+	local cur prev opts cmds c subcommand device_selected
+	COMPREPLY=()
+	cur="${COMP_WORDS[COMP_CWORD]}"
+	prev="${COMP_WORDS[COMP_CWORD - 1]}"
+	opts="-a -d -e -s -t -H -P -L --one-device --exit-on-write-error"
+	cmds="devices help version \
+			connect disconnect pair forward reverse \
+			push pull sync \
+			shell emu \
+			install install-multiple install-multi-package uninstall \
+			bugreport jdwp logcat \
+			disable-verity enable-verity keygen \
+			wait-for-device wait-for-recovery wait-for-rescue wait-for-sideload wait-for-bootloader wait-for-disconnect get-state get-serialno get-devpath remount reboot sideload root unroot usb tcpip \
+			start-server kill-server reconnect \
+			attach detach \
+			host-features features"
+	cmds_not_need_device="connect devices disconnect help keygen kill-server start-server version"
+	subcommand=""
+	device_selected=""
 
-  # Look for the subcommand.
-  c=1
-  while [ $c -lt $COMP_CWORD ]; do
-    word="${COMP_WORDS[c]}"
-    if [ "$word" = "-d" -o "$word" = "-e" -o "$word" = "-s" ]; then
-      device_selected=true
-      opts="-p"
-    fi
-    for cmd in $cmds; do
-      if [ "$cmd" = "$word" ]; then
-        subcommand="$word"
-      fi
-    done
-    c=$((++c))
-  done
+	# Look for the subcommand.
+	c=1
+	while [ $c -lt $COMP_CWORD ]; do
+		word="${COMP_WORDS[c]}"
+		if [ "$word" = "-d" -o "$word" = "-e" -o "$word" = "-s" ]; then
+			device_selected=true
+			# opts="-p"
+		fi
+		for cmd in $cmds; do
+			if [ "$cmd" = "$word" ]; then
+				subcommand="$word"
+			fi
+		done
+		c=$((++c))
+	done
 
-  case "${subcommand}" in
-    '')
-      case "${prev}" in
-        -p)
-          return 0;
-          ;;
-        -s)
-          # Use 'adb devices' to list serial numbers.
-          COMPREPLY=( $(compgen -W "$(adb devices |
-                awk '/(device|recovery|sideload)$/{print $1}')" -- ${cur} ) )
-          return 0
-          ;;
-      esac
-      case "${cur}" in
-        -*)
-          COMPREPLY=( $(compgen -W "$opts" -- ${cur}) )
-          return 0
-          ;;
-      esac
-      if [ -z "$device_selected" ]; then
-        local num_devices=$(( $(adb devices 2>/dev/null|wc -l) - 2 ))
-        if [ "$num_devices" -gt "1" ]; then
-          # With multiple devices, you must choose a device first.
-          COMPREPLY=( $(compgen -W "${opts} ${cmds_not_need_device}" -- ${cur}) )
-          return 0
-        fi
-      fi
-      COMPREPLY=( $(compgen -W "${cmds}" -- ${cur}) )
-      return 0
-      ;;
-    disconnect)
-      # Use 'adb devices' to list serial numbers.
-      COMPREPLY=( $(compgen -W "$(adb devices |
-            awk '/(device|recovery|sideload|offline|unauthorized)$/{print $1}')" -- ${cur} ) )
-      return 0
-      ;;
-    install)
-      case "${cur}" in
-        -*)
-          COMPREPLY=( $(compgen -W "-l -r -s" -- ${cur}) )
-          return 0
-          ;;
-      esac
-      ;;
-    forward)
-      # Filename or installation option.
-      COMPREPLY=( $(compgen -W "tcp: localabstract: localreserved: localfilesystem: dev: jdwp:" -- ${cur}) )
-      return 0
-      ;;
-    uninstall)
-      local apks=$(adb shell pm list packages 2>/dev/null | cut -b9-999 | tr '\n\r' ' ')
-      if [[ $prev != "-k" && $cur == "-" ]]; then
-          COMPREPLY=( $(compgen -W "-k $apks" -- ${cur}) )
-      else
-          COMPREPLY=( $(compgen -W "$apks" -- ${cur}) )
-      fi
-      return 0
-      ;;
-    logcat)
-      case "${cur}" in
-        -*)
-          COMPREPLY=( $(compgen -W "-v -b -c -d -f -g -n -r -s" -- ${cur}) )
-          return 0
-          ;;
-      esac
-      case "${prev}" in
-        -v)
-          COMPREPLY=( $(compgen -W "brief process tag thread raw time long" -- ${cur}) )
-          return 0
-          ;;
-        -b)
-          COMPREPLY=( $(compgen -W "radio events main" -- ${cur}) )
-          return 0
-          ;;
-      esac
-      ;;
-    backup)
-      case "${cur}" in
-        -*)
-          COMPREPLY=( $(compgen -W "-f -apk -noapk -obb -noobb -shared -noshared -all -system -nosystem" -- ${cur}) )
-          return 0
-          ;;
-      esac
-      ;;
-    pull)
-      if [ ${prev} == "pull" ]; then
-          local IFS=$'\n'
-          if [ -z ${cur} ]; then
-              local files=$(adb shell "ls -a -d /*" 2>/dev/null | tr -d '\r')
-              COMPREPLY=( $(compgen -W "$files" -o filenames -- ${cur}) )
-          else
-              local stripped_cur=$(echo ${cur} | sed 's,^",,')
-              local files=$(adb shell "ls -a -d '${stripped_cur}'*" 2>/dev/null | tr -d '\r')
-              COMPREPLY=( $(compgen -W "$files" -o filenames -- ${cur}) )
-          fi
-          return 0
-      fi
-      ;;
-    push)
-      if [ "${COMP_WORDS[COMP_CWORD-2]}" == "push" ]; then
-          local IFS=$'\n'
-          if [ -z "${cur}" ]; then
-              local files=$(adb shell "ls -a -d /*" 2>/dev/null | tr -d '\r')
-              COMPREPLY=( $(compgen -W "$files" -o filenames -- ${cur}) )
-          else
-              local stripped_cur=$(echo ${cur} | sed 's,^",,')
-              local files=$(adb shell "ls -a -d '${stripped_cur}'*" 2>/dev/null | tr -d '\r')
-              COMPREPLY=( $(compgen -W "$files" -o filenames -- ${cur}) )
-          fi
-          return 0
-      fi
-      ;;
-  esac
+	case "${subcommand}" in
+	'')
+		case "${prev}" in
+		# -p)
+		#   return 0;
+		#   ;;
+		-s)
+			# Use 'adb devices' to list serial numbers.
+			COMPREPLY=($(compgen -W "$(adb devices |
+				awk '/(device|recovery|sideload)$/{print $1}')" -- ${cur}))
+			return 0
+			;;
+		esac
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "$opts" -- ${cur}))
+			return 0
+			;;
+		esac
+		if [ -z "$device_selected" ]; then
+			local num_devices=$(($(adb devices 2>/dev/null | wc -l) - 2))
+			if [ "$num_devices" -gt "1" ]; then
+				# With multiple devices, you must choose a device first.
+				COMPREPLY=($(compgen -W "${opts} ${cmds_not_need_device}" -- ${cur}))
+				return 0
+			fi
+		fi
+		COMPREPLY=($(compgen -W "${cmds}" -- ${cur}))
+		return 0
+		;;
+	devices)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-l" -- ${cur}))
+			return 0
+			;;
+		esac
+		return 0
+		;;
+	disconnect)
+		# Use 'adb devices' to list serial numbers.
+		COMPREPLY=($(compgen -W "$(adb devices |
+			awk '/(device|recovery|sideload|offline|unauthorized)$/{print $1}')" -- ${cur}))
+		return 0
+		;;
+	forward)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "--list --no-rebind --remove --remove-all" -- ${cur}))
+			;;
+
+		*)
+			if [[ $prev == "--list" || $prev == "--remove" || $prev == "--remove-all" ]]; then
+				COMPREPLY=()
+				return 0
+
+			else
+				COMPREPLY=($(compgen -W "tcp: localreserved: localfilesystem: jdwp: vsock: acceptfd:" -- ${cur}))
+				return 0
+			fi
+			;;
+
+		esac
+		return 0
+		;;
+	reverse)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "--list --no-rebind --remove --remove-all" -- ${cur}))
+			;;
+
+		*)
+			if [[ $prev == "--list" || $prev == "--remove" || $prev == "--remove-all" ]]; then
+				COMPREPLY=()
+				return 0
+
+			else
+				COMPREPLY=($(compgen -W "tcp: localabstract: localreserved: localfilesystem:" -- ${cur}))
+				return 0
+			fi
+			;;
+
+		esac
+		return 0
+		;;
+#	mdns)
+#		COMPREPLY=($(compgen -W "check services" -- ${cur}))
+#		return 0
+#		;;
+
+	push)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "--sync -n -z -Z" -- ${cur}))
+			;;
+
+		*)
+			if [ ${prev} == "-z" ]; then
+				COMPREPLY=($(compgen -W "any none brotli lz4 zstd" -- ${cur}))
+
+			else
+				if [ "${prev}" == "push" ] || [ "${prev}" == "any" ] || [ "${prev}" == "none" ] || [ "${prev}" == "brotli" ] || [ "${prev}" == "lz4" ] || [ "${prev}" == "zstd" ] || [ "${prev}" == "--sync" ] || [ "${prev}" == "-n" ] || [ "${prev}" == "-Z" ]; then
+					COMPREPLY=($(compgen -f -- ${cur}))
+				else
+					local IFS=$'\n'
+					if [ -z "${cur}" ]; then
+						local files=$(adb shell "ls -a -d /*" 2>/dev/null | tr -d '\r')
+						COMPREPLY=($(compgen -W "$files" -o filenames -- ${cur}))
+					else
+						local stripped_cur=$(echo ${cur} | sed 's,^",,')
+						local files=$(adb shell "ls -a -d '${stripped_cur}'*" 2>/dev/null | tr -d '\r')
+						COMPREPLY=($(compgen -W "$files" -o filenames -- ${cur}))
+					fi
+					return 0
+				fi
+
+			fi
+			;;
+		esac
+		;;
+
+	pull)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-a -z -Z" -- ${cur}))
+			;;
+
+		*)
+			if [ ${prev} == "-z" ]; then
+				COMPREPLY=($(compgen -W "any none brotli lz4 zstd" -- ${cur}))
+
+			else
+
+				local IFS=$'\n'
+				if [ -z ${cur} ]; then
+					local files=$(adb shell "ls -a" 2>/dev/null | tr -d '\r')
+					COMPREPLY=($(compgen -W "$files" -o filenames -- ${cur}))
+				else
+					local stripped_cur=$(echo ${cur} | sed 's,^",,')
+					local files=$(adb shell "ls -a -d '${stripped_cur}'*" 2>/dev/null | tr -d '\r')
+					COMPREPLY=($(compgen -W "$files" -o filenames -- ${cur}))
+				fi
+				return 0
+			fi
+			;;
+		esac
+		;;
+	sync)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-l -z -Z -n" -- ${cur}))
+			;;
+
+		*)
+			if [ ${prev} == "-z" ]; then
+				COMPREPLY=($(compgen -W "any none brotli lz4 zstd" -- ${cur}))
+
+			else
+				if [ "${prev}" == "any" ] || [ "${prev}" == "data" ] || [ "${prev}" == "odm" ] || [ "${prev}" == "oem" ] || [ "${prev}" == "product" ] || [ "${prev}" == "system" ] || [ "${prev}" == "system_ext" ] || [ "${prev}" == "vendor" ]; then
+					return 0
+				else
+					COMPREPLY=($(compgen -W "any data odm oem product system system_ext vendor" -- ${cur}))
+				fi
+			fi
+			;;
+		esac
+		;;
+	shell)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-e -n -T -t -x" -- ${cur}))
+			;;
+		*)
+			COMPREPLY=($(compgen -W "emu" -- ${cur}))
+
+			;;
+		esac
+		;;
+
+	install)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-l -r -t -s -d -g --abi --instant --no-streaming --streaming --fastdeploy --no-fastdeploy --force-agent --date-check-agent --version-check-agent --local-agent" -- ${cur}))
+			return 0
+			;;
+		*)
+			COMPREPLY=($(compgen -f -- ${cur}))
+			return 0
+			;;
+		esac
+		;;
+	install-multiple)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-l -r -t -s -d -p -g --abi --instant --no-streaming --streaming --fastdeploy --no-fastdeploy --force-agent --date-check-agent --version-check-agent --local-agent" -- ${cur}))
+			return 0
+			;;
+		*)
+			COMPREPLY=($(compgen -f -- ${cur}))
+			return 0
+			;;
+		esac
+		;;
+	install-multi-package)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-l -r -t -s -d -p -g --abi --instant --no-streaming --streaming --fastdeploy --no-fastdeploy --force-agent --date-check-agent --version-check-agent --local-agent" -- ${cur}))
+			return 0
+			;;
+		*)
+			COMPREPLY=($(compgen -f -- ${cur}))
+			return 0
+			;;
+		esac
+		;;
+	uninstall)
+		local apks=$(adb shell pm list packages 2>/dev/null | cut -b9-999 | tr '\n\r' ' ')
+		if [[ $prev != "-k" && $cur == "-" ]]; then
+			COMPREPLY=($(compgen -W "-k $apks" -- ${cur}))
+		else
+			COMPREPLY=($(compgen -W "$apks" -- ${cur}))
+		fi
+		return 0
+		;;
+	bugreport)
+
+		COMPREPLY=($(compgen -d -- ${cur}))
+
+		;;
+	logcat)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-v -b -c -d -f -g -n -r -s" -- ${cur}))
+			return 0
+			;;
+		esac
+		case "${prev}" in
+		-v)
+			COMPREPLY=($(compgen -W "brief process tag thread raw time long" -- ${cur}))
+			return 0
+			;;
+		-b)
+			COMPREPLY=($(compgen -W "radio events main" -- ${cur}))
+			return 0
+			;;
+		esac
+		;;
+	keygen)
+		COMPREPLY=($(compgen -d -- ${cur}))
+		;;
+	remount)
+		case "${cur}" in
+		-*)
+			COMPREPLY=($(compgen -W "-R" -- ${cur}))
+			return 0
+			;;
+		esac
+
+		;;
+	reboot)
+		if [ $prev == "reboot" ]; then
+			COMPREPLY=($(compgen -W "bootloader recovery sideload sideload-auto-reboot" -- ${cur}))
+		fi
+		;;
+	sideload)
+
+		COMPREPLY=($(compgen -f -- ${cur}))
+
+		;;
+	reconnect)
+
+		if [ $prev == "reconnect" ]; then
+			COMPREPLY=($(compgen -W "device offline" -- ${cur}))
+		fi
+
+		;;
+	attach)
+		COMPREPLY=($(compgen -W "$(adb devices |
+			awk '/(device|recovery|sideload)$/{print $1}')" -- ${cur}))
+		return 0
+		;;
+	detach)
+
+		COMPREPLY=($(compgen -W "$(adb devices |
+			awk '/(device|recovery|sideload)$/{print $1}')" -- ${cur}))
+		return 0
+		;;
+
+	esac
 }
 complete -o default -F _adb adb
 
