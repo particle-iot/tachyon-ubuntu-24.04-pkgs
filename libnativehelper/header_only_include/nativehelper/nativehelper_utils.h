@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+/** JNI utils for nativehelper-internal use. */
+
 #pragma once
 
 #include <jni.h>

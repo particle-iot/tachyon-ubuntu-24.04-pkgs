@@ -129,6 +129,12 @@ static void readDmesg(LogAudit* al, LogKlog* kl) {
     ssize_t len = rc + 1024;
     std::unique_ptr<char[]> buf(new char[len]);
 
+    // Drop old logs in /proc/kmsg to avoid duplicate print.
+    rc = klogctl(KLOG_SIZE_UNREAD, nullptr, 0);
+    if (rc > 0)
+        rc = klogctl(KLOG_READ, buf.get(), rc);
+
+
     rc = klogctl(KLOG_READ_ALL, buf.get(), len);
     if (rc <= 0) {
         return;

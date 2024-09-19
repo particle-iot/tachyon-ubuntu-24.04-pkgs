@@ -40,6 +40,7 @@ See:
 * [nativehelper/scoped_primitive_array.h](header_only_include/nativehelper/scoped_primitive_array.h)
 * [nativehelper/scoped_local_ref.h](header_only_include/nativehelper/scoped_local_ref.h)
 * [nativehelper/scoped_local_frame.h](header_only_include/nativehelper/scoped_local_frame.h)
+* [nativehelper/utils.h](header_only_include/nativehelper/utils.h)
 
 ### jni_platform_headers
 
@@ -76,6 +77,7 @@ See:
 * [nativehelper/ScopedPrimitiveArray.h](include/nativehelper/ScopedPrimitiveArray.h)
 * [nativehelper/ScopedStringChars.h](include/nativehelper/ScopedStringChars.h)
 * [nativehelper/toStringArray.h](include/nativehelper/toStringArray.h)
+* [nativehelper/Utils.h](include/nativehelper/Utils.h)
 
 ### libnativehelper_compat_libc++
 

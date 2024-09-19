@@ -32,6 +32,7 @@
 
 #include <android-base/file.h>
 #include <android-base/macros.h>
+#include <android-base/properties.h>
 #include <android-base/scopeguard.h>
 #include <android-base/stringprintf.h>
 #ifdef __ANDROID__  // includes sys/properties.h which does not exist outside
@@ -69,6 +70,12 @@ struct ListCloser {
   void operator()(struct logger_list* list) { android_logger_list_close(list); }
 };
 
+// Devices can set a system property indicating a slower device, giving a
+// multiplier to use for timeouts.  If the device has set this property, we use it.
+static unsigned int getAlarmSeconds(unsigned int seconds) {
+  return seconds * android::base::GetIntProperty("ro.hw_timeout_multiplier", 1);
+}
+
 // This function is meant to be used for most log tests, it does the following:
 // 1) Open the log_buffer with a blocking reader
 // 2) Write the messages via write_messages
@@ -88,7 +95,7 @@ static void RunLogTests(log_id_t log_buffer, FWrite write_messages, FCheck check
 
   write_messages();
 
-  alarm(2);
+  alarm(getAlarmSeconds(2));
   auto alarm_guard = android::base::make_scope_guard([] { alarm(0); });
   bool found = false;
   while (!found) {
@@ -574,7 +581,7 @@ TEST(liblog, android_logger_list_read__cpu_signal) {
   unsigned long long sticks_start;
   get_ticks(&uticks_start, &sticks_start);
 
-  const unsigned alarm_time = 10;
+  const unsigned alarm_time = getAlarmSeconds(10);
 
   memset(&signal_time, 0, sizeof(signal_time));
 
@@ -727,7 +734,7 @@ TEST(liblog, android_logger_list_read__cpu_thread) {
   unsigned long long sticks_start;
   get_ticks(&uticks_start, &sticks_start);
 
-  const unsigned alarm_time = 10;
+  const unsigned alarm_time = getAlarmSeconds(10);
 
   memset(&signal_time, 0, sizeof(signal_time));
 
@@ -1095,7 +1102,7 @@ TEST(liblog, dual_reader) {
                                               "liblog", buffer));
   }
 
-  alarm(2);
+  alarm(getAlarmSeconds(2));
   auto alarm_guard = android::base::make_scope_guard([] { alarm(0); });
 
   // Wait until we see all messages with the blocking reader.

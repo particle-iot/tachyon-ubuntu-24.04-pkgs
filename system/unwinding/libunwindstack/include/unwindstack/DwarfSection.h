@@ -73,8 +73,8 @@ class DwarfSection {
       return *this;
     }
 
-    bool operator==(const iterator& rhs) { return this->index_ == rhs.index_; }
-    bool operator!=(const iterator& rhs) { return this->index_ != rhs.index_; }
+    bool operator==(const iterator& rhs) const { return this->index_ == rhs.index_; }
+    bool operator!=(const iterator& rhs) const { return this->index_ != rhs.index_; }
 
     const DwarfFde* operator*() {
       if (index_ > fdes_.size()) return nullptr;

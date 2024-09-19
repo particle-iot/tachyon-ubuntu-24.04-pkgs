@@ -185,8 +185,7 @@ TEST_F(zipwriter, WriteUncompressedZipFileWithAlignedFlag) {
 }
 
 static struct tm MakeTm() {
-  struct tm tm;
-  memset(&tm, 0, sizeof(struct tm));
+  struct tm tm = {};
   tm.tm_year = 2001 - 1900;
   tm.tm_mon = 1;
   tm.tm_mday = 12;
@@ -333,6 +332,42 @@ TEST_F(zipwriter, WriteCompressedZipFlushFull) {
                                static_cast<uint32_t>(decompress.size())));
   EXPECT_EQ(0, memcmp(decompress.data(), buffer.data(), kBufSize))
       << "Input buffer and output buffer are different.";
+
+  CloseArchive(handle);
+}
+
+TEST_F(zipwriter, WriteZipWithEntryTimeBefore1980) {
+  ZipWriter writer(file_);
+
+  struct tm tm = {};
+  tm.tm_year = 77;  // 1977
+  tm.tm_mon = 7;    // August (0-based)
+  tm.tm_mday = 16;  // 16th
+  tm.tm_hour = 15;
+  tm.tm_min = 30;
+  tm.tm_sec = 20;
+  time_t time = mktime(&tm);
+  ASSERT_EQ(0, writer.StartEntryWithTime("file.txt", 0, time));
+  ASSERT_EQ(0, writer.WriteBytes("king", 4));
+  ASSERT_EQ(0, writer.FinishEntry());
+  ASSERT_EQ(0, writer.Finish());
+
+  ASSERT_GE(0, lseek(fd_, 0, SEEK_SET));
+
+  ZipArchiveHandle handle;
+  ASSERT_EQ(0, OpenArchiveFd(fd_, "temp", &handle, false));
+
+  ZipEntry data;
+  ASSERT_EQ(0, FindEntry(handle, "file.txt", &data));
+
+  // We expect an entry time before 1980 to be set to 1980-01-01.
+  struct tm mod = data.GetModificationTime();
+  EXPECT_EQ(80, mod.tm_year);
+  EXPECT_EQ(0, mod.tm_mon);
+  EXPECT_EQ(1, mod.tm_mday);
+  EXPECT_EQ(0, mod.tm_hour);
+  EXPECT_EQ(0, mod.tm_min);
+  EXPECT_EQ(0, mod.tm_sec);
 
   CloseArchive(handle);
 }

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
+
 #include <ctype.h>
 #include <dirent.h>
 #include <pwd.h>
@@ -186,13 +188,8 @@ TEST(logcat, year) {
         char needle[32];
         time_t now;
         time(&now);
-        struct tm* ptm;
-#if !defined(_WIN32)
         struct tm tmBuf;
-        ptm = localtime_r(&now, &tmBuf);
-#else
-        ptm = localtime(&&now);
-#endif
+        struct tm* ptm = localtime_r(&now, &tmBuf);
         strftime(needle, sizeof(needle), "[ %Y-", ptm);
 
         ASSERT_TRUE(NULL !=

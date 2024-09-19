@@ -23,6 +23,8 @@
 #include "nativehelper_utils.h"
 
 // A smart pointer that deletes a JNI local reference when it goes out of scope.
+//
+// For creating a `ScopedLocalRef<jstring>`, consider using `CREATE_UTF_OR_RETURN`.
 template<typename T>
 class ScopedLocalRef {
 public:

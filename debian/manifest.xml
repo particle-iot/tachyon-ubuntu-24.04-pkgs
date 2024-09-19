@@ -3,7 +3,7 @@
 
   <remote  name="aosp"
            fetch="https://android.googlesource.com/" />
-  <default revision="refs/tags/platform-tools-34.0.4"
+  <default revision="refs/tags/platform-tools-34.0.5"
            remote="aosp"
            sync-j="4" />
 

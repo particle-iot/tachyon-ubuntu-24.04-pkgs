@@ -39,7 +39,6 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
-#include <optional>
 #include <thread>
 
 #include "android/binder_ibinder.h"
@@ -377,18 +376,24 @@ TEST(NdkBinder, CantHaveTwoLocalBinderClassesWithSameDescriptor) {
 }
 
 TEST(NdkBinder, GetTestServiceStressTest) {
-    // libbinder has some complicated logic to make sure only one instance of
-    // ABpBinder is associated with each binder.
-
     constexpr size_t kNumThreads = 10;
     constexpr size_t kNumCalls = 1000;
     std::vector<std::thread> threads;
+
+    // this is not a lazy service, but we must make sure that it's started before calling
+    // checkService on it, since the other process serving it might not be started yet.
+    {
+        // getService, not waitForService, to take advantage of timeout
+        auto binder = ndk::SpAIBinder(AServiceManager_getService(IFoo::kSomeInstanceName));
+        ASSERT_NE(nullptr, binder.get());
+    }
 
     for (size_t i = 0; i < kNumThreads; i++) {
         threads.push_back(std::thread([&]() {
             for (size_t j = 0; j < kNumCalls; j++) {
                 auto binder =
                         ndk::SpAIBinder(AServiceManager_checkService(IFoo::kSomeInstanceName));
+                ASSERT_NE(nullptr, binder.get());
                 EXPECT_EQ(STATUS_OK, AIBinder_ping(binder.get()));
             }
         }));
@@ -425,21 +430,6 @@ TEST(NdkBinder, GetLazyService) {
     ASSERT_NE(service, nullptr);
 
     EXPECT_EQ(STATUS_OK, AIBinder_ping(binder.get()));
-}
-
-TEST(NdkBinder, IsUpdatable) {
-    bool isUpdatable = AServiceManager_isUpdatableViaApex("android.hardware.light.ILights/default");
-    EXPECT_EQ(isUpdatable, false);
-}
-
-TEST(NdkBinder, GetUpdatableViaApex) {
-    std::optional<std::string> updatableViaApex;
-    AServiceManager_getUpdatableApexName(
-            "android.hardware.light.ILights/default", &updatableViaApex,
-            [](const char* apexName, void* context) {
-                *static_cast<std::optional<std::string>*>(context) = apexName;
-            });
-    EXPECT_EQ(updatableViaApex, std::nullopt) << *updatableViaApex;
 }
 
 // This is too slow
@@ -755,9 +745,9 @@ TEST(NdkBinder, ConvertToPlatformBinder) {
           // local
           ndk::SharedRefBase::make<MyBinderNdkUnitTest>()->asBinder()}) {
         // convert to platform binder
-        EXPECT_NE(binder.get(), nullptr);
+        EXPECT_NE(binder, nullptr);
         sp<IBinder> platformBinder = AIBinder_toPlatformBinder(binder.get());
-        EXPECT_NE(platformBinder.get(), nullptr);
+        EXPECT_NE(platformBinder, nullptr);
         auto proxy = interface_cast<IBinderNdkUnitTest>(platformBinder);
         EXPECT_NE(proxy, nullptr);
 
@@ -768,7 +758,7 @@ TEST(NdkBinder, ConvertToPlatformBinder) {
 
         // convert back
         ndk::SpAIBinder backBinder = ndk::SpAIBinder(AIBinder_fromPlatformBinder(platformBinder));
-        EXPECT_EQ(backBinder.get(), binder.get());
+        EXPECT_EQ(backBinder, binder);
     }
 }
 

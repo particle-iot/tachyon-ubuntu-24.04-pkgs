@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include <functional>
 #include <string>
 
 #include <android-base/macros.h>
@@ -198,6 +199,9 @@ void put_apacket(apacket* p);
 #define ADB_CLASS 0xff
 #define ADB_SUBCLASS 0x42
 #define ADB_PROTOCOL 0x1
+
+#define ADB_DBC_CLASS 0xDC
+#define ADB_DBC_SUBCLASS 0x2
 
 void local_init(const std::string& addr);
 bool local_connect(int port);

@@ -253,8 +253,11 @@ TEST(logging_splitters, LogdChunkSplitter_TooLongFile) {
 
 void TestStderrOutputGenerator(const char* tag, const char* file, int line, const char* message,
                                const std::string& expected) {
-  // All log messages will show "01-01 00:00:00.000"
+  // All log messages will show "01-01 00:00:00.000"...
   struct timespec ts = {.tv_sec = 0, .tv_nsec = 0};
+  // ...provided we're in the right time zone.
+  putenv(const_cast<char*>("TZ=UTC"));
+  tzset();
 
   int pid = 1234;       // All log messages will have 1234 for their PID.
   uint64_t tid = 4321;  // All log messages will have 4321 for their TID.

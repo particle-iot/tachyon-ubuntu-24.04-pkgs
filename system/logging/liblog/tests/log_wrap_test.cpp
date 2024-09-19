@@ -68,7 +68,7 @@ TEST(liblog, wrap_mode_blocks) {
   struct sigaction ignore = {.sa_handler = [](int) { _exit(0); }};
   struct sigaction old_sigaction;
   sigaction(SIGALRM, &ignore, &old_sigaction);
-  alarm(5);
+  alarm(10);
 
   android::base::Timer timer;
   read_with_wrap();

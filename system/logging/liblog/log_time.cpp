@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
+
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -33,13 +35,8 @@ char* log_time::strptime(const char* s, const char* format) {
   tv_nsec = 0;
 #endif
 
-  struct tm* ptm;
-#if !defined(_WIN32)
   struct tm tmBuf;
-  ptm = localtime_r(&now, &tmBuf);
-#else
-  ptm = localtime(&now);
-#endif
+  struct tm* ptm = localtime_r(&now, &tmBuf);
 
   char fmt[strlen(format) + 1];
   strcpy(fmt, format);
@@ -73,11 +70,7 @@ char* log_time::strptime(const char* s, const char* format) {
         ++ret;
       }
       now = tv_sec;
-#if !defined(_WIN32)
       ptm = localtime_r(&now, &tmBuf);
-#else
-      ptm = localtime(&now);
-#endif
     } else
 #endif
     {

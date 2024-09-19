@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
+
 #include "ziparchive/zip_writer.h"
 
 #include <sys/param.h>
@@ -156,20 +158,23 @@ static void ExtractTimeAndDate(time_t when, uint16_t* out_time, uint16_t* out_da
   /* round up to an even number of seconds */
   when = static_cast<time_t>((static_cast<unsigned long>(when) + 1) & (~1));
 
-  struct tm* ptm;
-#if !defined(_WIN32)
   struct tm tm_result;
-  ptm = localtime_r(&when, &tm_result);
-#else
-  ptm = localtime(&when);
-#endif
+  struct tm* ptm = localtime_r(&when, &tm_result);
 
-  int year = ptm->tm_year;
-  if (year < 80) {
-    year = 80;
+  // The earliest valid time for ZIP file entries is 1980-01-01. See:
+  // https://users.cs.jmu.edu/buchhofp/forensics/formats/pkzip.html.
+  // Set any time before 1980 to 1980-01-01.
+  if (ptm->tm_year < 80) {
+    ptm->tm_year = 80;
+    ptm->tm_mon = 0;
+    ptm->tm_mday = 1;
+    ptm->tm_hour = 0;
+    ptm->tm_min = 0;
+    ptm->tm_sec = 0;
   }
 
-  *out_date = static_cast<uint16_t>((year - 80) << 9 | (ptm->tm_mon + 1) << 5 | ptm->tm_mday);
+  *out_date =
+      static_cast<uint16_t>((ptm->tm_year - 80) << 9 | (ptm->tm_mon + 1) << 5 | ptm->tm_mday);
   *out_time = static_cast<uint16_t>(ptm->tm_hour << 11 | ptm->tm_min << 5 | ptm->tm_sec >> 1);
 }
 

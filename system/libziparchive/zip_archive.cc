@@ -97,13 +97,17 @@ static constexpr uint64_t kMaxFileLength = 256 * static_cast<uint64_t>(1u << 30u
  * of the string length into the hash table entry.
  */
 
-constexpr auto kPageSize = 4096;
+#ifdef __linux__
+static const size_t kPageSize = getpagesize();
+#else
+constexpr size_t kPageSize = 4096;
+#endif
 
-[[maybe_unused]] static constexpr uintptr_t pageAlignDown(uintptr_t ptr_int) {
+[[maybe_unused]] static uintptr_t pageAlignDown(uintptr_t ptr_int) {
   return ptr_int & ~(kPageSize - 1);
 }
 
-[[maybe_unused]] static constexpr uintptr_t pageAlignUp(uintptr_t ptr_int) {
+[[maybe_unused]] static uintptr_t pageAlignUp(uintptr_t ptr_int) {
   return pageAlignDown(ptr_int + kPageSize - 1);
 }
 
@@ -1370,7 +1374,7 @@ bool Reader::IsZeroCopy() const {
 }  // namespace zip_archive
 
 static std::span<uint8_t> bufferToSpan(zip_archive::Writer::Buffer buf) {
-  return {buf.first, ssize_t(buf.second)};
+  return std::span<uint8_t>(buf.first, buf.second);
 }
 
 template <bool OnIncfs>

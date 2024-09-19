@@ -99,25 +99,25 @@ TEST(logging, CHECK) {
 
 TEST(logging, DCHECK) {
   if (android::base::kEnableDChecks) {
-    ASSERT_DEATH({SuppressAbortUI(); DCHECK(false);}, "DCheck failed: false ");
+    ASSERT_DEATH({SuppressAbortUI(); DCHECK(false);}, "Check failed: false ");
   }
   DCHECK(true);
 
   if (android::base::kEnableDChecks) {
-    ASSERT_DEATH({SuppressAbortUI(); DCHECK_EQ(0, 1);}, "DCheck failed: 0 == 1 ");
+    ASSERT_DEATH({SuppressAbortUI(); DCHECK_EQ(0, 1);}, "Check failed: 0 == 1 ");
   }
   DCHECK_EQ(0, 0);
 
   std::unique_ptr<int> p;
   if (android::base::kEnableDChecks) {
-    ASSERT_DEATH(DCHECK_NE(p, nullptr), "DCheck failed");
+    ASSERT_DEATH(DCHECK_NE(p, nullptr), "Check failed");
   }
   DCHECK_EQ(p, nullptr);
   DCHECK_EQ(p, p);
 
   if (android::base::kEnableDChecks) {
     ASSERT_DEATH({SuppressAbortUI(); DCHECK_STREQ("foo", "bar");},
-                 R"(DCheck failed: "foo" == "bar")");
+                 R"(Check failed: "foo" == "bar")");
   }
   DCHECK_STREQ("foo", "foo");
 

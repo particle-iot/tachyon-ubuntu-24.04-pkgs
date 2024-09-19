@@ -655,7 +655,7 @@ static void BM_log_latency(benchmark::State& state) {
   signal(SIGALRM, caught_latency);
   alarm(alarm_time);
 
-  for (size_t j = 0; state.KeepRunning() && j < 10 * state.iterations(); ++j) {
+  for (int64_t j = 0; state.KeepRunning() && j < 10 * state.iterations(); ++j) {
   retry:  // We allow transitory errors (logd overloaded) to be retried.
     log_time ts;
     LOG_FAILURE_RETRY((ts = log_time(CLOCK_REALTIME),
@@ -888,7 +888,7 @@ static void send_to_control(char* buf, size_t len) {
     return;
   }
   while ((ret = read(sock, buf, len)) > 0) {
-    if (((size_t)ret == len) || (len < PAGE_SIZE)) {
+    if ((size_t)ret == len) {
       break;
     }
     len -= ret;

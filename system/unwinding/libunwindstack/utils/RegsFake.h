@@ -50,7 +50,7 @@ class RegsFake : public Regs {
 
   bool Is32Bit() {
     CHECK(fake_arch_ != ARCH_UNKNOWN);
-    return fake_arch_ == ARCH_ARM || fake_arch_ == ARCH_X86 || fake_arch_ == ARCH_MIPS;
+    return fake_arch_ == ARCH_ARM || fake_arch_ == ARCH_X86;
   }
 
   bool StepIfSignalHandler(uint64_t, Elf*, Memory*) override { return false; }

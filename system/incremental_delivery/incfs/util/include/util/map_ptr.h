@@ -17,6 +17,7 @@
 #pragma once
 
 #include <android-base/logging.h>
+#include <android-base/macros.h>
 #include <android-base/off64_t.h>
 
 #include <atomic>

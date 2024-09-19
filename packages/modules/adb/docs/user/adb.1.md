@@ -359,7 +359,7 @@ detach **SERIAL**
 # ENVIRONMENT VARIABLES
 
 $ADB_TRACE  
-&nbsp;&nbsp;&nbsp;&nbsp;Comma-separated list of debug info to log: all,adb,sockets,packets,rwx,usb,sync,sysdeps,transport,jdwp.
+&nbsp;&nbsp;&nbsp;&nbsp;Comma (or space) separated list of debug info to log: all,adb,sockets,packets,rwx,usb,sync,sysdeps,transport,jdwp.
 
 $ADB_VENDOR_KEYS  
 &nbsp;&nbsp;&nbsp;&nbsp;Colon-separated list of keys (files or directories).
@@ -375,6 +375,9 @@ $ADB_LOCAL_TRANSPORT_MAX_PORT
 
 $ADB_MDNS_AUTO_CONNECT  
 &nbsp;&nbsp;&nbsp;&nbsp;Comma-separated list of mdns services to allow auto-connect (default adb-tls-connect).
+
+$ADB_MDNS_OPENSCREEN
+&nbsp;&nbsp;&nbsp;&nbsp;The default mDNS-SD backend is Bonjour (mdnsResponder). For machines where Bonjour is not installed, adb can spawn its own, embedded, mDNS-SD back end, openscreen. If set to "1", this env variable forces mDNS backend to openscreen.
 
 # BUGS
 

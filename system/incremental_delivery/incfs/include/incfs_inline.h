@@ -28,6 +28,8 @@ constexpr char kIdAttrName[] = INCFS_XATTR_ID_NAME;
 constexpr char kSizeAttrName[] = INCFS_XATTR_SIZE_NAME;
 constexpr char kMetadataAttrName[] = INCFS_XATTR_METADATA_NAME;
 
+extern const size_t kPageSize;
+
 namespace details {
 
 class CStrWrapper {
@@ -271,16 +273,16 @@ inline WaitResult waitForPendingReads(const Control& control, std::chrono::milli
 
 inline WaitResult waitForPageReads(const Control& control, std::chrono::milliseconds timeout,
                                    std::vector<ReadInfo>* pageReadsBuffer) {
-    static constexpr auto kDefaultBufferSize =
-            INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES * PAGE_SIZE / sizeof(ReadInfo);
+    static const auto kDefaultBufferSize =
+            INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES * kPageSize / sizeof(ReadInfo);
     return waitForReads(control, timeout, pageReadsBuffer, kDefaultBufferSize,
                         IncFs_WaitForPageReads);
 }
 
 inline WaitResult waitForPageReads(const Control& control, std::chrono::milliseconds timeout,
                                    std::vector<ReadInfoWithUid>* pageReadsBuffer) {
-    static constexpr auto kDefaultBufferSize =
-            INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES * PAGE_SIZE / sizeof(ReadInfoWithUid);
+    static const auto kDefaultBufferSize =
+            INCFS_DEFAULT_PAGE_READ_BUFFER_PAGES * kPageSize / sizeof(ReadInfoWithUid);
     return waitForReads(control, timeout, pageReadsBuffer, kDefaultBufferSize,
                         IncFs_WaitForPageReadsWithUid);
 }

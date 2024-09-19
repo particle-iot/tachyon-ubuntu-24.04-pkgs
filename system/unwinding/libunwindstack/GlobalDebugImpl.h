@@ -409,8 +409,7 @@ std::unique_ptr<GlobalDebugInterface<Symfile>> CreateGlobalDebugImpl(
       static_assert(sizeof(typename Impl::JITDescriptor) == 48, "layout");
       return std::make_unique<Impl>(arch, jit_memory, search_libs, global_variable_name);
     }
-    case ARCH_ARM:
-    case ARCH_MIPS: {
+    case ARCH_ARM: {
       using Impl = GlobalDebugImpl<Symfile, uint32_t, Uint64_A>;
       static_assert(offsetof(typename Impl::JITCodeEntry, symfile_size) == 16, "layout");
       static_assert(offsetof(typename Impl::JITCodeEntry, seqlock) == 32, "layout");
@@ -420,7 +419,6 @@ std::unique_ptr<GlobalDebugInterface<Symfile>> CreateGlobalDebugImpl(
     }
     case ARCH_ARM64:
     case ARCH_X86_64:
-    case ARCH_MIPS64:
     case ARCH_RISCV64: {
       using Impl = GlobalDebugImpl<Symfile, uint64_t, Uint64_A>;
       static_assert(offsetof(typename Impl::JITCodeEntry, symfile_size) == 24, "layout");

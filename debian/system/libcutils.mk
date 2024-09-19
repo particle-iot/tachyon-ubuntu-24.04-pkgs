@@ -24,7 +24,6 @@ cc_library_srcs = \
   properties.cpp \
   record_stream.cpp \
   strlcpy.c \
-  threads.cpp \
 
 cc_library_target_not_windows_srcs = \
   ashmem-host.cpp \

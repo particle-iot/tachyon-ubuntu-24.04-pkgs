@@ -211,14 +211,6 @@ uint64_t GetPcAdjustment(uint64_t rel_pc, Elf* elf, ArchEnum arch) {
       }
       return 4;
     }
-  case ARCH_MIPS:
-  case ARCH_MIPS64: {
-    if (rel_pc < 8) {
-      return 0;
-    }
-    // For now, just assume no compact branches
-    return 8;
-  }
   case ARCH_X86:
   case ARCH_X86_64: {
     if (rel_pc == 0) {

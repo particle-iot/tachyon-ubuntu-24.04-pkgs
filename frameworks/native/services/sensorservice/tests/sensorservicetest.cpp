@@ -105,7 +105,7 @@ int main() {
 
     Sensor const* accelerometer = mgr.getDefaultSensor(Sensor::TYPE_ACCELEROMETER);
     printf("accelerometer=%p (%s)\n",
-            accelerometer, accelerometer->getName().string());
+            accelerometer, accelerometer->getName().c_str());
 
     sStartTime = systemTime();
 
@@ -130,7 +130,7 @@ int main() {
                 printf("ALOOPER_POLL_TIMEOUT\n");
                 break;
             case ALOOPER_POLL_ERROR:
-                printf("ALOOPER_POLL_TIMEOUT\n");
+                printf("ALOOPER_POLL_ERROR\n");
                 break;
             default:
                 printf("ugh? poll returned %d\n", ret);

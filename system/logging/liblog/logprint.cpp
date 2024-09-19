@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
+
 #include <log/logprint.h>
 
 #include <assert.h>
@@ -1211,7 +1213,7 @@ static void convertMonotonic(struct timespec* result, const AndroidLogEntry* ent
         static const char resume[] = "PM: suspend exit ";
         static const char healthd[] = "healthd";
         static const char battery[] = ": battery ";
-        static const char suspended[] = "Suspended for ";
+        static const char suspended[] = "suspended for ";
         struct timespec monotonic;
         struct tm tm;
         char *cp, *e = line;
@@ -1415,9 +1417,7 @@ static void convertMonotonic(struct timespec* result, const AndroidLogEntry* ent
 char* android_log_formatLogLine(AndroidLogFormat* p_format, char* defaultBuffer,
                                 size_t defaultBufferSize, const AndroidLogEntry* entry,
                                 size_t* p_outLength) {
-#if !defined(_WIN32)
   struct tm tmBuf;
-#endif
   struct tm* ptm;
   /* good margin, 23+nul for msec, 26+nul for usec, 29+nul to nsec */
   char timeBuf[64];
@@ -1462,11 +1462,7 @@ char* android_log_formatLogLine(AndroidLogFormat* p_format, char* defaultBuffer,
     snprintf(timeBuf, sizeof(timeBuf), p_format->monotonic_output ? "%6lld" : "%19lld",
              (long long)now);
   } else {
-#if !defined(_WIN32)
     ptm = localtime_r(&now, &tmBuf);
-#else
-    ptm = localtime(&now);
-#endif
     strftime(timeBuf, sizeof(timeBuf), &"%Y-%m-%d %H:%M:%S"[p_format->year_output ? 0 : 3], ptm);
   }
   len = strlen(timeBuf);

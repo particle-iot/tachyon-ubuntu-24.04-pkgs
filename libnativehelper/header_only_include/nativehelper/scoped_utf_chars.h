@@ -23,6 +23,11 @@
 
 #include "nativehelper_utils.h"
 
+// Protect this with __has_include to cope with `stl: "none"` users.
+#if __has_include(<string_view>)
+#include <string_view>
+#endif
+
 // A smart pointer that provides read-only access to a Java string's UTF chars.
 // Unlike GetStringUTFChars, we throw NullPointerException rather than abort if
 // passed a null jstring, and c_str will return nullptr.
@@ -32,6 +37,8 @@
 //   if (name.c_str() == nullptr) {
 //     return nullptr;
 //   }
+//
+// Also consider using `GET_UTF_OR_RETURN`, a shorthand for the 4 lines above.
 class ScopedUtfChars {
  public:
   ScopedUtfChars(JNIEnv* env, jstring s) : env_(env), string_(s) {
@@ -84,6 +91,10 @@ class ScopedUtfChars {
     return utf_chars_[n];
   }
 
+#if __has_include(<string_view>)
+  operator std::string_view() const { return utf_chars_; }
+#endif
+
  private:
   JNIEnv* env_;
   jstring string_;
@@ -91,4 +102,3 @@ class ScopedUtfChars {
 
   DISALLOW_COPY_AND_ASSIGN(ScopedUtfChars);
 };
-

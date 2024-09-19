@@ -46,8 +46,8 @@ class ElfInterfaceArm : public ElfInterface32 {
     iterator& operator--() { index_--; return *this; }
     iterator& operator--(int decrement) { index_ -= decrement; return *this; }
 
-    bool operator==(const iterator& rhs) { return this->index_ == rhs.index_; }
-    bool operator!=(const iterator& rhs) { return this->index_ != rhs.index_; }
+    bool operator==(const iterator& rhs) const { return this->index_ == rhs.index_; }
+    bool operator!=(const iterator& rhs) const { return this->index_ != rhs.index_; }
 
     uint32_t operator*() {
       uint32_t addr = interface_->addrs_[index_];

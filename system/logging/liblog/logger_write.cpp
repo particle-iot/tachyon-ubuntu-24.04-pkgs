@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#define _POSIX_THREAD_SAFE_FUNCTIONS  // For mingw localtime_r().
+
 #include "logger_write.h"
 
 #include <errno.h>
@@ -252,15 +254,11 @@ static uint64_t GetThreadId() {
 }
 
 static void filestream_logger(const struct __android_log_message* log_message, FILE* stream) {
-  struct tm now;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
 
-#if defined(_WIN32)
-  localtime_s(&now, &ts.tv_sec);
-#else
+  struct tm now;
   localtime_r(&ts.tv_sec, &now);
-#endif
 
   char timestamp[sizeof("mm-DD HH::MM::SS.mmm\0")];
   size_t n = strftime(timestamp, sizeof(timestamp), "%m-%d %H:%M:%S", &now);

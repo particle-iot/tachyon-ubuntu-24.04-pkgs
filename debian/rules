@@ -5,7 +5,7 @@ include /usr/share/dpkg/pkg-info.mk
 
 ## Security Hardening
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
-# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-34.0.4/cc/config/global.go#301
+# https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-34.0.5/cc/config/global.go#356
 export DEB_CFLAGS_MAINT_APPEND = -fPIC -std=gnu17
 export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -std=gnu++2a
 export DEB_LDFLAGS_MAINT_APPEND = -fPIC
@@ -23,8 +23,8 @@ export DEB_SOURCE
 ## system
 export DEB_HOST_MULTIARCH
 export DEB_VERSION
-# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-34.0.4/sdk/plat_tools_source.prop_template
-export PLATFORM_TOOLS_VERSION = 34.0.4
+# https://android.googlesource.com/platform/development/+/refs/tags/platform-tools-34.0.5/sdk/plat_tools_source.prop_template
+export PLATFORM_TOOLS_VERSION = 34.0.5
 
 ifneq (, $(shell which clang))
   export CC = clang

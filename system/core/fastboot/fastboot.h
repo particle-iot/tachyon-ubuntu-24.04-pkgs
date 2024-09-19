@@ -27,11 +27,10 @@
  */
 #pragma once
 
+#include <functional>
 #include <string>
-#include "fastboot_driver.h"
 #include "fastboot_driver_interface.h"
 #include "filesystem.h"
-#include "super_flash_helper.h"
 #include "task.h"
 #include "util.h"
 
@@ -97,6 +96,8 @@ struct FlashingPlan {
     bool skip_secondary = false;
     bool force_flash = false;
     bool should_optimize_flash_super = true;
+    bool should_use_fastboot_info = true;
+    bool exclude_dynamic_partitions = false;
     uint64_t sparse_limit = 0;
 
     std::string slot_override;
@@ -111,6 +112,7 @@ class FlashAllTool {
     FlashAllTool(FlashingPlan* fp);
 
     void Flash();
+    std::vector<std::unique_ptr<Task>> CollectTasks();
 
   private:
     void CheckRequirements();
@@ -118,6 +120,8 @@ class FlashAllTool {
     void CollectImages();
     void AddFlashTasks(const std::vector<std::pair<const Image*, std::string>>& images,
                        std::vector<std::unique_ptr<Task>>& tasks);
+
+    std::vector<std::unique_ptr<Task>> CollectTasksFromFastbootInfo();
     std::vector<std::unique_ptr<Task>> CollectTasksFromImageList();
 
     std::vector<ImageEntry> boot_images_;
@@ -143,7 +147,8 @@ class LocalImageSource final : public ImageSource {
     unique_fd OpenFile(const std::string& name) const override;
 };
 
-bool should_flash_in_userspace(const std::string& partition_name);
+char* get_android_product_out();
+bool should_flash_in_userspace(const ImageSource* source, const std::string& partition_name);
 bool is_userspace_fastboot();
 void do_flash(const char* pname, const char* fname, const bool apply_vbmeta,
               const FlashingPlan* fp);
@@ -176,13 +181,13 @@ struct NetworkSerial {
 };
 
 Result<NetworkSerial, FastbootError> ParseNetworkSerial(const std::string& serial);
-bool supports_AB();
 std::string GetPartitionName(const ImageEntry& entry, const std::string& current_slot_);
 void flash_partition_files(const std::string& partition, const std::vector<SparsePtr>& files);
 int64_t get_sparse_limit(int64_t size, const FlashingPlan* fp);
 std::vector<SparsePtr> resparse_file(sparse_file* s, int64_t max_size);
 
-bool is_retrofit_device();
+bool supports_AB(fastboot::IFastBootDriver* fb);
+bool is_retrofit_device(const ImageSource* source);
 bool is_logical(const std::string& partition);
 void fb_perform_format(const std::string& partition, int skip_if_not_supported,
                        const std::string& type_override, const std::string& size_override,

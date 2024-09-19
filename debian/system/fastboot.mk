@@ -1,5 +1,6 @@
 NAME = fastboot
 
+# system/core/fastboot/Android.bp
 fastboot_SOURCES = \
   bootimg_utils.cpp \
   fastboot_driver.cpp \
@@ -18,6 +19,7 @@ fastboot_SOURCES = \
   \
   usb_linux.cpp \
 
+# system/core/fs_mgr/liblp/Android.bp
 fs_mgr_liblp_SOURCES := \
   builder.cpp \
   super_layout_builder.cpp \

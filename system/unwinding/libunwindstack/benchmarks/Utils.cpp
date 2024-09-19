@@ -70,7 +70,7 @@ uint64_t GetRSSBytes() {
         android::base::StartsWith(vma.name, "[anon:GWP-ASan")) {
       android::meminfo::Vma update_vma(vma);
       if (!proc_mem.FillInVmaStats(update_vma)) {
-        err(1, "FillInVmaStats failed\n");
+        err(1, "FillInVmaStats failed");
       }
       total_bytes += update_vma.usage.rss;
     }

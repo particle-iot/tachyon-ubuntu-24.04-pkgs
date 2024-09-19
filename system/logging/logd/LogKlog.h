@@ -28,8 +28,6 @@ class LogKlog : public SocketListener {
     // Set once thread is started, separates KLOG_ACTION_READ_ALL
     // and KLOG_ACTION_READ phases.
     bool initialized;
-    // Used during each of the above phases to control logging.
-    bool enableLogging;
     // set if we are also running auditd, to filter out audit reports from
     // our copy of the kernel log
     bool auditd;

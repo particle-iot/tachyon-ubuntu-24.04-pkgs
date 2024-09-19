@@ -401,8 +401,8 @@ public:
         // Stopping both loopers and waiting for them to exit - we should be able to acquire/release
         // both mutexes.
         mRunning = false;
-        std::lock_guard{mPendingReadsLooperBusy}; // NOLINT
-        std::lock_guard{mLogLooperBusy}; // NOLINT
+        (void)std::lock_guard{mPendingReadsLooperBusy}; // NOLINT
+        (void)std::lock_guard{mLogLooperBusy};          // NOLINT
 
         if (mDataLoader->onStop) {
             mDataLoader->onStop(mDataLoader);

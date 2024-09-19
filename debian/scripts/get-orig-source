@@ -8,10 +8,11 @@ if ! test -v PLATFORM_TOOLS_VERSION; then
   exit 1
 fi
 
-mkdir --parents debian/tmp/get-orig-source/manifest
+PKG=$(pwd)
+mkdir -p ../tmp/get-orig-source/manifest
 (
-  cd debian/tmp/get-orig-source/manifest
-  ln --physical --force ../../../manifest.xml default.xml
+  cd ../tmp/get-orig-source/manifest
+  ln --physical --force ${PKG}/debian/manifest.xml default.xml
   git init
   git add default.xml
   git commit --no-gpg-sign --message=Changes
@@ -31,12 +32,12 @@ mkdir --parents debian/tmp/get-orig-source/manifest
   git config --global color.ui >/dev/null || git config --global color.ui auto
 )
 
-mkdir --parents debian/tmp/get-orig-source/archive
+mkdir -p ../tmp/get-orig-source/archive
 (
-  cd debian/tmp/get-orig-source/archive
+  cd ../tmp/get-orig-source/archive
   repo --time init --manifest-url=file://"$(readlink --canonicalize-existing ../manifest/.git)" --depth=1 -c --no-tags
   repo --time sync -c --no-tags -j$(nproc)
-  tar --create --xz --file "../../../../../${DEB_SOURCE}_${PLATFORM_TOOLS_VERSION}.orig.tar.xz" --exclude-from=../../../orig.excludes --mtime=2000-01-01 --sort=name ./*
+  tar --create --xz --file "../../../${DEB_SOURCE}_${PLATFORM_TOOLS_VERSION}.orig.tar.xz" --exclude-from=${PKG}/debian/orig.excludes --mtime=2000-01-01 --sort=name ./*
 )
 
 # cleanup

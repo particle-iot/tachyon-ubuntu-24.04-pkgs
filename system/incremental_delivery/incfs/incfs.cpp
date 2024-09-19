@@ -59,6 +59,10 @@ using namespace android::incfs;
 using namespace android::sysprop;
 namespace ab = android::base;
 
+namespace android::incfs {
+extern const size_t kPageSize = getpagesize();
+}
+
 struct IncFsControl final {
     IncFsFd cmd;
     IncFsFd pendingReads;

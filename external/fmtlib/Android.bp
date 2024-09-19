@@ -76,6 +76,7 @@ cc_library_headers {
     },
     visibility: ["//system/libbase"],
     min_sdk_version: "29",
+    sdk_version: "current",
     apex_available: [
         "//apex_available:anyapex",
         "//apex_available:platform",

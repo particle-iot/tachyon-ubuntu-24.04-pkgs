@@ -40,7 +40,7 @@ static const char priority_message[] = { KMSG_PRIORITY(LOG_INFO), '\0' };
 // List of the _only_ needles we supply here to android::strnstr
 static const char suspendStr[] = "PM: suspend entry ";
 static const char resumeStr[] = "PM: suspend exit ";
-static const char suspendedStr[] = "Suspended for ";
+static const char suspendedStr[] = "suspended for ";
 static const char healthdStr[] = "healthd";
 static const char batteryStr[] = ": battery ";
 static const char auditStr[] = " audit(";
@@ -206,7 +206,6 @@ LogKlog::LogKlog(LogBuffer* buf, int fdWrite, int fdRead, bool auditd, LogStatis
       logbuf(buf),
       signature(CLOCK_MONOTONIC),
       initialized(false),
-      enableLogging(true),
       auditd(auditd),
       stats_(stats) {
     static const char klogd_message[] = "%s%s%" PRIu64 "\n";
@@ -221,7 +220,6 @@ bool LogKlog::onDataAvailable(SocketClient* cli) {
     if (!initialized) {
         prctl(PR_SET_NAME, "logd.klogd");
         initialized = true;
-        enableLogging = false;
     }
 
     char buffer[LOGGER_ENTRY_MAX_PAYLOAD];
@@ -325,7 +323,7 @@ log_time LogKlog::sniffTime(const char*& buf, ssize_t len, bool reverse) {
             log_time mono(CLOCK_MONOTONIC);
             correction = (real < mono) ? log_time(log_time::EPOCH) : (real - mono);
         } else if (((b = android::strnstr(cp, len, suspendedStr))) &&
-                   (((b += strlen(suspendStr)) - cp) < len)) {
+                   (((b += strlen(suspendedStr)) - cp) < len)) {
             len -= b - cp;
             log_time real(log_time::EPOCH);
             char* endp;
@@ -498,25 +496,7 @@ int LogKlog::log(const char* buf, ssize_t len) {
     int pri = parseKernelPrio(p, len);
 
     log_time now = sniffTime(p, len - (p - buf), false);
-
-    // sniff for start marker
-    const char* start = android::strnstr(p, len - (p - buf), klogdStr);
-    if (start) {
-        uint64_t sig = strtoll(start + strlen(klogdStr), nullptr, 10);
-        if (sig == signature.nsec()) {
-            if (initialized) {
-                enableLogging = true;
-            } else {
-                enableLogging = false;
-            }
-            return -1;
-        }
-        return 0;
-    }
-
-    if (!enableLogging) {
-        return 0;
-    }
+    const char* start;
 
     // Parse pid, tid and uid
     const pid_t pid = sniffPid(p, len - (p - buf));

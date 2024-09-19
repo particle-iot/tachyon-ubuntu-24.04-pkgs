@@ -21,7 +21,7 @@ pub use log_bindgen::log_id_LOG_ID_SECURITY as LogIdSecurity;
 
 /// Whether security logging is enabled.
 fn security_log_enabled() -> bool {
-    // The call doesn't require any preconditions and only returns an int, so must be safe.
+    // SAFETY: The call doesn't require any preconditions and only returns an int, so must be safe.
     unsafe { log_bindgen::__android_log_security() != 0 }
 }
 
@@ -44,8 +44,8 @@ pub struct LogContext {
     log_type: log_bindgen::log_id,
 }
 
-/// Log context is essentially a buffer with some associated state. All data that is appended to
-/// the context is copied into the buffers, no references are ever stored.
+/// SAFETY: Log context is essentially a buffer with some associated state. All data that is
+/// appended to the context is copied into the buffers, no references are ever stored.
 unsafe impl Send for LogContext {}
 
 impl LogContext {
@@ -55,7 +55,8 @@ impl LogContext {
             return None;
         }
 
-        // The method returns a pointer that is stored and always freed exactly once via Drop below.
+        // SAFETY: The method returns a pointer that is stored and always freed exactly once via
+        // Drop below.
         let ctx = unsafe { log_bindgen::create_android_logger(tag) };
         if !ctx.is_null() {
             Some(LogContext { ctx, log_type })
@@ -66,33 +67,33 @@ impl LogContext {
 
     /// Appends an i32 to the context.
     pub fn append_i32(self, data: i32) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_int32(self.ctx, data) })?;
         Ok(self)
     }
 
     /// Appends an i64 to the context.
     pub fn append_i64(self, data: i64) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_int64(self.ctx, data) })?;
         Ok(self)
     }
 
     /// Appends an f32 to the context.
     pub fn append_f32(self, data: f32) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_float32(self.ctx, data) })?;
         Ok(self)
     }
 
     /// Append a string to the context.
     pub fn append_str(self, data: &str) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, and the function will only read data.len() characters from the str, the
-        // pointer itself won't be stored, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, and the function will only read data.len() characters
+        // from the str, the pointer itself won't be stored, so should be safe.
         check_liblog_result(unsafe {
             log_bindgen::android_log_write_string8_len(
                 self.ctx,
@@ -105,32 +106,32 @@ impl LogContext {
 
     /// Begin a sublist of values.
     pub fn begin_list(self) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_list_begin(self.ctx) })?;
         Ok(self)
     }
 
     /// End a sublist of values.
     pub fn end_list(self) -> Result<Self, LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_list_end(self.ctx) })?;
         Ok(self)
     }
 
     /// Writes the context to a given buffer type and consumes the context.
     pub fn write(self) -> Result<(), LogContextError> {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         check_liblog_result(unsafe { log_bindgen::android_log_write_list(self.ctx, self.log_type) })
     }
 }
 
 impl Drop for LogContext {
     fn drop(&mut self) {
-        // This will only be called on a non-null pointer returned from create_android_logger
-        // previously, so should be safe.
+        // SAFETY: This will only be called on a non-null pointer returned from
+        // create_android_logger previously, so should be safe.
         unsafe { log_bindgen::android_log_destroy(&mut self.ctx) };
     }
 }
