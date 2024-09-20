@@ -64,13 +64,15 @@ CPPFLAGS += \
   -Isystem/unwinding/libunwindstack/include \
 
 LDFLAGS += \
+  -L/usr/lib/7zip \
   -Ldebian/out/external \
   -Ldebian/out/system \
   -Wl,-rpath=/usr/lib/$(DEB_HOST_MULTIARCH)/android \
+  -Wl,-rpath=/usr/lib/7zip \
   -Wl,-soname,$(NAME).so.0 \
   -lbase \
   -llog \
-  -llzma \
+  -l:7z.so \
   -lpthread \
   -shared
 

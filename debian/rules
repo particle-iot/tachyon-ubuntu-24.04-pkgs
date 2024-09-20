@@ -75,7 +75,7 @@ else
 	ronn -r $<
 endif
 
-s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/liblzma.so e/libcpu_features.so
+s/libbacktrace.so: debian/system/libbacktrace.mk s/libcutils.so e/libcpu_features.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/libbase.so: debian/system/libbase.mk s/liblog.so
@@ -104,7 +104,6 @@ s/append2simg: debian/system/append2simg.mk s/simg2img
 
 COMPONENTS = \
   e/libcpu_features.so \
-  e/liblzma.so \
   s/append2simg \
   s/img2simg \
   s/libbacktrace.so \
@@ -203,7 +202,8 @@ override_dh_auto_install:
 	echo ignore upstream build system install procedure
 
 override_dh_auto_configure-arch:
-	rm -rf development/[a-s]* development/v* development/testrunner
+	rm -rf development/[a-s]* development/v* development/testrunner \
+		external/lzma/{Asm,CPP,CS,DOC,Java} external/lzma/C/*.c external/lzma/C/Util
 	mkdir -p debian/out/dalvik/tools debian/out/development debian/out/external \
 		debian/out/frameworks/native debian/out/system/extras debian/out/libnativehelper
 ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
