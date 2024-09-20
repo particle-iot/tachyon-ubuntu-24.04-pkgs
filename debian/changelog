@@ -1,3 +1,9 @@
+android-platform-tools (34.0.5-1) unstable; urgency=medium
+
+  * debian/patches: Add two revert patches to fix autopkgtest errors.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 19 Sep 2024 22:23:38 -0700
+
 android-platform-tools (34.0.5-1~exp1) unstable; urgency=medium
 
   * New upstream release 34.0.5

@@ -6,6 +6,8 @@ revert/support-mips.patch
 revert/Revert-3-Add-rust-demangling.patch
 revert/Revert-Replacing-hardcoded-types-with-decltype-for-e.patch
 revert/Revert-Enforcing-static-invariants-to-prevent-failur.patch
+revert/Revert-Drop-all-path-rel.patch
+revert/Revert-Lose-convertToResPath-to-aapt.patch
 gcc-only/stdatomic.patch
 gcc-only/workaround__builtin_available.patch
 gcc-only/Nullable.patch
