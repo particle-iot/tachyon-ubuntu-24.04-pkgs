@@ -9,7 +9,7 @@ Build-Depends:
  debhelper-compat (= 13),
  dh-exec,
 Build-Depends-Arch:
- 7zip [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ 7zip (>= 22.01+dfsg-9) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x ppc64 sparc64 riscv64],
  libbrotli-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],

@@ -4,7 +4,7 @@ include /usr/share/dpkg/architecture.mk
 include /usr/share/dpkg/pkg-info.mk
 
 ## Security Hardening
-export DEB_BUILD_MAINT_OPTIONS = hardening=+all optimize=-lto
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 # https://android.googlesource.com/platform/build/soong/+/refs/tags/platform-tools-34.0.5/cc/config/global.go#356
 export DEB_CFLAGS_MAINT_APPEND = -fPIC -std=gnu17
 export DEB_CXXFLAGS_MAINT_APPEND = -fPIC -std=gnu++2a
@@ -14,8 +14,6 @@ export DEB_CPPFLAGS_MAINT_APPEND = -DNDEBUG -UDEBUG \
   -fno-exceptions \
   -fno-strict-aliasing \
   -no-canonical-prefixes \
-  \
-  -Idebian/include # Workaround for #1037576 \
 
 ## For get-orig-source
 export DEB_SOURCE

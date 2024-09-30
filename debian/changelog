@@ -1,3 +1,11 @@
+android-platform-tools (34.0.5-3) unstable; urgency=medium
+
+  * debian/control: B-D 7zip (>= 22.01+dfsg-9)
+  * debian/rules: Remove -lto from linking option.
+  * debian/include: Revert Add chrono header for gcc-13.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 29 Sep 2024 21:35:57 -0700
+
 android-platform-tools (34.0.5-2) unstable; urgency=medium
 
   * Upload to unstable.
