@@ -1,3 +1,22 @@
+android-platform-tools (34.0.5-4~exp1) experimental; urgency=medium
+
+  [ Julien Massot ]
+  * debian: build adbd package.
+    While this requires a few patches in order to actually build on
+    non-Android systems, `adbd` can be a useful tool for embedded
+    developement and probably other use cases.
+    As it was previously shipped as `android-tools-adbd` (up until upstream
+    version 5.1.1), we also need to conflict with and replace this package
+    with the new one.
+    Package `adbd` built from this commit has been successfully tested on
+    amd64 computers (using network transport) and arm64 devices (PinePhone
+    Pro, using USB transport).
+
+  [ Roger Shimizu ]
+  * debian/tests/control & debian/rules: Add tests for adbd.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 04 Oct 2024 01:42:45 -0700
+
 android-platform-tools (34.0.5-3) unstable; urgency=medium
 
   * debian/control: B-D 7zip (>= 22.01+dfsg-9)

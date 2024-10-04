@@ -23,3 +23,7 @@ system/Drop-gki-dependency-from-mkbootimg.patch
 system/gcc-14.patch
 system/add-missing-headers.patch
 development/typos.patch
+adbd/adbd-allow-usb-on-linux.patch
+adbd/adbd-allow-notifying-systemd.patch
+adbd/adbd-usb-drop-property-monitor.patch
+adbd/adbd-don-t-require-authorization-on-Linux.patch

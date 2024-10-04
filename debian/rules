@@ -85,6 +85,9 @@ s/libcutils.so: debian/system/libcutils.mk s/libbase.so
 s/adb: debian/system/adb.mk s/libziparchive.so s/libadb.a s/libcrypto_utils.a s/libcutils.so debian/manpages/system/adb.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
+s/adbd: debian/system/adbd.mk s/libadbd.a s/libcrypto_utils.a s/libcutils.so
+	dh_auto_build --buildsystem=makefile -- --file=$<
+
 s/fastboot: debian/system/fastboot.mk s/adb s/extras/libext4_utils.a s/libsparse.so debian/manpages/system/fastboot.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
@@ -115,7 +118,7 @@ COMPONENTS = \
   s/simg2simg \
 
 # Whatever depends on BoringSSL must be disabled on MIPS
-NON_MIPS_COMPONENTS = s/adb s/fastboot
+NON_MIPS_COMPONENTS = s/adb s/adbd s/fastboot
 ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
   COMPONENTS += $(NON_MIPS_COMPONENTS)
 endif
@@ -191,6 +194,7 @@ ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(D
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb help
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb keygen key.txt && ls -l key.txt* && rm key.txt*
+	LD_LIBRARY_PATH=debian/out/system debian/out/system/adbd --version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot --version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot devices
 endif
@@ -234,3 +238,6 @@ override_dh_gencontrol:
 	dh_gencontrol -pandroid-sdk-libsparse-utils -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pfastboot -- -v1:$(DEB_VERSION)
 	dh_gencontrol -pmkbootimg -- -v1:$(DEB_VERSION)
+
+override_dh_installsystemd:
+	dh_installsystemd --no-stop-on-upgrade --no-restart-after-upgrade

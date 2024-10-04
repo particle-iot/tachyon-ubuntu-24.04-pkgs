@@ -13,11 +13,13 @@ Build-Depends-Arch:
  android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  clang [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el s390x ppc64 sparc64 riscv64],
  libbrotli-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ libcap-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libgtest-dev,
  liblz4-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libpng-dev,
  libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libsquashfuse-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
+ libsystemd-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libusb-1.0-0-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  libzstd-dev [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64],
  lld [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el],
@@ -125,6 +127,33 @@ Description: Android Debug Bridge
  This package recommends "android-sdk-platform-tools-common" which contains
  the udev rules for Android devices. Without this package, adb and fastboot need
  to be running with root permission.
+
+Package: adbd
+Section: utils
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+         android-libcutils (= 1:${binary:Version}),
+Breaks: android-tools-adbd (<< 6.0~)
+Replaces: android-tools-adbd (<< 6.0~)
+Provides: android-tools-adbd
+Description: Android Debug Bridge daemon
+ Android Debug Bridge (adb) is a versatile tool that lets you manage the state
+ of an emulator instance or Android-powered device. It is a client-server
+ program that includes three components:
+ .
+ A client, which runs on your development machine. You can invoke a
+ client from a shell by issuing an adb command. Other Android tools such
+ as the ADT plugin and DDMS also create adb clients.
+ .
+ A server, which runs as a background process on your development
+ machine. The server manages communication between the client and the
+ adb daemon running on an emulator or device.
+ .
+ A daemon, which runs as a background process on each emulator or device
+ instance.
+ .
+ This package provides the daemon component.
 
 Package: android-libsparse
 Section: libs

@@ -1,0 +1,43 @@
+The Android Debug Bridge daemon (adbd) can be used to allow communication
+between a device and a computer using the ADB protocol. To that end, `adbd`
+provides 2 transport means (TCP networking and USB).
+
+Note: `adbd` must run as `root`.
+
+1. Network
+==========
+
+This transport is pretty straighforward and doesn't require any specific
+configuration (other that having the device connected to a network reachable by
+the computer). As such, it can be used to interact with any type of device,
+including other computers.
+
+On the client (computer) side, you must first connect to the device:
+
+    adb connect <DEVICE_IP>[:<PORT>]
+
+If the connection succeeds, `adb` can then be used to interact with the device
+using regular commands such as `adb push` (send a file to the device),
+`adb pull` (download a file from the device) or `adb shell` (open a remote
+shell).
+
+Note: `adbd` listens on port 5555 by default.
+
+2. USB
+======
+
+Using this method is only possible on devices providing a dual-role-capable USB
+controller (simply put, `/sys/class/udc/` must contain at least one entry). It
+requires setting up a USB gadget configuration using both ConfigFS and
+FunctionFS, for which support must be available in the kernel running on the
+device.
+
+In order to simplify this process, a systemd service (`adbd.service`) and USB
+gadget setup/activation scripts (see `adbd-usb-gadget` in the
+`/usr/lib/android-sdk/platform-tools` folder) are provided by this package; by
+using those, USB transport is automatically enabled on devices supporting it
+without any manual intervention.
+
+Note: target devices may have several USB Device Controllers available. In such
+cases, you can specify which UDC should be used by setting the
+`ADBD_GADGET_UDC` environment variable.
