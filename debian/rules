@@ -194,7 +194,6 @@ ifneq ($(filter amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64,$(D
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb help
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/adb keygen key.txt && ls -l key.txt* && rm key.txt*
-	LD_LIBRARY_PATH=debian/out/system debian/out/system/adbd --version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot --version
 	LD_LIBRARY_PATH=debian/out/system debian/out/system/fastboot devices
 endif

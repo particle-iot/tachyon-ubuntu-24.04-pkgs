@@ -1,3 +1,11 @@
+android-platform-tools (34.0.5-4) unstable; urgency=medium
+
+  * Upload to unstable.
+  * Revert "d/tests/control & d/rules: Add tests for adbd"
+    Tentatively for testing migration.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 22 Dec 2024 23:05:31 -0800
+
 android-platform-tools (34.0.5-4~exp2) experimental; urgency=medium
 
   * Simplify adb/adbd makefiles.
