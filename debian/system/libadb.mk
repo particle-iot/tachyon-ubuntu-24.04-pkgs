@@ -2,22 +2,17 @@ NAME := libadb
 
 # packages/modules/adb/Android.bp
 LIBADB_SRC_FILES := \
-  adb.cpp \
-  adb_io.cpp \
-  adb_listeners.cpp \
-  adb_trace.cpp \
   adb_unique_fd.cpp \
   adb_utils.cpp \
   fdevent/fdevent.cpp \
-  services.cpp \
-  sockets.cpp \
-  socket_spec.cpp \
   sysdeps/env.cpp \
   sysdeps/errno.cpp \
-  transport.cpp \
-  transport_fd.cpp \
-  types.cpp \
-#  adb_mdns.cpp \
+  \
+  proto/adb_known_hosts.pb.cc \
+  proto/app_processes.pb.cc \
+  proto/key_type.pb.cc \
+  proto/pairing.pb.cc \
+#  fastdeploy/proto/ApkEntry.pb.cc \
 
 LIBADB_posix_srcs := \
   sysdeps_unix.cpp \
@@ -26,17 +21,6 @@ LIBADB_posix_srcs := \
 # packages/modules/adb/Android.bp
 LIBADB_linux_SRC_FILES := \
   fdevent/fdevent_epoll.cpp \
-  client/usb_linux.cpp \
-
-# packages/modules/adb/Android.bp
-LIBADB_host_SRC_FILES := \
-  client/auth.cpp \
-  client/adb_wifi.cpp \
-  client/usb_libusb.cpp \
-  client/transport_local.cpp \
-  client/mdns_utils.cpp \
-  client/transport_usb.cpp \
-  client/pairing/pairing_client.cpp \
 
 # packages/modules/adb/pairing_auth/Android.bp
 LIBADB_pairing_auth_SRC_FILES := \
@@ -70,7 +54,6 @@ LOCAL_SRC_FILES := \
   $(LIBADB_SRC_FILES) \
   $(LIBADB_posix_srcs) \
   $(LIBADB_linux_SRC_FILES) \
-  $(LIBADB_host_SRC_FILES) \
   $(LIBADB_pairing_auth_SRC_FILES) \
   $(LIBADB_pairing_connection_SRC_FILES) \
   $(LIBADB_crypto_SRC_FILES) \
@@ -78,14 +61,15 @@ LOCAL_SRC_FILES := \
 
 LIBDIAGNOSE_USB_SRC_FILES = diagnose_usb/diagnose_usb.cpp
 
-GEN := dummy.cpp
-
 SOURCES := \
   $(foreach source, $(LOCAL_SRC_FILES), packages/modules/adb/$(source)) \
   $(foreach source, $(LIBDIAGNOSE_USB_SRC_FILES), system/core/$(source)) \
   $(foreach source, $(GEN), debian/out/system/$(source)) \
 
-OBJECTS = $(SOURCES:.cpp=.o)
+SOURCES_CPP = $(filter %.cpp,$(SOURCES))
+OBJECTS_CPP = $(SOURCES_CPP:.cpp=.o)
+SOURCES_CC = $(filter %.cc,$(SOURCES))
+OBJECTS_CC = $(SOURCES_CC:.cc=.o)
 
 CXXFLAGS += \
   -Wexit-time-destructors \
@@ -96,7 +80,6 @@ CXXFLAGS += \
 
 CPPFLAGS += \
   -DPLATFORM_TOOLS_VERSION='"$(PLATFORM_TOOLS_VERSION)"' \
-  -DADB_HOST=1 \
   -DADB_VERSION='"$(DEB_VERSION)"' \
   -DANDROID_BASE_UNIQUE_FD_DISABLE_IMPLICIT_CONVERSION=1 \
   -Ipackages/modules/adb \
@@ -113,20 +96,11 @@ CPPFLAGS += \
   \
   -I/usr/include/android \
 
-debian/out/system/$(NAME).a: $(OBJECTS)
+debian/out/system/$(NAME).a: $(OBJECTS_CC) $(OBJECTS_CPP)
 	ar -rcs $@ $^
 
-$(OBJECTS): %.o: %.cpp
+$(OBJECTS_CPP): %.o: %.cpp
 	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)
 
-debian/out/system/dummy.cpp:
-	rm -f $@
-	echo '#include <adb_wifi.h>' >> $@
-	echo '#include <adb_mdns.h>' >> $@
-	echo 'void init_mdns_transport_discovery(void) {}' >> $@
-	echo 'std::string mdns_check() {return std::string("");}' >> $@
-	echo 'void mdns_cleanup() {}' >> $@
-	echo 'std::string mdns_list_discovered_services() {return std::string("");}' >> $@
-	echo 'std::optional<MdnsInfo> mdns_get_connect_service_info(const std::string& name) {return std::nullopt;}' >> $@
-	echo 'std::optional<MdnsInfo> mdns_get_pairing_service_info(const std::string& name) {return std::nullopt;}' >> $@
-	echo 'bool adb_secure_connect_by_service_name(const std::string& instance_name) {return false;}' >> $@
+$(OBJECTS_CC): %.o: %.cc
+	$(CXX) -c -o $@ $< $(CXXFLAGS) $(CPPFLAGS)

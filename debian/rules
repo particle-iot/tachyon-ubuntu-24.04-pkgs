@@ -85,7 +85,7 @@ s/libcutils.so: debian/system/libcutils.mk s/libbase.so
 s/adb: debian/system/adb.mk s/libziparchive.so s/libadb.a s/libcrypto_utils.a s/libcutils.so debian/manpages/system/adb.1
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
-s/adbd: debian/system/adbd.mk s/libadbd.a s/libcrypto_utils.a s/libcutils.so
+s/adbd: debian/system/adbd.mk s/libadb.a s/libcrypto_utils.a s/libcutils.so
 	dh_auto_build --buildsystem=makefile -- --file=$<
 
 s/fastboot: debian/system/fastboot.mk s/adb s/extras/libext4_utils.a s/libsparse.so debian/manpages/system/fastboot.1

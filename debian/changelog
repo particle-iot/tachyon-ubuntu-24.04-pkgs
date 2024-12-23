@@ -1,3 +1,12 @@
+android-platform-tools (34.0.5-4~exp2) experimental; urgency=medium
+
+  * Simplify adb/adbd makefiles.
+    - Remove debian/system/libadbd.mk.
+    - Put common part of adb.mk and adbd.mk into libadb.mk.
+    - Leave diff part only in adb.mk and adbd.mk.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 22 Dec 2024 21:56:34 -0800
+
 android-platform-tools (34.0.5-4~exp1) experimental; urgency=medium
 
   [ Julien Massot ]
