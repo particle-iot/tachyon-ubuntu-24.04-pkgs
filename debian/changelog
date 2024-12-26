@@ -1,3 +1,10 @@
+android-platform-tools (34.0.5-5) unstable; urgency=medium
+
+  * Revert "Revert "d/tests/control & d/rules: Add tests for adbd""
+    Now there's adbd in testing, so we can have this test.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 Dec 2024 01:23:20 -0800
+
 android-platform-tools (34.0.5-4) unstable; urgency=medium
 
   * Upload to unstable.

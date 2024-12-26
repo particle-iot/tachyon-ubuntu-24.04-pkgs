@@ -18,6 +18,10 @@ Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Depends: adb
 Restrictions: allow-stderr
 
+Test-Command: adbd --version
+Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
+Depends: adbd
+
 Test-Command: fastboot --version
 Architecture: amd64 i386 armel armhf arm64 mipsel mips64el ppc64el riscv64
 Depends: fastboot
