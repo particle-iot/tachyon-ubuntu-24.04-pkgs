@@ -1,3 +1,9 @@
+android-platform-tools (34.0.5-6) unstable; urgency=medium
+
+  * Fix the autopkgtest.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 Dec 2024 00:27:41 -0800
+
 android-platform-tools (34.0.5-5) unstable; urgency=medium
 
   * Revert "Revert "d/tests/control & d/rules: Add tests for adbd""
