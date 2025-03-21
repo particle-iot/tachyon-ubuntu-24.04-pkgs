@@ -1,3 +1,9 @@
+android-platform-tools (34.0.5-7) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 20 Mar 2025 23:10:42 -0700
+
 android-platform-tools (34.0.5-7~exp1) experimental; urgency=medium
 
   * Add loong64 for adb/fastboot.
