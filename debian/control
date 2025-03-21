@@ -258,6 +258,7 @@ Architecture: all
 Multi-Arch: foreign
 Depends: ${misc:Depends}
 Breaks: android-libunwind-dev (<< 10.0.0+r36-5)
+Replaces: android-libunwind-dev (<< 10.0.0+r36-5)
 Description: Shared headers in AOSP repository platform/system/core
  This package contains header files in AOSP repository platform/system/core that
  do not belong to any specific libraries but used by other programs.

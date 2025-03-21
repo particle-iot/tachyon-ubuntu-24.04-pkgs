@@ -1,3 +1,11 @@
+android-platform-tools (34.0.5-8) unstable; urgency=medium
+
+  * debian/control:
+    - Add missing Replaces to android-platform-system-core-headers
+      (Closes: #1100892).
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 21 Mar 2025 00:46:04 -0700
+
 android-platform-tools (34.0.5-7) unstable; urgency=medium
 
   * Upload to unstable.
