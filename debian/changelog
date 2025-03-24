@@ -1,3 +1,11 @@
+android-platform-tools (34.0.5-9) unstable; urgency=medium
+
+  * Upload to unstable.
+  * debian/control:
+    - Limit android-sdk-platform-tools Suggests to ARCHs exists.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 23 Mar 2025 21:12:23 -0700
+
 android-platform-tools (34.0.5-9~exp1) experimental; urgency=medium
 
   * Try to add alpha sh4 for adb/fastboot.

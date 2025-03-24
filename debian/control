@@ -382,7 +382,7 @@ Depends: ${misc:Depends}, ${shlibs:Depends},
          android-libsparse (= ${binary:Version}),
          android-libziparchive (= ${binary:Version}),
 Recommends: android-sdk-platform-tools-common (>= 28.0.2~)
-Suggests: android-sdk-platform-tools
+Suggests: android-sdk-platform-tools [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el]
 Provides: android-tools-fastboot
 Description: Android fastboot tool
  A command line tool for flashing an Android device, boot an Android device to
