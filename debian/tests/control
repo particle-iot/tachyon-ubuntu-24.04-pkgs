@@ -1,33 +1,33 @@
 ## system
 
 Test-Command: adb version
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: adb
 
 Test-Command: adb help
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: adb
 
 Test-Command: adb kill-server && adb devices
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: adb
 Restrictions: allow-stderr
 
 Test-Command: adb keygen key.txt && ls -l key.txt* && rm key.txt*
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: adb
 Restrictions: allow-stderr
 
 Test-Command: /usr/lib/android-sdk/platform-tools/adbd --version
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: adbd
 
 Test-Command: fastboot --version
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: fastboot
 
 Test-Command: fastboot devices
-Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64 alpha sh4
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
 Depends: fastboot
 
 ## development

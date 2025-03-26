@@ -1,3 +1,10 @@
+android-platform-tools (34.0.5-10) unstable; urgency=medium
+
+  * man: Use packages/modules/adb/docs/user/adb.1.md
+  * Revert: Try to add alpha sh4 for adb/fastboot, due to no clang support.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 26 Mar 2025 00:43:12 -0700
+
 android-platform-tools (34.0.5-9) unstable; urgency=medium
 
   * Upload to unstable.
