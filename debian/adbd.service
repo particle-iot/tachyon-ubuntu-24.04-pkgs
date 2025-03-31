@@ -1,7 +1,8 @@
 [Unit]
 Description=Android Debug Bridge (ADB) daemon
-Wants=network.target sys-kernel-config.mount
-After=network.target
+Documentation=file:/usr/share/doc/adbd/README.adbd
+Wants=network-online.target sys-kernel-config.mount
+After=network-online.target
 
 [Service]
 Type=notify

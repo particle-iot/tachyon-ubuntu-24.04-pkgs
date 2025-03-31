@@ -1,3 +1,12 @@
+android-platform-tools (34.0.5-11) unstable; urgency=medium
+
+  * adb manpage: Make NAME one line to resolve lintian warning.
+  * Update adbd.service:
+    - Start adbd service after network is connected.
+    - Add doc entry to service to resolve lintian warning.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Mar 2025 18:14:16 -0700
+
 android-platform-tools (34.0.5-10) unstable; urgency=medium
 
   * man: Use packages/modules/adb/docs/user/adb.1.md

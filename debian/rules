@@ -208,7 +208,6 @@ override_dh_auto_configure-arch:
 		external/lzma/{Asm,CPP,CS,DOC,Java} external/lzma/C/*.c external/lzma/C/Util
 	mkdir -p debian/out/dalvik/tools debian/out/development debian/out/external \
 		debian/out/frameworks/native debian/out/system/extras debian/out/libnativehelper
-	cp packages/modules/adb/docs/user/adb.1.md debian/manpages/system
 ifneq ($(filter amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64,$(DEB_HOST_ARCH)),)
 	for proto in packages/modules/adb/fastdeploy/proto packages/modules/adb/proto; do \
 		(cd $$proto && \
