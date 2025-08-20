@@ -1,0 +1,81 @@
+version: 2.1
+
+tag_filters: &tag_filters
+  filters:
+    tags:
+      only:
+        - /.+/
+
+orbs:
+  particle-artifact: particle-iot/particle-artifact@1
+  aws-cli: circleci/aws-cli@4.1.2
+
+commands:
+  build-deb-package:
+    parameters:
+      pkg-name:
+        type: string
+      opts:
+        type: string
+        default: ""
+    steps:
+      - checkout
+      - particle-artifact/install-deb-dependencies
+      - run: sudo apt-get install -y devscripts equivs
+      - run: |
+          cd << parameters.pkg-name >>
+          mk-build-deps --install --remove --root-cmd sudo -t 'apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes'
+          DEB_BUILD_OPTIONS=<< parameters.opts >> dpkg-buildpackage -us -uc -b
+          mkdir /tmp/deb
+          mv ../*.deb /tmp/deb
+      - store_artifacts:
+          path: /tmp/deb
+      - persist_to_workspace:
+          root: /tmp/deb
+          paths:
+            - "*.deb"
+
+jobs:
+  build-tachyon-firmware:
+    executor: particle-artifact/ubuntu-arm64
+    steps:
+      - build-deb-package:
+          pkg-name: tachyon-firmware
+
+  upload-deb:
+    machine:
+      image: ubuntu-2004:2024.11.1
+    resource_class: arm.medium
+    steps:
+      - attach_workspace:
+          at: /tmp/deb
+      - run:
+          name: Move .deb to expected location
+          command: |
+            mkdir -p deb
+            mv /tmp/deb/*.deb deb/
+      - particle-artifact/import-gpg-keys
+      - particle-artifact/upload-apt-to-s3:
+          architecture: "arm64"
+          apt-repo: "ubuntu"
+          base-codename: "noble"
+      - particle-artifact/upload-apt-to-s3:
+          architecture: "all"
+          apt-repo: "ubuntu"
+          base-codename: "noble"
+
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - build-tachyon-firmware:
+          <<: *tag_filters
+      - upload-deb:
+          <<: *tag_filters
+          requires:
+            - build-tachyon-firmware
+          pre-steps:
+            - aws-cli/setup:
+                role_arn: ${AWS_ROLE_ARN}
+                region: us-east-1
+          context: packages-particle-production
