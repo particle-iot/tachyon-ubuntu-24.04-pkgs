@@ -37,7 +37,8 @@ commands:
 
 jobs:
   build-tachyon-firmware:
-    executor: particle-artifact/ubuntu-arm64
+    machine: true
+    resource_class: "particle-iot/linux-build-arm64-2404-i8g-large"
     steps:
       - build-deb-package:
           pkg-name: tachyon-firmware
@@ -69,6 +70,8 @@ workflows:
   deploy:
     jobs:
       - build-tachyon-firmware:
+          context:
+            - particle-ci-private
           <<: *tag_filters
       - upload-deb:
           <<: *tag_filters
