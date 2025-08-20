@@ -1,0 +1,23 @@
+vendor/image/regdb.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/regdb.bin
+vendor/image/amss20.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/amss.bin
+vendor/image/amss20.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/amss20.bin
+vendor/image/m3.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/m3.bin
+vendor/image/cdsp.b00 lib/firmware/updates/tachyon/cdsp.b00
+vendor/image/cdsp.b01 lib/firmware/updates/tachyon/cdsp.b01
+vendor/image/cdsp.b02 lib/firmware/updates/tachyon/cdsp.b02
+vendor/image/cdsp.b03 lib/firmware/updates/tachyon/cdsp.b03
+vendor/image/cdsp.b04 lib/firmware/updates/tachyon/cdsp.b04
+vendor/image/cdsp.b05 lib/firmware/updates/tachyon/cdsp.b05
+vendor/image/cdsp.b06 lib/firmware/updates/tachyon/cdsp.b06
+vendor/image/cdsp.b07 lib/firmware/updates/tachyon/cdsp.b07
+vendor/image/cdsp.b08 lib/firmware/updates/tachyon/cdsp.b08
+vendor/image/cdsp.b09 lib/firmware/updates/tachyon/cdsp.b09
+vendor/image/cdsp.b10 lib/firmware/updates/tachyon/cdsp.b10
+vendor/image/cdsp.b11 lib/firmware/updates/tachyon/cdsp.b11
+vendor/image/cdsp.b12 lib/firmware/updates/tachyon/cdsp.b12
+vendor/image/cdsp.b13 lib/firmware/updates/tachyon/cdsp.b13
+vendor/image/cdsp.b14 lib/firmware/updates/tachyon/cdsp.b14
+vendor/image/cdsp.b15 lib/firmware/updates/tachyon/cdsp.b15
+vendor/image/cdsp.mdt lib/firmware/updates/tachyon/cdsp.mdt
+vendor/image/cdspr.jsn lib/firmware/updates/tachyon/cdspr.jsn
+
