@@ -36,12 +36,29 @@ commands:
             - "*.deb"
 
 jobs:
-  build-tachyon-firmware:
-    machine: true
-    resource_class: "particle-iot/linux-build-arm64-2404-i8g-large"
+  build-network-manager:
+    executor: particle-artifact/ubuntu-arm64
     steps:
       - build-deb-package:
-          pkg-name: tachyon-firmware
+          pkg-name: network-manager
+          opts: nocheck
+  build-netplan-io:
+    executor: particle-artifact/ubuntu-arm64
+    steps:
+      - build-deb-package:
+          pkg-name: netplan.io
+  build-gnome-control-center:
+    executor: particle-artifact/ubuntu-arm64
+    steps:
+      - attach_workspace:
+          at: /tmp/pkgs
+      - run:
+          name: Install latest libnm and libnma
+          command: |
+            sudo apt-get update -y
+            sudo apt-get install -y /tmp/pkgs/libnm*.deb /tmp/pkgs/gir*.deb
+      - build-deb-package:
+          pkg-name: gnome-control-center
 
   upload-deb:
     machine:
@@ -59,24 +76,30 @@ jobs:
       - particle-artifact/upload-apt-to-s3:
           architecture: "arm64"
           apt-repo: "ubuntu"
-          base-codename: "noble"
+          base-codename: "focal"
       - particle-artifact/upload-apt-to-s3:
           architecture: "all"
           apt-repo: "ubuntu"
-          base-codename: "noble"
+          base-codename: "focal"
 
 workflows:
   version: 2
   deploy:
     jobs:
-      - build-tachyon-firmware:
-          context:
-            - particle-ci-private
+      - build-network-manager:
           <<: *tag_filters
+      - build-netplan-io:
+          <<: *tag_filters
+      - build-gnome-control-center:
+          <<: *tag_filters
+          requires:
+            - build-network-manager
       - upload-deb:
           <<: *tag_filters
           requires:
-            - build-tachyon-firmware
+            - build-network-manager
+            - build-netplan-io
+            - build-gnome-control-center
           pre-steps:
             - aws-cli/setup:
                 role_arn: ${AWS_ROLE_ARN}

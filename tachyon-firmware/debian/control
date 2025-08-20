@@ -1,0 +1,15 @@
+Source: tachyon-firmware
+Section: misc
+Priority: optional
+Maintainer: Andrey Tolstoy <andrey@particle.io>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.1
+Rules-Requires-Root: no
+
+Package: tachyon-firmware
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Firmware for Particle Tachyon
+ This package provides firmware used by Particle Tachyon.
+
