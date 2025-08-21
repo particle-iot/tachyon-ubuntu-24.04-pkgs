@@ -56,10 +56,10 @@ jobs:
             mkdir -p deb
             mv /tmp/deb/*.deb deb/
       - particle-artifact/import-gpg-keys
-      - particle-artifact/upload-apt-to-s3:
-          architecture: "arm64"
-          apt-repo: "ubuntu"
-          base-codename: "noble"
+      # - particle-artifact/upload-apt-to-s3:
+      #     architecture: "arm64"
+      #     apt-repo: "ubuntu"
+      #     base-codename: "noble"
       - particle-artifact/upload-apt-to-s3:
           architecture: "all"
           apt-repo: "ubuntu"
