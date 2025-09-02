@@ -2,7 +2,7 @@ vendor/image/regdb.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/regdb.bin
 vendor/image/amss20.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/amss.bin
 vendor/image/amss20.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/amss20.bin
 vendor/image/m3.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/m3.bin
-lib/firmware/updates/ath11k/QCA6698AQ lib/firmware/updates/ath11k/WCN6855
+lib/firmware/updates/ath11k/WCN6855 lib/firmware/updates/ath11k/QCA6698AQ
 vendor/image/cdsp.b00 lib/firmware/updates/tachyon/cdsp.b00
 vendor/image/cdsp.b01 lib/firmware/updates/tachyon/cdsp.b01
 vendor/image/cdsp.b02 lib/firmware/updates/tachyon/cdsp.b02
