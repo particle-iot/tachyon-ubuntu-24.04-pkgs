@@ -1,3 +1,9 @@
+android-platform-tools (34.0.5-11particle1) unstable; urgency=medium
+
+  * Change default adb manufacturer/product strings to Particle/Tachyon.
+
+ -- Andrey Tolstoy <andrey@particle.io>  Wed, 24 Sep 2025 02:04:06 +0700
+
 android-platform-tools (34.0.5-11) unstable; urgency=medium
 
   * adb manpage: Make NAME one line to resolve lintian warning.

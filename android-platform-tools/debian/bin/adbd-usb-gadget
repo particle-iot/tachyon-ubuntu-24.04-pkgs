@@ -34,8 +34,8 @@ setup()
     echo 0x0100 > idProduct
     echo 0x18D1 > idVendor
 
-    echo "Debian" > strings/0x409/manufacturer
-    echo "ADB device" > strings/0x409/product
+    echo "Particle" > strings/0x409/manufacturer
+    echo "Tachyon" > strings/0x409/product
     # Derive the serial number from the machine-id so it's unique
     echo "$(sha256sum < /etc/machine-id | cut -d' ' -f1)" > strings/0x409/serialnumber
 
