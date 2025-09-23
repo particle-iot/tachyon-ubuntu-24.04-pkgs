@@ -1,0 +1,2 @@
+frameworks/native/include/android				usr/include/android
+frameworks/native/libs/binder/include/binder	usr/include/android

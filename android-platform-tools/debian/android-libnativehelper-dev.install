@@ -1,0 +1,8 @@
+#!/usr/bin/dh-exec
+
+libnativehelper/include_jni/*						usr/include/android
+libnativehelper/include/nativehelper				usr/include/android
+libnativehelper/header_only_include/nativehelper	usr/include/android
+libnativehelper/include_platform/*					usr/include/android
+libnativehelper/include_platform_header_only/*		usr/include/android
+debian/out/libnativehelper/libnativehelper.so		usr/lib/${DEB_HOST_MULTIARCH}/android

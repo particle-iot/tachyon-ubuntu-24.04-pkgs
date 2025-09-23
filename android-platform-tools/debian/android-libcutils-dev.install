@@ -1,0 +1,4 @@
+#!/usr/bin/dh-exec
+
+system/core/libcutils/include/cutils	usr/include/android
+debian/out/system/libcutils.so			usr/lib/${DEB_HOST_MULTIARCH}/android

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+  <remote  name="aosp"
+           fetch="https://android.googlesource.com/" />
+  <default revision="refs/tags/platform-tools-34.0.5"
+           remote="aosp"
+           sync-j="4" />
+
+   <project path="dalvik" name="platform/dalvik" groups="pdk-cw-fs,pdk-fs" />
+   <project path="development" name="platform/development" groups="developers,pdk-cw-fs,pdk-fs" />
+   <project path="external/avb" name="platform/external/avb" groups="pdk" />
+   <project path="external/cpu_features" name="platform/external/cpu_features" groups="pdk" />
+   <project path="external/fmtlib" name="platform/external/fmtlib" groups="pdk" />
+   <project path="external/mdnsresponder" name="platform/external/mdnsresponder" groups="pdk" />
+   <project path="external/openscreen" name="platform/external/openscreen" groups="pdk" />
+   <project path="external/lzma" name="platform/external/lzma" groups="pdk" />
+   <project path="frameworks/native" name="platform/frameworks/native" groups="pdk" />
+   <project path="libnativehelper" name="platform/libnativehelper" groups="pdk" />
+   <project path="packages/modules/adb" name="platform/packages/modules/adb" groups="pdk" />
+   <project path="system/core" name="platform/system/core" groups="pdk" />
+   <project path="system/extras" name="platform/system/extras" groups="pdk" />
+   <project path="system/incremental_delivery" name="platform/system/incremental_delivery" groups="pdk" />
+   <project path="system/libbase" name="platform/system/libbase" groups="pdk" />
+   <project path="system/libprocinfo" name="platform/system/libprocinfo" groups="pdk" />
+   <project path="system/libziparchive" name="platform/system/libziparchive" groups="pdk" />
+   <project path="system/logging" name="platform/system/logging" groups="pdk" />
+   <project path="system/tools/mkbootimg" name="platform/system/tools/mkbootimg" groups="pdk" />
+   <project path="system/unwinding" name="platform/system/unwinding" groups="pdk" />
+
+</manifest>

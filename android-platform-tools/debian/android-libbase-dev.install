@@ -1,0 +1,5 @@
+#!/usr/bin/dh-exec
+
+system/libbase/include/android-base	usr/include/android
+external/fmtlib/include/fmt			usr/include/android
+debian/out/system/libbase.so		usr/lib/${DEB_HOST_MULTIARCH}/android

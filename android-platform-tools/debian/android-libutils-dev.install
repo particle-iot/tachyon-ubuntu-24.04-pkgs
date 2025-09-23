@@ -1,0 +1,5 @@
+#!/usr/bin/dh-exec
+
+system/core/libutils/include/utils					usr/include/android
+system/incremental_delivery/incfs/util/include/util	usr/include/android
+debian/out/system/libutils.so						usr/lib/${DEB_HOST_MULTIARCH}/android

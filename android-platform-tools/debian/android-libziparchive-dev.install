@@ -1,0 +1,4 @@
+#!/usr/bin/dh-exec
+
+system/libziparchive/include/ziparchive	usr/include/android
+debian/out/system/libziparchive.so		usr/lib/${DEB_HOST_MULTIARCH}/android

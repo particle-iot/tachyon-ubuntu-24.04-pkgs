@@ -42,6 +42,12 @@ jobs:
     steps:
       - build-deb-package:
           pkg-name: tachyon-firmware
+  build-android-platform-tools:
+    machine: true
+    resource_class: "particle-iot/linux-build-arm64-2404-i8g-large"
+    steps:
+      - build-deb-package:
+          pkg-name: android-platform-tools
 
   upload-deb:
     machine:
@@ -56,10 +62,10 @@ jobs:
             mkdir -p deb
             mv /tmp/deb/*.deb deb/
       - particle-artifact/import-gpg-keys
-      # - particle-artifact/upload-apt-to-s3:
-      #     architecture: "arm64"
-      #     apt-repo: "ubuntu"
-      #     base-codename: "noble"
+      - particle-artifact/upload-apt-to-s3:
+          architecture: "arm64"
+          apt-repo: "ubuntu"
+          base-codename: "noble"
       - particle-artifact/upload-apt-to-s3:
           architecture: "all"
           apt-repo: "ubuntu"
@@ -73,10 +79,15 @@ workflows:
           context:
             - particle-ci-private
           <<: *tag_filters
+      - build-android-platform-tools:
+          context:
+            - particle-ci-private
+          <<: *tag_filters
       - upload-deb:
           <<: *tag_filters
           requires:
             - build-tachyon-firmware
+            - build-android-platform-tools
           pre-steps:
             - aws-cli/setup:
                 role_arn: ${AWS_ROLE_ARN}

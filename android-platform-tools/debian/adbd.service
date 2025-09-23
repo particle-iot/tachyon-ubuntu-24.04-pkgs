@@ -1,0 +1,15 @@
+[Unit]
+Description=Android Debug Bridge (ADB) daemon
+Documentation=file:/usr/share/doc/adbd/README.adbd
+Wants=network-online.target sys-kernel-config.mount
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/usr/lib/android-sdk/platform-tools/adbd-usb-gadget setup
+ExecStart=/usr/lib/android-sdk/platform-tools/adbd
+ExecStartPost=/usr/lib/android-sdk/platform-tools/adbd-usb-gadget activate
+ExecStopPost=/usr/lib/android-sdk/platform-tools/adbd-usb-gadget reset
+
+[Install]
+WantedBy=multi-user.target
