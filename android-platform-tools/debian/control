@@ -1,0 +1,413 @@
+Source: android-platform-tools
+Section: devel
+Priority: optional
+Maintainer: Android Tools Maintainers <android-tools-devel@lists.alioth.debian.org>
+Uploaders:
+ Roger Shimizu <rosh@debian.org>,
+Build-Depends:
+ bash-completion,
+ debhelper-compat (= 13),
+ dh-exec,
+Build-Depends-Arch:
+ 7zip (>= 22.01+dfsg-9) [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ android-libboringssl-dev (>= 12) [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ clang [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el s390x ppc64 sparc64 riscv64],
+ libbrotli-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libcap-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libgtest-dev,
+ liblz4-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libpng-dev,
+ libprotobuf-dev (>= 3.12) [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libsquashfuse-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libsystemd-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libusb-1.0-0-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ libzstd-dev [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ lld [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el],
+ pandoc [amd64 i386 armel armhf arm64 ia64 loong64 mipsel mips64el ppc64el s390x ppc64 riscv64],
+ protobuf-compiler (>= 3.12) [amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64],
+ python3 [amd64 i386 arm64],
+ ronn [alpha arc hppa hurd-i386 kfreebsd-amd64 kfreebsd-i386 m68k powerpc sh4 sparc64 x32],
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Vcs-Git: https://salsa.debian.org/android-tools-team/android-platform-tools.git
+Vcs-Browser: https://salsa.debian.org/android-tools-team/android-platform-tools
+Homepage: https://developer.android.com/studio/releases/platform-tools
+
+Package: android-sdk-libsparse-utils
+Architecture: any
+Multi-Arch: foreign
+Section: utils
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-libbase (= ${binary:Version}),
+         android-libsparse (= ${binary:Version}),
+         python3,
+Breaks: android-tools-fsutils,
+        append2simg (<< 1:10.0.0+r36-1~),
+        img2simg (<< 1:10.0.0+r36-1~),
+        simg2img (<< 1:10.0.0+r36-1~)
+Replaces: android-tools-fsutils,
+          append2simg (<< 1:10.0.0+r36-1~),
+          img2simg (<< 1:10.0.0+r36-1~),
+          simg2img (<< 1:10.0.0+r36-1~)
+Description: Android sparse image creation tool
+ Command line tools to create sparse images for usage with Android devices.
+ Includes simg2img, img2simg, simg2simg, simg_dump and append2simg tools.
+
+Package: android-liblog
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Breaks: android-liblog-dev (<< 1:33)
+Description: Android NDK logger interfaces
+ liblog represents an interface to the volatile Android Logging system for NDK
+ (Native) applications and libraries. Interfaces for either writing or reading
+ logs. The log buffers are divided up in Main, System, Radio and Events
+ sub-logs.
+
+Package: android-liblog-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-liblog (= ${binary:Version}),
+Breaks: android-liblog (<< 1:33)
+Replaces: android-liblog (<< 1:33)
+Description: Android NDK logger interfaces - Development files
+ liblog represents an interface to the volatile Android Logging system for NDK
+ (Native) applications and libraries. Interfaces for either writing or reading
+ logs. The log buffers are divided up in Main, System, Radio and Events
+ sub-logs.
+ .
+ This package contains the development files.
+
+Package: android-libcutils
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-libbase (= ${binary:Version}),
+         libbsd0,
+Breaks: android-libcutils-dev (<< 1:33)
+Description: Android utils library for C
+ This library provides common functionalities for android related tools.
+ .
+ This library is only used by Android SDK currently.
+
+Package: android-libcutils-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libcutils (= ${binary:Version}),
+         android-libbase-dev (= ${binary:Version}),
+         android-platform-system-core-headers (= 1:${source:Version}),
+         libbsd-dev,
+Breaks: android-libcutils (<< 1:33)
+Replaces: android-libcutils (<< 1:33)
+Description: Android utils library for C - Development files
+ This library provides common functionalities for android related tools.
+ .
+ This library is only used by Android SDK currently.
+ .
+ This package contains the development files.
+
+Package: adb
+Section: utils
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+         android-libcutils (= ${binary:Version}),
+Recommends: android-sdk-platform-tools-common (>= 28.0.2~)
+Provides: android-tools-adb
+Description: Android Debug Bridge
+ A versatile command line tool that lets you communicate with an emulator
+ instance or connected Android-powered device.
+ .
+ This package recommends "android-sdk-platform-tools-common" which contains
+ the udev rules for Android devices. Without this package, adb and fastboot need
+ to be running with root permission.
+
+Package: adbd
+Section: utils
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+         android-libcutils (= 1:${binary:Version}),
+Breaks: android-tools-adbd (<< 6.0~)
+Replaces: android-tools-adbd (<< 6.0~)
+Provides: android-tools-adbd
+Description: Android Debug Bridge daemon
+ Android Debug Bridge (adb) is a versatile tool that lets you manage the state
+ of an emulator instance or Android-powered device. It is a client-server
+ program that includes three components:
+ .
+ A client, which runs on your development machine. You can invoke a
+ client from a shell by issuing an adb command. Other Android tools such
+ as the ADT plugin and DDMS also create adb clients.
+ .
+ A server, which runs as a background process on your development
+ machine. The server manages communication between the client and the
+ adb daemon running on an emulator or device.
+ .
+ A daemon, which runs as a background process on each emulator or device
+ instance.
+ .
+ This package provides the daemon component.
+
+Package: android-libsparse
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends}, ${shlibs:Depends},
+         android-libbase (= ${binary:Version}),
+Breaks: android-libsparse-dev (<< 1:33)
+Description: Library for sparse files
+ This library provides APIs for creating, manipulating and destroying sparse
+ files.
+ .
+ This library is only used by Android SDK currently.
+
+Package: android-libsparse-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libsparse (= ${binary:Version}),
+Breaks: android-libsparse (<< 1:33)
+Replaces: android-libsparse (<< 1:33)
+Description: Library for sparse files - Development files
+ This library provides APIs for creating, manipulating and destroying sparse
+ files.
+ .
+ This library is only used by Android SDK currently.
+ .
+ This package contains the development files.
+
+Package: android-libutils
+Section: libs
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-libbacktrace (= ${binary:Version}),
+         android-libcutils (= ${binary:Version}),
+Breaks: android-libutils-dev (<< 1:33)
+Description: Android Utility Function Library
+ This library provides miscellaneous utility functions.
+ .
+ This library is only used by Android SDK currently.
+
+Package: android-libutils-dev
+Section: libdevel
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libbacktrace-dev (= ${binary:Version}),
+         android-libcutils-dev (= ${binary:Version}),
+         android-libutils (= ${binary:Version}),
+         android-platform-system-core-headers (= 1:${source:Version}),
+Breaks: android-libutils (<< 1:33)
+Replaces: android-libutils (<< 1:33)
+Description: Android Utility Function Library - Development files
+ This library provides miscellaneous utility functions.
+ .
+ This library is only used by Android SDK currently.
+ .
+ This package contains the development files.
+
+Package: android-libziparchive
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-libbase (= ${binary:Version}),
+Breaks: android-libziparchive-dev (<< 1:33)
+Description: Library for ZIP archives
+ This library provides APIs for creating and manipulating ZIP archives.
+ .
+ This library is only used by Android SDK currently.
+
+Package: android-libziparchive-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libziparchive (= ${binary:Version}),
+         libgtest-dev,
+Breaks: android-libziparchive (<< 1:33)
+Replaces: android-libziparchive (<< 1:33)
+Description: Library for ZIP archives - Development files
+ This library provides APIs for creating and manipulating ZIP archives.
+ .
+ This library is only used by Android SDK currently.
+ .
+ This package contains the development files.
+
+Package: android-platform-frameworks-native-headers
+Section: libdevel
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Description: Headers of android-platform-frameworks-native
+ This package contains headers in include/android in platform/frameworks/native
+ Consists of all the header files ranging from asset_manager.h to window.h.
+
+Package: android-platform-system-core-headers
+Section: libdevel
+Architecture: all
+Multi-Arch: foreign
+Depends: ${misc:Depends}
+Breaks: android-libunwind-dev (<< 10.0.0+r36-5)
+Replaces: android-libunwind-dev (<< 10.0.0+r36-5)
+Description: Shared headers in AOSP repository platform/system/core
+ This package contains header files in AOSP repository platform/system/core that
+ do not belong to any specific libraries but used by other programs.
+ .
+ This package currently contains headers in include/private and include/system.
+
+Package: android-libbacktrace
+Section: libs
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         7zip,
+         android-libbase (= ${binary:Version}),
+Breaks: android-libbacktrace-dev (<< 1:33)
+Description: Android backtrace library
+ Android backtrace library produce symbolic backtraces for making
+ debugging easier.
+
+Package: android-libbacktrace-dev
+Section: libdevel
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libbacktrace (= ${binary:Version}),
+Breaks: android-libbacktrace (<< 1:33)
+Replaces: android-libbacktrace (<< 1:33)
+Description: Android backtrace library - Development files
+ Android backtrace library produce symbolic backtraces for making
+ debugging easier.
+ .
+ This package contains the development files.
+
+Package: android-libbase
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-liblog (= ${binary:Version}),
+Breaks: android-libbase-dev (<< 1:33)
+Description: Android base library
+ This library provides APIs for basic tasks like handling files, Unicode
+ strings, logging, memory allocation, integer parsing, etc..
+ .
+ This library is only used by Android SDK currently.
+
+Package: android-libbase-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libbase (= ${binary:Version}),
+         android-liblog-dev (= ${binary:Version}),
+Breaks: android-libbase (<< 1:33)
+Replaces: android-libbase (<< 1:33)
+Description: Android base library - Development files
+ This library provides APIs for basic tasks like handling files, Unicode
+ strings, logging, memory allocation, integer parsing, etc..
+ .
+ This library is only used by Android SDK currently.
+ .
+ This package contains the development files.
+
+Package: android-libnativehelper
+Section: libs
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         android-liblog (= 1:${binary:Version}),
+Breaks: android-libnativehelper-dev (<< 33)
+Replaces: android-libnativehelper-dev (<< 33)
+Description: Support functions for Android's class libraries
+ libnativehelper is a collection of JNI related utilities used in
+ Android.
+ .
+ There are several header and binary libraries here and not all of the
+ functionality fits together well. The header libraries are mostly C++
+ based. The binary libraries are entirely written in C with no C++
+ dependencies. This is by design as the code here can be distributed in
+ multiple ways, including mainline modules, so keeping the size down
+ benefits everyone with smaller downloads and a stable ABI.
+
+Package: android-libnativehelper-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends: ${misc:Depends},
+         android-libnativehelper (= ${binary:Version}),
+Breaks: android-libnativehelper (<< 33)
+Replaces: android-libnativehelper (<< 33)
+Description: Support functions for Android's class libraries - Development files
+ libnativehelper is a collection of JNI related utilities used in
+ Android.
+ .
+ There are several header and binary libraries here and not all of the
+ functionality fits together well. The header libraries are mostly C++
+ based. The binary libraries are entirely written in C with no C++
+ dependencies. This is by design as the code here can be distributed in
+ multiple ways, including mainline modules, so keeping the size down
+ benefits everyone with smaller downloads and a stable ABI.
+ .
+ This package contains the development files.
+
+Package: mkbootimg
+Depends: ${misc:Depends},
+         python3:any,
+Breaks: android-tools-mkbootimg (<< 1:10.0.0+r36-11)
+Replaces: android-tools-mkbootimg (<< 1:10.0.0+r36-11)
+Architecture: all
+Multi-Arch: foreign
+Section: utils
+Description: Creates Android boot images
+ Creates Android boot images that includes kernel image and ramdisk, in a
+ special format which can be used with fastboot.
+
+Package: fastboot
+Section: utils
+Architecture: amd64 i386 armel armhf arm64 loong64 mipsel mips64el ppc64el riscv64
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+         android-libcutils (= ${binary:Version}),
+         android-libsparse (= ${binary:Version}),
+         android-libziparchive (= ${binary:Version}),
+Recommends: android-sdk-platform-tools-common (>= 28.0.2~)
+Suggests: android-sdk-platform-tools [amd64 i386 armel armhf arm64 mipsel mips64el ppc64el]
+Provides: android-tools-fastboot
+Description: Android fastboot tool
+ A command line tool for flashing an Android device, boot an Android device to
+ fastboot mode, etc..
+ .
+ This package recommends "android-sdk-platform-tools-common" which contains
+ the udev rules for Android devices. Without this package, adb and fastboot need
+ to be running with root permission.
+
+Package: etc1tool
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+Description: ETC1 conversion tool
+ etc1tool is a command line utility that lets you encode PNG images to
+ the ETC1 compression standard and decode ETC1 compressed images back
+ to PNG. It is part of the Android SDK for working with media files
+ for game apps. The standard for the ETC1 texture format is here:
+ http://www.khronos.org/registry/gles/extensions/OES/OES_compressed_ETC1_RGB8_texture.txt
+
+Package: hprof-conv
+Architecture: any
+Multi-Arch: foreign
+Depends: ${misc:Depends}, ${shlibs:Depends},
+Description: HPROF Converter
+ The hprof-conv tool converts the HPROF file that is generated by the Android
+ SDK tools to a standard format so you can view the file in a profiling tool of
+ your choice.

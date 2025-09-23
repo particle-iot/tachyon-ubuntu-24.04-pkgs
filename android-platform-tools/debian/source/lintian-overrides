@@ -1,0 +1,6 @@
+# Many markdown, json, etc. files in source tree have long line
+# and this should not be a problem
+very-long-line-length-in-source-file
+
+# We use hand-written makefiles to build the package
+ancient-libtool 1.4.3 [external/libunwind/aux/ltmain.sh]

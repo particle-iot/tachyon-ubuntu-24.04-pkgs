@@ -1,0 +1,5 @@
+#!/usr/bin/dh-exec
+
+debian/out/system/adbd      usr/lib/android-sdk/platform-tools/
+debian/bin/adbd-usb-gadget  usr/lib/android-sdk/platform-tools/
+debian/adbd.modules-load => usr/lib/modules-load.d/adbd.conf

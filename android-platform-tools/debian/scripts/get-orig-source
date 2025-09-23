@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+set -e
+
+# Must be invoked by `debian/rules` for the use of `DEB_*` variables
+if ! test -v PLATFORM_TOOLS_VERSION; then
+  echo 'usage: debian/rules get-orig-source'
+  exit 1
+fi
+
+PKG=$(pwd)
+mkdir -p ../tmp/get-orig-source/manifest
+(
+  cd ../tmp/get-orig-source/manifest
+  ln --physical --force ${PKG}/debian/manifest.xml default.xml
+  git init
+  git add default.xml
+  git commit --no-gpg-sign --message=Changes
+)
+
+# repo edits(!) a hardcoded ~/.gitconfig which will override ~/.config/git/config
+(
+  if test -f ~/.gitconfig; then
+    echo 'backing up ~/.gitconfig'
+    cp --archive ~/.gitconfig ~/.gitconfig.get-orig-source
+  else
+    touch ~/.gitconfig
+  fi
+
+  git config --global user.name "${DEBFULLNAME:-$(git config user.name)}"
+  git config --global user.email "${DEBEMAIL:-$(git config user.email)}"
+  git config --global color.ui >/dev/null || git config --global color.ui auto
+)
+
+mkdir -p ../tmp/get-orig-source/archive
+(
+  cd ../tmp/get-orig-source/archive
+  repo --time init --manifest-url=file://"$(readlink --canonicalize-existing ../manifest/.git)" --depth=1 -c --no-tags
+  repo --time sync -c --no-tags -j$(nproc)
+  tar --create --xz --file "../../../${DEB_SOURCE}_${PLATFORM_TOOLS_VERSION}.orig.tar.xz" --exclude-from=${PKG}/debian/orig.excludes --mtime=2000-01-01 --sort=name ./*
+)
+
+# cleanup
+rm ~/.gitconfig
+if test -f ~/.gitconfig.get-orig-source; then
+  mv ~/.gitconfig.get-orig-source ~/.gitconfig
+fi

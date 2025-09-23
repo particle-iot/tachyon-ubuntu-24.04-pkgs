@@ -1,0 +1,4 @@
+#!/usr/bin/dh-exec
+
+system/core/libsparse/include/sparse	usr/include/android
+debian/out/system/libsparse.so			usr/lib/${DEB_HOST_MULTIARCH}/android

@@ -1,0 +1,5 @@
+system/core/libsystem/include/system		usr/include/android
+system/core/libcutils/include/private		usr/include/android
+system/unwinding/libunwindstack/include/*	usr/include/android
+external/cpu_features/include/*				usr/include/android/cpu_features
+external/lzma/C/*.h							usr/include/android/lzma

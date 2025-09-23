@@ -1,0 +1,862 @@
+android-platform-tools (34.0.5-11) unstable; urgency=medium
+
+  * adb manpage: Make NAME one line to resolve lintian warning.
+  * Update adbd.service:
+    - Start adbd service after network is connected.
+    - Add doc entry to service to resolve lintian warning.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Mar 2025 18:14:16 -0700
+
+android-platform-tools (34.0.5-10) unstable; urgency=medium
+
+  * man: Use packages/modules/adb/docs/user/adb.1.md
+  * Revert: Try to add alpha sh4 for adb/fastboot, due to no clang support.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 26 Mar 2025 00:43:12 -0700
+
+android-platform-tools (34.0.5-9) unstable; urgency=medium
+
+  * Upload to unstable.
+  * debian/control:
+    - Limit android-sdk-platform-tools Suggests to ARCHs exists.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 23 Mar 2025 21:12:23 -0700
+
+android-platform-tools (34.0.5-9~exp1) experimental; urgency=medium
+
+  * Try to add alpha sh4 for adb/fastboot.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 22 Mar 2025 01:52:31 -0700
+
+android-platform-tools (34.0.5-8) unstable; urgency=medium
+
+  * debian/control:
+    - Add missing Replaces to android-platform-system-core-headers
+      (Closes: #1100892).
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 21 Mar 2025 00:46:04 -0700
+
+android-platform-tools (34.0.5-7) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 20 Mar 2025 23:10:42 -0700
+
+android-platform-tools (34.0.5-7~exp1) experimental; urgency=medium
+
+  * Add loong64 for adb/fastboot.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 17 Mar 2025 22:24:26 -0700
+
+android-platform-tools (34.0.5-6) unstable; urgency=medium
+
+  * Fix the autopkgtest.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 Dec 2024 00:27:41 -0800
+
+android-platform-tools (34.0.5-5) unstable; urgency=medium
+
+  * Revert "Revert "d/tests/control & d/rules: Add tests for adbd""
+    Now there's adbd in testing, so we can have this test.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 Dec 2024 01:23:20 -0800
+
+android-platform-tools (34.0.5-4) unstable; urgency=medium
+
+  * Upload to unstable.
+  * Revert "d/tests/control & d/rules: Add tests for adbd"
+    Tentatively for testing migration.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 22 Dec 2024 23:05:31 -0800
+
+android-platform-tools (34.0.5-4~exp2) experimental; urgency=medium
+
+  * Simplify adb/adbd makefiles.
+    - Remove debian/system/libadbd.mk.
+    - Put common part of adb.mk and adbd.mk into libadb.mk.
+    - Leave diff part only in adb.mk and adbd.mk.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 22 Dec 2024 21:56:34 -0800
+
+android-platform-tools (34.0.5-4~exp1) experimental; urgency=medium
+
+  [ Julien Massot ]
+  * debian: build adbd package.
+    While this requires a few patches in order to actually build on
+    non-Android systems, `adbd` can be a useful tool for embedded
+    developement and probably other use cases.
+    As it was previously shipped as `android-tools-adbd` (up until upstream
+    version 5.1.1), we also need to conflict with and replace this package
+    with the new one.
+    Package `adbd` built from this commit has been successfully tested on
+    amd64 computers (using network transport) and arm64 devices (PinePhone
+    Pro, using USB transport).
+
+  [ Roger Shimizu ]
+  * debian/tests/control & debian/rules: Add tests for adbd.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 04 Oct 2024 01:42:45 -0700
+
+android-platform-tools (34.0.5-3) unstable; urgency=medium
+
+  * debian/control: B-D 7zip (>= 22.01+dfsg-9)
+  * debian/rules: Remove -lto from linking option.
+  * debian/include: Revert Add chrono header for gcc-13.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 29 Sep 2024 21:35:57 -0700
+
+android-platform-tools (34.0.5-2) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 23 Sep 2024 00:50:43 -0700
+
+android-platform-tools (34.0.5-2~exp1) experimental; urgency=medium
+
+  * Use 7z.so from 7zip to replace external/lzma.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 20 Sep 2024 01:22:40 -0700
+
+android-platform-tools (34.0.5-1) unstable; urgency=medium
+
+  * debian/patches: Add two revert patches to fix autopkgtest errors.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 19 Sep 2024 22:23:38 -0700
+
+android-platform-tools (34.0.5-1~exp1) unstable; urgency=medium
+
+  * New upstream release 34.0.5
+  * debian/patches:
+    - Refresh patches.
+    - Add 2 revert patches to support mips.
+    - Add 2 revert patches to make build for ADB.
+  * debian/system/*.mk: Update.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 19 Sep 2024 02:56:59 -0700
+
+android-platform-tools (34.0.4-2) unstable; urgency=medium
+
+  [ Anurag Kumar ]
+  * fix(adb bash-completion): remove old/deprecated commands and add new ones
+  * fix(adb bash-completion): add device, forward subcommand & options
+  * adb completion: add adb reverse command and suboptions
+  * adb completion: add mdns command and suboptions
+  * adb bash-completion: remove adb backup command: deprecated
+  * adb bash-completion: add options in pull command
+  * adb bash-comp: refactor adb push
+  * adb bash-comp: add adb sync command and suboptions
+  * adb bash-comp: add adb shell command suboptions
+  * adb bash-comp: refactor adb install/uninstall subcommands
+  * adb bash-comp: add remaining commands
+  * adb bash-comp: remove mdns commands for now
+
+  [ Arnaud Ferraris ]
+  * d/patches: Drop gki dependency from mkbootimg (Closes: #1050300)
+
+  [ Roger Shimizu ]
+  * d/control: Fix ftbfs issue on loong64 (Closes: #1069143)
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 18 Sep 2024 00:37:52 -0700
+
+android-platform-tools (34.0.4-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Add patch to build against GCC-14 (Closes: #1074811)
+
+ -- tony mancill <tmancill@debian.org>  Thu, 15 Aug 2024 21:12:28 -0700
+
+android-platform-tools (34.0.4-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 21 Aug 2023 00:22:39 -0700
+
+android-platform-tools (34.0.4-1~exp3) experimental; urgency=medium
+
+  * Revert "debian/patches: Remove unused patch".
+  * debian/libext4_utils.mk:
+    - Remove CXXFLAGS already existing in debian/rules.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 08 Aug 2023 22:40:56 -0700
+
+android-platform-tools (34.0.4-1~exp2) experimental; urgency=medium
+
+  * debian/patches:
+    - Remove unused patch.
+    - Revert patch to avoid introduce new dependency.
+  * debian/rules: Sync formating with boringssl.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 07 Aug 2023 00:07:46 -0700
+
+android-platform-tools (34.0.4-1~exp1) experimental; urgency=medium
+
+  * New upstream release 34.0.4
+  * debian/*.install: Remove system/unwinding/libbacktrace.
+  * debian/fastboot.mk: Add new source files.
+  * debian/patches: Add revert patch to avoid ftbfs.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Jul 2023 21:20:36 -0700
+
+android-platform-tools (33.0.4-1~exp4) experimental; urgency=medium
+
+  * debian/libbacktrace.mk: Add RegsRiscv64.cpp.
+  * debian/*.mk: Move c&cpp std version to debian/rules.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 28 Jul 2023 19:13:42 -0700
+
+android-platform-tools (33.0.4-1~exp3) experimental; urgency=medium
+
+  * debian/patches:
+    - Restore previously removed for gcc only patches.
+    - Move all revert patches to folder 'revert'.
+  * debian/control:
+    - pandoc are not available for some arch-es now, move to use ronn.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 28 Jul 2023 00:16:45 -0700
+
+android-platform-tools (33.0.4-1~exp2) experimental; urgency=medium
+
+  * debian/patches:
+    - Restore mips related patch.
+    - Add include dir to makefile instead of patching.
+    - Remove unused patches.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 27 Jul 2023 20:19:10 -0700
+
+android-platform-tools (33.0.4-1~exp1) experimental; urgency=medium
+
+  * New upstream release 33.0.4
+  * debian/patches:
+    - Refresh patches.
+    - Add patch to fix ftbfs.
+    - Revert upstream's removal of simg2simg.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 27 Jul 2023 01:56:00 -0700
+
+android-platform-tools (33.0.3-2) unstable; urgency=medium
+
+  * Upload to unstable.
+  * debian/include:
+    - Add chrono header from libstdc++-13-dev to fix ftbfs for gcc-13
+      (Closes: #1037576).
+  * debian/patches:
+    - Add a missing header to fix ftbfs for gcc-13.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 22 Jul 2023 21:50:37 -0700
+
+android-platform-tools (33.0.3-2~exp1) experimental; urgency=medium
+
+  * Add e/libcpu_features.so for android-platform-art/13.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 11 Jul 2023 01:09:14 -0700
+
+android-platform-tools (33.0.3-1) unstable; urgency=medium
+
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 09 Jul 2023 19:49:29 -0700
+
+android-platform-tools (33.0.3-1~exp9) experimental; urgency=medium
+
+  * Merge changes till debian/29.0.6-28
+  * debian/control:
+    - Remove D-B libpcre3-dev, which is not used (Closes: #1000022).
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 09 Jul 2023 19:32:47 -0700
+
+android-platform-tools (33.0.3-1~exp8) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches: Add patch to fix ftbfs issue for
+    src:android-platform-frameworks-base.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 11 Feb 2023 02:12:23 -0800
+
+android-platform-tools (33.0.3-1~exp7) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches: Cleanup, remove no longer necessary patches.
+  * debian/rules: Add target "update" to gbp import new release.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 09 Feb 2023 23:07:22 -0800
+
+android-platform-tools (33.0.3-1~exp6) experimental; urgency=medium
+
+  * Team upload.
+  * Fix ftbfs on armel.
+  * debian folder: Cleanup.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 08 Feb 2023 00:06:09 -0800
+
+android-platform-tools (33.0.3-1~exp5) experimental; urgency=medium
+
+  * Team upload.
+  * Use lld when possible except riscv64.
+  * Use ronn to make manpages when pandoc is not available.
+  * d/control: Fix ftbfs on powerpc due to clang.
+  * d/lintian-overrides: Add
+    package-has-unnecessary-activation-of-ldconfig-trigger.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 Jan 2023 01:03:44 -0800
+
+android-platform-tools (33.0.3-1~exp4) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control: Add Breaks/Replaces to pass piuparts test.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 23 Jan 2023 23:36:55 -0800
+
+android-platform-tools (33.0.3-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+
+  [ Debian Janitor ]
+  * Update standards version to 4.6.2, no changes needed.
+  * Use correct machine-readable copyright file URI.
+
+  [ Roger Shimizu ]
+  * d/control: Sync multi-arch hints with master branch
+
+  [ Jochen Sprickerhof ]
+  * Add patch to fix FTBFS (Closes: #1027653)
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 21 Jan 2023 01:14:43 -0800
+
+android-platform-tools (33.0.3-1~exp2) experimental; urgency=medium
+
+  * debian/patches: Add patch to fix ftbfs for mips*.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 20 Nov 2022 14:46:10 -0800
+
+android-platform-tools (33.0.3-1~exp1) experimental; urgency=medium
+
+  * New upstream release 33.0.3
+  * debian/patches: Amend patch to add more includes to header files.
+  * debian/rules: Export gdwarf-4.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Oct 2022 15:03:25 -0700
+
+android-platform-tools (33.0.1-1~exp9) experimental; urgency=medium
+
+  * Team upload.
+  * debian/upstream/metadata:
+    - Update link for reporting and checking issues.
+  * debian/control: Make pkg description in more detail.
+  * debian/copyright: Update to list new source files.
+  * Remove e/libcpu_features.so since it's not necessary.
+  * Add pkg android-platform-frameworks-native-headers.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 01 Jul 2022 01:49:46 +0900
+
+android-platform-tools (33.0.1-1~exp8) experimental; urgency=medium
+
+  * Team upload.
+  * debian/extra/incremental_delivery:
+    - Patch map_ptr.h to support operator-- for libstdc++.
+  * debian/*.mk:
+    - Remove -pie from common LDFLAGS and only apply to LDFLAGS for
+      non-library build.
+  * debian/*.install: Move symbolic link library to -dev package.
+  * debian/rules:
+    - mkdir debian/out folder instead of in d/*.mk
+    - Add common CPPFLAGS.
+  * debian/control: Fix -dev package Arch support list.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 14 Jun 2022 23:02:26 +0900
+
+android-platform-tools (33.0.1-1~exp7) experimental; urgency=medium
+
+  * Team upload.
+  * Revert 1 upstream patch to restore mips support for libbacktrace.
+  * debian/control:
+    - Remove Depends on p7zip-full, since we already switched to
+      external/lzma.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 08 Jun 2022 20:15:50 +0900
+
+android-platform-tools (33.0.1-1~exp6) experimental; urgency=medium
+
+  * Team upload.
+  * Add new repo system/incremental_delivery:incfs/util to debian/extra.
+  * debian/control:
+    - Fix Depends version for android-platform-system-core-headers.
+  * debian/android-libbase-dev.install: Add fmtlib header.
+  * debian/*.mk: Minor fix for libbacktrace and libutils.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 05 Jun 2022 23:21:33 +0900
+
+android-platform-tools (33.0.1-1~exp5) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control: Convert android-*-dev to Architecture: any
+    (Closes: #982326).
+  * Minor fix for lintian.
+  * debian/tests/control:
+    - Add adb/fastboot test to archs: mipsel mips64el ppc64el riscv64
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 04 Jun 2022 00:50:23 +0900
+
+android-platform-tools (33.0.1-1~exp4) experimental; urgency=medium
+
+  * Team upload.
+  * debian/*.mk:
+    - Remove gold linker to fix ftbfs on riscv64.
+  * debian/rules:
+    - Use override_dh_auto_configure-arch to speed up "all" build.
+    - Add adb and fastboot build on mips*el.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 03 Jun 2022 18:43:20 +0900
+
+android-platform-tools (33.0.1-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * Build libutils and libbacktrace for mipsel mips64el ppc64el riscv64.
+  * Build adb and fastboot for ppc64el riscv64.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 03 Jun 2022 01:29:42 +0900
+
+android-platform-tools (33.0.1-1~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/patches:
+    - Use 2 patches from master branch to fix GCC ftbfs.
+    - Add 2 patches to fix GCC ftbfs.
+  * debian/rules: Remove external/dlmalloc
+  * *.mk and debian/rules: Rename d/system/core to d/system
+  * Remove debian/README.Debian.boringssl
+  * debian/copyright: Update based on d/orig.excludes
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 02 Jun 2022 19:06:12 +0900
+
+android-platform-tools (33.0.1-1~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream release 33.0.1
+  * debian/manifest.xml:
+    - Add external/lzma, etc. and remove not needed entries.
+  * get-orig-source: Use DEB_VERSION_UPSTREAM as version for orig tarball.
+  * debian/patches:
+    - Remove unnecessary patches.
+    - Refresh patches.
+  * debian/copyright: Remove non-existing entries.
+  * Use external/lzma
+  * Use external/cpu_features
+  * Update d/*.mk for new upstream version.
+  * debian/rules:
+    - Regenerate proto only for limited architectures for adb.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 02 Jun 2022 01:02:43 +0900
+
+android-platform-tools (31.0.3-1~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * Merge packaging changes from 29.0.6-6 to 29.0.6-18
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 29 May 2022 22:13:08 +0900
+
+android-platform-tools (31.0.3-1~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Remove building libart for i386 since it ftbfs now.
+  * Simplify d/rules, d/art/libart.mk, and d/system/core/libadb.mk
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 13 Mar 2022 18:05:41 +0900
+
+android-platform-tools (31.0.3-1~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream version 31.0.3
+  * debian/manifest: Adapt new upstream.
+  * debian/orig.excludes:
+    - Remove unnecessary large files.
+  * debian/rules:
+    - Update upstream version 31.0.3
+    - Update library dependencies.
+    - Remove external/libunwind.
+    - Add script to generate protobuf code.
+  * debian/patches:
+    - Remove unnecessary patches.
+    - Refresh patches.
+  * Remove embedded files in debian/include
+  * debian/control:
+    - Add B-D:
+       libbrotli-dev
+       libprotobuf-dev
+       libzstd-dev
+       protobuf-compiler
+    - Remove unnecessary B-D:
+       zlib1g-dev
+       liblzma-dev
+       libsafe-iop-dev
+  * debian/*.mk: Update
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 23 Feb 2022 03:10:44 +0900
+
+android-platform-tools (29.0.6-28) unstable; urgency=medium
+
+  * Team upload.
+  * Added the missing Replaces field for android-libnativehelper
+    (Closes: #1034982)
+
+ -- Emmanuel Bourg <ebourg@apache.org>  Wed, 17 May 2023 09:45:36 +0200
+
+android-platform-tools (29.0.6-27) unstable; urgency=medium
+
+  [ Chirayu Desai ]
+  * Remove Uploaders.
+
+  [ Roger Shimizu ]
+  * Resolve upgrade issue from bullseye to bookworm (Closes: #1034982).
+  * Add myself to Uploaders.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 29 Apr 2023 23:55:31 -0700
+
+android-platform-tools (29.0.6-26) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control: Another try to fix pandoc/ronn.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 30 Jan 2023 23:58:29 -0800
+
+android-platform-tools (29.0.6-25) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control: Fix lld on B-D.
+  * debian/control: Separate pandoc and ronn on B-D.
+  * debian/control: Fix ftbfs on powerpc due to clang.
+  * debian/libbacktrace.mk: Add RegsRiscv64.cpp into build.
+  * debian/lintian-overrides: Add
+    package-has-unnecessary-activation-of-ldconfig-trigger.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 Jan 2023 21:43:52 -0800
+
+android-platform-tools (29.0.6-24) unstable; urgency=medium
+
+  * Team upload.
+  * Remove external/libunwind dependency which is actually not used.
+  * Enable riscv64 adb/fastboot.
+  * debian/patches: Update riscv64 patch to fix FTBFS issue.
+  * Use lld when possible except riscv64.
+  * Use ronn to make manpages when pandoc is not available.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 25 Jan 2023 23:29:05 -0800
+
+android-platform-tools (29.0.6-23) unstable; urgency=medium
+
+  * Fix CVE-2022-20128 and CVE-2022-3168
+  * debian/source/lintian-overrides: Fix lintian.
+  * Apply multi-arch hints
+  * Sync with experimental to support adb and fastboot on ppc64el.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 20 Jan 2023 00:36:41 -0800
+
+android-platform-tools (29.0.6-22) unstable; urgency=medium
+
+  * Team upload.
+  * Add patch to fix FTBFS (Closes: #1027653)
+
+ -- Jochen Sprickerhof <jspricke@debian.org>  Wed, 11 Jan 2023 09:19:44 +0100
+
+android-platform-tools (29.0.6-21) unstable; urgency=medium
+
+  * Team upload.
+  * debian/{control,rules}: Sync with debian/exp branch.
+  * debian/rules: Export gdwarf-4 instead of ignoring dwz
+    (Closes: #1016468, #1015355).
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 03 Aug 2022 00:23:27 +0900
+
+android-platform-tools (29.0.6-20) unstable; urgency=medium
+
+  * Team upload.
+  * debian/system/core/fastboot.mk:
+    - Add usb-1.0 as lib dependency to linker (Closes: #1012892).
+  * debian/rules: Sync with ubuntu that ignoring error from dh_dwz.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 29 Jul 2022 01:01:55 +0900
+
+android-platform-tools (29.0.6-19) unstable; urgency=medium
+
+  * Team upload.
+  * Cherry-pick from debian/exp to restore supporting for mips*el.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 28 Jun 2022 02:30:12 +0900
+
+android-platform-tools (29.0.6-18) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control: Update Depends version.
+  * debian/control: Add Section to each binary package.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 May 2022 20:13:51 +0900
+
+android-platform-tools (29.0.6-17) unstable; urgency=medium
+
+  * Team upload.
+  * debian/tests/control: Add Depends for etc1tool test.
+  * debian/control: Update B-D list to install packages only necessary.
+  * debian/rules: Build libext4_utils.mk only for fastboot needed
+    architectures.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 28 May 2022 02:12:26 +0900
+
+android-platform-tools (29.0.6-16) unstable; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Skip dh_auto_test for buildd: all
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 May 2022 18:10:50 +0900
+
+android-platform-tools (29.0.6-15) unstable; urgency=medium
+
+  * Team upload.
+  * Make use of android-libboringssl-dev package
+  * Build etc1tool on any architecture
+  * debian/rules:
+    - Port some tests from autopkgtest to run on dh_auto_test.
+  * d/*.mk:
+    - Update symblic linking command to easier rebuild locally.
+
+ -- Roger Shimizu <rosh@debian.org>  Thu, 26 May 2022 01:44:34 +0900
+
+android-platform-tools (29.0.6-14) unstable; urgency=medium
+
+  * Team upload.
+  * Fix gcc build for libsparse.mk
+  * Add debian/watch
+  * debian/*.mk:
+    - Link atomic library only necessary for armel and mipsel.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 08 May 2022 23:40:34 +0900
+
+android-platform-tools (29.0.6-13) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Update B-D: libselinux1-dev to all arch, since building
+      libziparchive.mk depends on this package.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 08 May 2022 00:41:07 +0900
+
+android-platform-tools (29.0.6-12) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Add libgtest-dev to Depends of android-libziparchive-dev.
+    - Fix multiarch issues.
+  * Add DexFiles.cpp to libbacktrace.mk
+  * Make libziparchive.so build on all arch
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 07 May 2022 23:25:20 +0900
+
+android-platform-tools (29.0.6-11) unstable; urgency=medium
+
+  * Team upload.
+  * Update d/*.lintian-overrides
+  * debian/control:
+    - Revise B-D and Depends for each package.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 04 May 2022 19:33:12 +0900
+
+android-platform-tools (29.0.6-10) unstable; urgency=medium
+
+  * Team upload.
+  * Fix multiarch issues
+  * Make liblog and libnativehelper dynamic linked
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 03 May 2022 01:41:05 +0900
+
+android-platform-tools (29.0.6-9) unstable; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Update version for android-sdk-libsparse-utils.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 19 Apr 2022 02:56:18 +0900
+
+android-platform-tools (29.0.6-8) unstable; urgency=medium
+
+  * Team upload.
+  * debian/system/core/*img*.mk: Fix ftbfs issue on armel.
+  * debian/control: Fix ftbfs issue on mips*el.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 18 Apr 2022 22:49:01 +0900
+
+android-platform-tools (29.0.6-7) unstable; urgency=medium
+
+  * Team upload.
+  * debian/*.mk and debian/rules:
+    - Remove libart since it is not dependency for adb and fastboot.
+    - Following libraries are no longer static linked:
+      + libbacktrace.so
+      + libbase.so
+      + libcutils.so
+      + libsparse.so
+      + libutils.so
+      + libziparchive.so
+  * debian/control:
+    - Add new packages to replace old ones in
+      android-platform-system-core:
+      + android-libutils
+      + android-libutils-dev
+      + android-libziparchive
+      + android-libziparchive-dev
+      + android-platform-system-core-headers
+      + android-libbacktrace
+      + android-libbacktrace-dev
+      + android-libbase
+      + android-libbase-dev
+      + mkbootimg
+    - Remove package: dmtracedump
+  * debian/tests:
+    - Remove test for dmtracedump
+  * debian/rules:
+    - Mark the same version for android-lib* packages as adb and
+      fastboot.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 18 Apr 2022 01:04:48 +0900
+
+android-platform-tools (29.0.6-6) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - For adb and fastboot package, move
+      android-sdk-platform-tools-common from Depends to Recommends,
+      since it might be removed from testing soon.
+
+ -- Roger Shimizu <rosh@debian.org>  Fri, 25 Feb 2022 01:58:51 +0900
+
+android-platform-tools (29.0.6-5) unstable; urgency=medium
+
+  * Team upload.
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 21 Feb 2022 19:25:42 +0900
+
+android-platform-tools (29.0.6-5~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * Use system libselinux1-dev and remove external/selinux
+  * Remove development/* except development/tools
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 20 Feb 2022 00:51:34 +0900
+
+android-platform-tools (29.0.6-5~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * debian/tests/control:
+    - Add Architecture limit for each test.
+  * debian/*.mk: Cleanup, sort list, etc.
+  * debian/rules: Move -pie to LDFLAGS.
+
+ -- Roger Shimizu <rosh@debian.org>  Sat, 05 Feb 2022 04:05:11 +0900
+
+android-platform-tools (29.0.6-4) unstable; urgency=medium
+
+  * Team upload.
+  * Upload to unstable.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 30 Jan 2022 18:43:43 +0900
+
+android-platform-tools (29.0.6-4~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Add B-D python3 for [amd64 i386 arm64], which requires to build
+      libart.
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 26 Jan 2022 02:27:18 +0900
+
+android-platform-tools (29.0.6-4~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Remove unnecessary B-D: python3.
+  * debian/copyright:
+    - Add my entry.
+  * debian/source/lintian-overrides:
+    - Add very-long-line-length-in-source-file
+    - Add ancient-libtool
+
+ -- Roger Shimizu <rosh@debian.org>  Wed, 26 Jan 2022 01:53:58 +0900
+
+android-platform-tools (29.0.6-3) unstable; urgency=medium
+
+  * Team upload.
+  * Upload to unstable.
+  * debian/control:
+    - Use gcc for Arch that do not have clang support.
+  * Use gcc for assembly on armel to fix ftbfs:
+    - debian/external/boringssl/libcrypto.mk
+    - debian/external/libunwind/libunwind.mk
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 25 Jan 2022 19:54:01 +0900
+
+android-platform-tools (29.0.6-3~exp3) experimental; urgency=medium
+
+  * Team upload.
+  * debian/rules:
+    - Disable libdexfile for armel and armhf.
+
+ -- Roger Shimizu <rosh@debian.org>  Tue, 25 Jan 2022 01:50:38 +0900
+
+android-platform-tools (29.0.6-3~exp2) experimental; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Remove unnecessary B-D: maven-repo-helper.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 24 Jan 2022 18:07:50 +0900
+
+android-platform-tools (29.0.6-3~exp1) experimental; urgency=medium
+
+  * Team upload.
+  * debian: Remove legacy mips Arch support.
+  * debian/control:
+    - Add Arch for adb and fastboot: mipsel, mips64el.
+    - Remove unnecessary B-D: dh-exec, dpkg-dev, p7zip-full.
+  * debian/rules:
+    - Support to build adb and fastboot for Archs other than amd64.
+  * debian/scripts:
+    - Update get-orig-source to get perf data and run in parallel.
+
+ -- Roger Shimizu <rosh@debian.org>  Mon, 24 Jan 2022 01:37:17 +0900
+
+android-platform-tools (29.0.6-2) unstable; urgency=medium
+
+  * Team upload.
+  * debian/control:
+    - Remove unused B-D: debhelper (>= 11).
+    - Use clang for all ARCHs.
+  * debian/patches:
+    - Update to adapt patch requirement for gbp pq command:
+      + debian/patches/system/core/stub-out-fastdeploy.patch
+    - To fix ftbfs issues (Closes: #999334):
+      + Update: debian/patches/art/fix-standard-namespace-errors.patch
+      + Update: debian/patches/system/core/add-missing-headers.patch
+      + Add: debian/patches/system/core/fix-standard-namespace-errors.patch
+    - Cherry-pick patch from upstream:
+      + Switch to an assembler macro for CFI_RESTORE_STATE_AND_DEF_CFA.
+
+ -- Roger Shimizu <rosh@debian.org>  Sun, 23 Jan 2022 18:03:24 +0900
+
+android-platform-tools (29.0.6-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream version 29.0.6
+
+ -- Prateek Ganguli <prateek.ganguli@gmail.com>  Thu, 20 May 2021 10:00:00 +0530
+
+android-platform-tools (29.0.4-1) UNRELEASED; urgency=medium
+
+  * New upstream version 29.0.4
+
+ -- Prateek Ganguli <prateek.ganguli@gmail.com>  Thu, 06 May 2021 19:03:00 +0530
+
+android-platform-tools (10.0.0+r36-1) UNRELEASED; urgency=medium
+
+  * Initial release.
+
+ -- Chirayu Desai <chirayudesai1@gmail.com>  Thu, 28 Jan 2021 16:35:48 +0530

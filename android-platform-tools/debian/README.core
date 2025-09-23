@@ -1,0 +1,39 @@
+The Android source repositories are quite chaotic.  They often include a mix
+of things under arbitrary umbrellas.  For example, there are parts of this
+particular repository that will only ever be built when building the complete
+Android OS (aka "target"), other parts that are only built as part of the SDK
+to support building Android apps (aka "host"), and other parts that are used
+both in the SDK and the Android OS. Most of the source code in this particular
+repostory will never be built or included on Debian because it is only used in
+the Android OS.
+
+It is possible to see which sections will be built for what by looking at the
+Android.mk files.  The parts that are meant for the "host" system, in this
+case Debian, will have lines like this in it:
+
+  * include $(BUILD_HOST_EXECUTABLE)
+  * include $(BUILD_HOST_JAVA_LIBRARY)
+  * include $(BUILD_HOST_SHARED_LIBRARY)
+  * include $(BUILD_HOST_STATIC_LIBRARY)
+
+The build targets that are only for Android OS builds instead have this:
+
+  * include $(BUILD_EXECUTABLE)
+  * include $(BUILD_JAVA_LIBRARY)
+  * include $(BUILD_SHARED_LIBRARY)
+  * include $(BUILD_STATIC_LIBRARY)
+
+A given chunk of code that is built both for "host" will have both of these
+lines included in the Android.mk file.
+
+debian/cutils_atomic.h
+-------------------
+
+cutils_atomic.h is based on core/include/cutils/atomic.h and is used by
+libutils.so. Because libutils.so is written in C++11 and atomic.h uses
+stdatomic.h which is deprecated in C++11, and all functions in atomic.h are
+inline functions, we need make it a standalone C header so that libutils.so
+can include it.
+
+ -- Hans-Christoph Steiner <hans@eds.org>, Wed, 28 Feb 2018 14:12:15 +0100
+ -- Kai-Chung Yan <seamlikok@gmail.com>  Tue, 17 Nov 2015 14:39:17 +0800

@@ -1,0 +1,13 @@
+# Executables from the Android SDK normally each staticly link in all
+# of the libs.  That means each executable includes a full copy of all
+# the libs, which is not how Debian works.  These libs need to be
+# dynamically linlked in so that just the library can be updated when
+# there is a security fix, instead of requiring all of the executables
+# be recompiled.  That said, these libraries do not have a stable
+# interface and were never intended to be used by any other project,
+# only with the internal, Android SDK executables.  Therefore, the
+# Android SDK executables use private libraries located in
+# /usr/lib/${DEB_HOST_MULTIARCH}/android
+
+custom-library-search-path
+package-has-unnecessary-activation-of-ldconfig-trigger

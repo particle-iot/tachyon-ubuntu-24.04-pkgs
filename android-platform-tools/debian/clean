@@ -1,0 +1,5 @@
+debian/out/
+*.o
+debian/manpages/development/*.1
+debian/manpages/system/*.1
+debian/.gradle/
