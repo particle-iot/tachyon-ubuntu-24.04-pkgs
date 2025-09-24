@@ -40,7 +40,7 @@ setup()
     echo "$(sha256sum < /etc/machine-id | cut -d' ' -f1)" > strings/0x409/serialnumber
 
     echo "ADB Configuration" > configs/c.1/strings/0x409/configuration
-    echo 120 > configs/c.1/MaxPower
+    echo 250 > configs/c.1/MaxPower
 
     # Add ADB config using FunctionFS
     mkdir -p functions/ffs.adb
