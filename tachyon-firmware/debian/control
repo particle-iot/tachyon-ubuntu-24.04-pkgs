@@ -2,7 +2,14 @@ Source: tachyon-firmware
 Section: misc
 Priority: optional
 Maintainer: Andrey Tolstoy <andrey@particle.io>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper-compat (= 13),
+  wget,
+  jq,
+  unzip,
+  gettext,
+  e2fsprogs,
+  mtools,
+  fakeroot
 Standards-Version: 4.6.1
 Rules-Requires-Root: no
 

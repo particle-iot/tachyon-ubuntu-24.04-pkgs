@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Just in case
+rm -f /lib/firmware/updates/adsp.* || true
+
+exit 0

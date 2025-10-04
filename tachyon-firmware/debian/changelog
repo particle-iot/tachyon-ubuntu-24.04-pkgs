@@ -1,3 +1,9 @@
+tachyon-firmware (0.0.2) unstable; urgency=medium
+
+  * Adds adsp, a660, ipa, camera, vpu, qupv3fw firmware files
+
+ -- Andrey Tolstoy <andrey@particle.io>  Fri, 03 Oct 2025 00:32:19 +0700
+
 tachyon-firmware (0.0.1) unstable; urgency=low
 
   * Initial release

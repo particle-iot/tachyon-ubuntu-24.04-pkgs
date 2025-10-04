@@ -7,3 +7,9 @@
 
 %:
 	dh $@
+
+execute_before_dh_auto_build:
+	debian/scripts/fetch-binary-dependencies.sh
+
+execute_after_dh_auto_clean:
+	rm -rf dependencies

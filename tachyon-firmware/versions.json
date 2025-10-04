@@ -1,0 +1,12 @@
+{
+  "sources": {
+    "particle-iot-inc/tachyon-quectel-bp-fw": {
+      "type": "cicd_release",
+      "param": "1.0.19"
+    },
+    "particle-iot-inc/tachyon-release-builder": {
+      "type": "cicd_release",
+      "param": "1.0.173"
+    }
+  }
+}
