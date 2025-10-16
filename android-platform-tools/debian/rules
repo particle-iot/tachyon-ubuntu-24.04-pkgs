@@ -34,6 +34,7 @@ ifneq (, $(shell which clang))
     -Wno-gnu-designator \
     -Wno-gnu-folding-constant \
 
+  export CCC_OVERRIDE_OPTIONS = ^--gcc-install-dir=/usr/lib/gcc/$(DEB_BUILD_GNU_TYPE)/$(shell gcc -dumpversion)
 endif
 ifneq (, $(shell which lld))
   export DEB_LDFLAGS_MAINT_APPEND += -fuse-ld=lld -Wl,--build-id=sha1
