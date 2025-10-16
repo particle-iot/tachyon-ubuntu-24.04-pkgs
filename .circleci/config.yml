@@ -76,12 +76,8 @@ workflows:
   deploy:
     jobs:
       - build-tachyon-firmware:
-          context:
-            - particle-ci-private
           <<: *tag_filters
       - build-android-platform-tools:
-          context:
-            - particle-ci-private
           <<: *tag_filters
       - upload-deb:
           <<: *tag_filters
@@ -92,4 +88,4 @@ workflows:
             - aws-cli/setup:
                 role_arn: ${AWS_ROLE_ARN}
                 region: us-east-1
-          context: packages-particle-production
+          context: linux-build-secrets
