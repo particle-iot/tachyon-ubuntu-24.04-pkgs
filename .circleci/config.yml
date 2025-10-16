@@ -7,7 +7,7 @@ tag_filters: &tag_filters
         - /.+/
 
 orbs:
-  particle-artifact: particle-iot/particle-artifact@1
+  particle-artifact: particle/particle-artifact@1
   aws-cli: circleci/aws-cli@4.1.2
 
 commands:
@@ -37,14 +37,16 @@ commands:
 
 jobs:
   build-tachyon-firmware:
-    machine: true
-    resource_class: "particle-iot/linux-build-arm64-2404-i8g-large"
+    machine:
+      image: ubuntu-2404:2025.09.1
+    resource_class: arm.xlarge
     steps:
       - build-deb-package:
           pkg-name: tachyon-firmware
   build-android-platform-tools:
-    machine: true
-    resource_class: "particle-iot/linux-build-arm64-2404-i8g-large"
+    machine:
+      image: ubuntu-2404:2025.09.1
+    resource_class: arm.xlarge
     steps:
       - build-deb-package:
           pkg-name: android-platform-tools
