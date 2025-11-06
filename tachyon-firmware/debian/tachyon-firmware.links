@@ -5,6 +5,10 @@ vendor/image/m3.bin lib/firmware/updates/ath11k/WCN6855/hw2.1/m3.bin
 vendor/image/bdwlan.elf lib/firmware/updates/ath11k/WCN6855/hw2.1/board.bin
 lib/firmware/updates/ath11k/WCN6855 lib/firmware/updates/ath11k/QCA6698AQ
 
+vendor/image/adspr.jsn lib/firmware/updates/tachyon/adspr.jsn
+vendor/image/adsps.jsn lib/firmware/updates/tachyon/adsps.jsn
+vendor/image/adspua.jsn lib/firmware/updates/tachyon/adspua.jsn
+
 vendor/image/cdsp.b00 lib/firmware/updates/tachyon/cdsp.b00
 vendor/image/cdsp.b01 lib/firmware/updates/tachyon/cdsp.b01
 vendor/image/cdsp.b02 lib/firmware/updates/tachyon/cdsp.b02
