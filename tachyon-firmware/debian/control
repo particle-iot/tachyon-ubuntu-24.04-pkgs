@@ -16,7 +16,7 @@ Rules-Requires-Root: no
 Package: tachyon-firmware
 Architecture: all
 Multi-Arch: foreign
-Depends: ${misc:Depends}, ${shlibs:Depends}
+Depends: linux-firmware, ${misc:Depends}, ${shlibs:Depends}
 Description: Firmware for Particle Tachyon
  This package provides firmware used by Particle Tachyon.
 
