@@ -8,6 +8,7 @@ lib/firmware/updates/ath11k/WCN6855 lib/firmware/updates/ath11k/QCA6698AQ
 vendor/image/adspr.jsn lib/firmware/updates/tachyon/adspr.jsn
 vendor/image/adsps.jsn lib/firmware/updates/tachyon/adsps.jsn
 vendor/image/adspua.jsn lib/firmware/updates/tachyon/adspua.jsn
+vendor/image/battmgr.jsn lib/firmware/updates/tachyon/battmgr.jsn
 
 vendor/image/cdsp.b00 lib/firmware/updates/tachyon/cdsp.b00
 vendor/image/cdsp.b01 lib/firmware/updates/tachyon/cdsp.b01
