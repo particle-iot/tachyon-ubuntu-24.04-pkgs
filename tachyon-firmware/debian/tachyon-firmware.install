@@ -7,3 +7,5 @@ dependencies/tachyon-ubuntu-20.04/na/firmware/a660* /lib/firmware/updates
 dependencies/tachyon-ubuntu-20.04/na/firmware/ipa /lib/firmware/updates
 dependencies/tachyon-ubuntu-20.04/na/firmware/ipa_fws.* /lib/firmware/updates
 dependencies/tachyon-ubuntu-20.04/na/firmware/vpu* /lib/firmware/updates
+
+copy-tachyon-firmware /etc/initramfs-tools/hooks

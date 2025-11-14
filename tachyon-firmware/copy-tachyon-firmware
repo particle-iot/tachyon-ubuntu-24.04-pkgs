@@ -1,0 +1,30 @@
+#!/bin/sh -e
+
+if [ "$1" = "prereqs" ]; then exit 0; fi
+
+. /usr/share/initramfs-tools/hook-functions
+
+for fw in /lib/firmware/updates/tachyon/*; do
+    if [ ! -e "$fw" ]; then
+        continue
+    fi
+
+    if [ -d "$fw" ]; then
+        continue
+    fi
+
+    if [ ! -f "$fw" ] && [ ! -L "$fw" ]; then
+        continue
+    fi
+
+    # copy_file firmware "$fw"
+
+    rel="${fw#/}"
+    dest="${DESTDIR}/${rel}"
+
+    mkdir -p "$(dirname "$dest")"
+
+    cp -L "$fw" "$dest"
+done
+
+exit 0
