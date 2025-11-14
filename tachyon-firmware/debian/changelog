@@ -1,3 +1,9 @@
+tachyon-firmware (0.0.4) unstable; urgency=medium
+
+  * add missing battmgr.jsn and initramfs hook to copy tachyon firmware
+
+ -- Andrey Tolstoy <andrey@particle.io>  Sat, 15 Nov 2025 04:28:10 +0700
+
 tachyon-firmware (0.0.3) unstable; urgency=medium
 
   * Update adsp firmware to work without battery.
