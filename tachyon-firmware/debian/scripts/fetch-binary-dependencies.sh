@@ -29,7 +29,7 @@ for region in NA RoW; do
     unzip -d $UNPACK_DIR $IMG_DIR/$(basename "$URL")
     fakeroot debugfs -R "rdump /lib/firmware $UNPACK_DIR" "$UNPACK_DIR/images/qcm6490/edl/qti-ubuntu-robotics-image-qcs6490-odk-sysfs_1.ext4"
     mkdir -p $UNPACK_DIR/hlos
-    # TODO: if needed copy these, for now not doing anything and just symlinking
+    # Extract cdsp firmware files from NON-HLOS.bin, symlink the rest of the files
     mcopy -s -i "$UNPACK_DIR/images/qcm6490/edl/NON-HLOS.bin" '::/image/*' $UNPACK_DIR/hlos
 done
 
