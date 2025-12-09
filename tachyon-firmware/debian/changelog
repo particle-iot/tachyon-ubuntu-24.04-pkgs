@@ -1,3 +1,9 @@
+tachyon-firmware (0.0.5) unstable; urgency=medium
+
+  * fix cdsp.mdt firmware copy
+
+ -- Scott Brust <scott.brust@particle.io>  Tue, 09 Dec 2025 08:56:07 -0800
+
 tachyon-firmware (0.0.4) unstable; urgency=medium
 
   * add missing battmgr.jsn and initramfs hook to copy tachyon firmware
