@@ -36,8 +36,8 @@ setup()
 
     echo "Particle" > strings/0x409/manufacturer
     echo "Tachyon" > strings/0x409/product
-    # Derive the serial number from the machine-id so it's unique
-    echo "$(sha256sum < /etc/machine-id | cut -d' ' -f1)" > strings/0x409/serialnumber
+    # Use hex serial, capped at 96 bits (24 hex chars) max
+    echo "$(printf "%x" $(cat /sys/devices/soc0/serial_number 2>/dev/null || echo 0) | cut -c1-24)" > strings/0x409/serialnumber
 
     echo "ADB Configuration" > configs/c.1/strings/0x409/configuration
     echo 250 > configs/c.1/MaxPower
