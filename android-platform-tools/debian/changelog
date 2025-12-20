@@ -1,3 +1,9 @@
+android-platform-tools (34.0.5-11particle2) unstable; urgency=medium
+
+  * Use SoC serial number for adb device ID.
+
+ -- Nick Lambourne <github@lamb-chop.co.uk>  Fri, 20 Dec 2024 15:30:00 -0800
+
 android-platform-tools (34.0.5-11particle1) unstable; urgency=medium
 
   * Change default adb manufacturer/product strings to Particle/Tachyon.
