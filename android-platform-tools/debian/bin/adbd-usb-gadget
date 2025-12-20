@@ -36,8 +36,10 @@ setup()
 
     echo "Particle" > strings/0x409/manufacturer
     echo "Tachyon" > strings/0x409/product
-    # Use hex serial, capped at 96 bits (24 hex chars) max
-    echo "$(printf "%x" $(cat /sys/devices/soc0/serial_number 2>/dev/null || echo 0) | cut -c1-24)" > strings/0x409/serialnumber
+    # Device ID: fixed prefix (422a060000000000) + SoC serial in hex (8 chars) = 96 bits total
+    DEVICE_ID_PREFIX=422a060000000000
+    SN=$(printf '%08x' $(cat /sys/devices/soc0/serial_number 2>/dev/null || echo 0))
+    echo "${DEVICE_ID_PREFIX}${SN}" > strings/0x409/serialnumber
 
     echo "ADB Configuration" > configs/c.1/strings/0x409/configuration
     echo 250 > configs/c.1/MaxPower
