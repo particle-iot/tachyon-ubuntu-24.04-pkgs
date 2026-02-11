@@ -5,6 +5,7 @@ rule = {
     },
   },
   apply_properties = {
+    ["api.alsa.disable-mmap"] = true,
     ["api.alsa.format"] = "S16_LE",
     ["audio.format"] = "S16LE",
     ["audio.rate"] = 48000,
