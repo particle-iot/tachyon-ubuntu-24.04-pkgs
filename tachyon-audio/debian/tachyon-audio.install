@@ -1,0 +1,3 @@
+audio/99-force-s16.lua /etc/wireplumber/main.lua.d
+audio/Particle/HiFi.conf /usr/share/alsa/ucm2/Particle
+audio/Particle/tachyon.conf /usr/share/alsa/ucm2/Particle

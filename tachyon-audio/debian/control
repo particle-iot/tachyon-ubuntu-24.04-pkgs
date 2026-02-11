@@ -1,0 +1,16 @@
+Source: tachyon-audio
+Section: misc
+Priority: optional
+Maintainer: Andrey Tolstoy <andrey@particle.io>
+Build-Depends: debhelper-compat (= 13),
+  fakeroot
+Standards-Version: 4.6.1
+Rules-Requires-Root: no
+
+Package: tachyon-audio
+Architecture: all
+Multi-Arch: foreign
+Depends: alsa-ucm-conf, ${misc:Depends}, ${shlibs:Depends}
+Description: Audio configuration for Particle Tachyon
+ This package provides audio configuration used by Particle Tachyon.
+
