@@ -23,16 +23,19 @@ CONFIGFS_DIR="/sys/kernel/config/usb_gadget/g1"
 setup()
 {
     # Create USB gadget config
-    # Note: vendor ID 0x18d1 is Google's ID, this allows the gadget to be
-    # properly matched by the udev rules shipped by the Android SDK
+    # Note: 2b04:c02a is Particle's Tachyon VID/PID. The udev rules shipped
+    # by the Android SDK only match Google's VID (0x18d1), so Linux hosts
+    # need a Particle udev rule for non-root adb access, e.g.:
+    #   SUBSYSTEM=="usb", ATTR{idVendor}=="2b04", ATTR{idProduct}=="c02a",
+    #   MODE="0666", GROUP="plugdev", TAG+="uaccess"
     mkdir -p ${CONFIGFS_DIR}/configs/c.1
     cd ${CONFIGFS_DIR}
 
     mkdir -p strings/0x409
     mkdir -p configs/c.1/strings/0x409
 
-    echo 0x0100 > idProduct
-    echo 0x18D1 > idVendor
+    echo 0xc02a > idProduct
+    echo 0x2b04 > idVendor
 
     echo "Particle" > strings/0x409/manufacturer
     echo "Tachyon" > strings/0x409/product
