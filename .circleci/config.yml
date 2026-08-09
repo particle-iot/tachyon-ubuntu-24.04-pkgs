@@ -43,6 +43,13 @@ jobs:
     steps:
       - build-deb-package:
           pkg-name: tachyon-firmware
+  build-tachyon-audio:
+    machine:
+      image: ubuntu-2404:2025.09.1
+    resource_class: arm.xlarge
+    steps:
+      - build-deb-package:
+          pkg-name: tachyon-audio
   build-android-platform-tools:
     machine:
       image: ubuntu-2404:2025.09.1
@@ -81,11 +88,14 @@ workflows:
           <<: *tag_filters
       - build-android-platform-tools:
           <<: *tag_filters
+      - build-tachyon-audio:
+          <<: *tag_filters
       - upload-deb:
           <<: *tag_filters
           requires:
             - build-tachyon-firmware
             - build-android-platform-tools
+            - build-tachyon-audio
           pre-steps:
             - aws-cli/setup:
                 role_arn: ${AWS_ROLE_ARN}
