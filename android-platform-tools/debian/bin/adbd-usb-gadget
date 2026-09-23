@@ -2,26 +2,38 @@
 
 set -e
 
-UDC="${ADBD_GADGET_UDC}"
-if [ "${UDC}" ] && [ ! -e "/sys/class/udc/${UDC}" ]
-then
-    echo "ERROR: /sys/class/udc/${UDC} doesn't exist!" >&2
-    echo "Please check the contents of ADBD_GADGET_UDC" >&2
-    exit 1
-fi
-
-if [ -z "${UDC}" ] && [ -d "/sys/class/udc" ]
-then
-    UDC="$(ls /sys/class/udc | head -1)"
-fi
-
-# Check we have a USB Device Controller available
-[ "${UDC}" ] || exit 0
-
 CONFIGFS_DIR="/sys/kernel/config/usb_gadget/g1"
+
+# Only "activate" needs a UDC. "setup" must not depend on one: on a dual-role
+# port the controller has no device side while the port is in host role, and
+# adbd attaches the gadget itself as soon as a UDC appears.
+find_udc()
+{
+    UDC="${ADBD_GADGET_UDC}"
+    if [ "${UDC}" ] && [ ! -e "/sys/class/udc/${UDC}" ]
+    then
+        echo "ERROR: /sys/class/udc/${UDC} doesn't exist!" >&2
+        echo "Please check the contents of ADBD_GADGET_UDC" >&2
+        exit 1
+    fi
+
+    if [ -z "${UDC}" ] && [ -d "/sys/class/udc" ]
+    then
+        UDC="$(ls /sys/class/udc | head -1)"
+    fi
+
+    if [ -z "${UDC}" ]
+    then
+        echo "ERROR: no USB Device Controller available" >&2
+        exit 1
+    fi
+}
 
 setup()
 {
+    # No gadget support in this kernel at all: nothing to do, adbd stays TCP-only.
+    [ -d /sys/class/udc ] || exit 0
+
     # Create USB gadget config
     # Note: 2b04:c02a is Particle's Tachyon VID/PID. The udev rules shipped
     # by the Android SDK only match Google's VID (0x18d1), so Linux hosts
@@ -58,6 +70,7 @@ setup()
 
 activate()
 {
+    find_udc
     echo "${UDC}" > ${CONFIGFS_DIR}/UDC
 }
 

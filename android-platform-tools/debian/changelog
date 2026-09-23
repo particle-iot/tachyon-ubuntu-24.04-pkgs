@@ -10,6 +10,9 @@ android-platform-tools (34.0.5-11particle3) unstable; urgency=medium
     Closing ep0 unregisters the gadget, so the one-shot ExecStartPost
     activation was lost after the first disconnect. Back off for a second
     when the gadget does not bind (UDC start failure).
+  * adbd-usb-gadget: set up the gadget and FunctionFS even when no UDC is
+    present yet (dual-role port in host role at boot); adbd attaches the
+    gadget once the UDC appears.
   * adbd.service: drop ExecStartPost activate (adbd binds the gadget now),
     order after sys-kernel-config.mount, add Restart=on-failure.
 
