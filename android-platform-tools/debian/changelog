@@ -1,3 +1,20 @@
+android-platform-tools (34.0.5-11particle3) unstable; urgency=medium
+
+  * adbd: fix hang after any USB disconnect. UsbFfsConnection::StopWorker()
+    treated pthread_kill(tid, 0) == ESRCH as "worker exited" (bionic
+    behaviour); glibc returns 0 for an exited, unjoined thread, so the loop
+    never ended and adbd stopped answering after a cable pull, host reset,
+    role switch or suspend/resume.
+  * adbd: bind the configfs gadget to the UDC from adbd after writing the
+    FunctionFS descriptors, as Android init does on sys.usb.ffs.ready.
+    Closing ep0 unregisters the gadget, so the one-shot ExecStartPost
+    activation was lost after the first disconnect. Back off for a second
+    when the gadget does not bind (UDC start failure).
+  * adbd.service: drop ExecStartPost activate (adbd binds the gadget now),
+    order after sys-kernel-config.mount, add Restart=on-failure.
+
+ -- Eugene <eugene@particle.io>  Wed, 23 Sep 2026 16:24:36 +0800
+
 android-platform-tools (34.0.5-11particle2) unstable; urgency=medium
 
   * Use SoC serial number for adb device ID.

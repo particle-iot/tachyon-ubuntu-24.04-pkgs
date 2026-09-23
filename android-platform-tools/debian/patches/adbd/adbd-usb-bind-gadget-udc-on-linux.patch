@@ -1,0 +1,113 @@
+From: Eugene <eugene@particle.io>
+Date: Wed, 23 Sep 2026 12:45:37 +0800
+Subject: adb: daemon: usb: bind the configfs gadget to the UDC on Linux
+
+On Android init writes the UDC name into the configfs gadget when adbd
+sets sys.usb.ffs.ready after writing the FunctionFS descriptors. Nothing
+does that on Linux: the Debian service binds once in ExecStartPost. The
+binding does not survive a reopen, because closing ep0 of a bound
+FunctionFS function makes the kernel unregister the gadget (ffs_closed()
+-> unregister_gadget_item()), so after the first disconnect adbd waited
+for FUNCTIONFS_BIND forever. Bind the gadget from adbd after every
+descriptor write, using the same gadget path and UDC selection as the
+adbd-usb-gadget script.
+
+Back off for a second when the gadget did not bind (for example because
+the UDC failed to start): the kernel delivers FUNCTIONFS_BIND followed by
+FUNCTIONFS_UNBIND in that case and adbd would otherwise spin reopening
+ep0 several times a second.
+
+--- a/packages/modules/adb/daemon/usb_ffs.cpp
++++ b/packages/modules/adb/daemon/usb_ffs.cpp
+@@ -20,11 +20,17 @@
+ 
+ #include "daemon/usb_ffs.h"
+ 
++#include <dirent.h>
+ #include <linux/usb/ch9.h>
+ #include <linux/usb/functionfs.h>
+ 
++#include <memory>
++#include <string>
++
++#include <android-base/file.h>
+ #include <android-base/logging.h>
+ #include <android-base/properties.h>
++#include <android-base/strings.h>
+ #include <android-base/unique_fd.h>
+ 
+ #include "adb.h"
+@@ -249,6 +255,61 @@
+ };
+ // clang-format on
+ 
++#if !defined(__ANDROID__)
++// Android's init binds the configfs gadget to the UDC when adbd sets sys.usb.ffs.ready. There
++// is no init doing that on Linux, and the binding does not survive a reopen: closing ep0 of a
++// bound FunctionFS function makes the kernel unregister the whole gadget (ffs_closed() ->
++// unregister_gadget_item()). So adbd binds the gadget itself after every descriptor write.
++// Gadget path and UDC selection match the adbd-usb-gadget script.
++static const char kGadgetUdcAttr[] = "/sys/kernel/config/usb_gadget/g1/UDC";
++
++static std::string GadgetUdcName() {
++    const char* env = getenv("ADBD_GADGET_UDC");
++    if (env && *env) {
++        return env;
++    }
++    std::unique_ptr<DIR, decltype(&closedir)> dir(opendir("/sys/class/udc"), closedir);
++    if (!dir) {
++        return "";
++    }
++    while (struct dirent* entry = readdir(dir.get())) {
++        if (entry->d_name[0] != '.') {
++            return entry->d_name;
++        }
++    }
++    return "";
++}
++
++// Returns false when the gadget could not be bound so that the caller backs off before
++// retrying. Binding is synchronous: after the UDC write the controller's "function"
++// attribute names the bound gadget. A failed UDC start (for example a PHY that does not
++// come up) still leaves the driver registered, so the write itself does not report it.
++static bool BindGadgetToUdc() {
++    std::string udc = GadgetUdcName();
++    if (udc.empty() || access(("/sys/class/udc/" + udc).c_str(), F_OK) != 0) {
++        // No UDC while the port is in host role.
++        LOG(DEBUG) << "no UDC available, gadget not bound";
++        return false;
++    }
++    // Unregister first: after a role switch the gadget can be registered but unbound (a bind
++    // that failed because the descriptors were not written yet is not retried by the kernel),
++    // and registering again triggers a new match. Fails with ENODEV when not registered.
++    android::base::WriteStringToFile("\n", kGadgetUdcAttr);
++    if (!android::base::WriteStringToFile(udc, kGadgetUdcAttr)) {
++        PLOG(WARNING) << "failed to bind gadget to UDC " << udc;
++        return false;
++    }
++    std::string function;
++    android::base::ReadFileToString("/sys/class/udc/" + udc + "/function", &function);
++    if (android::base::Trim(function).empty()) {
++        LOG(WARNING) << "gadget did not bind to UDC " << udc << " (UDC start failed?)";
++        return false;
++    }
++    LOG(INFO) << "gadget bound to UDC " << udc;
++    return true;
++}
++#endif
++
+ bool open_functionfs(android::base::unique_fd* out_control, android::base::unique_fd* out_bulk_out,
+                      android::base::unique_fd* out_bulk_in) {
+     unique_fd control, bulk_out, bulk_in;
+@@ -300,6 +361,11 @@
+         }
+         // Signal only when writing the descriptors to ffs
+         android::base::SetProperty("sys.usb.ffs.ready", "1");
++#if !defined(__ANDROID__)
++        if (!BindGadgetToUdc()) {
++            return false;  // usb_ffs_open_thread() sleeps a second and reopens
++        }
++#endif
+     }
+ 
+     bulk_out.reset(adb_open(USB_FFS_ADB_OUT, O_RDONLY));
