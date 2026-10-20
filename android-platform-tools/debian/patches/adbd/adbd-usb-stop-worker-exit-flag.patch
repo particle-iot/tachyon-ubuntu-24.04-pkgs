@@ -1,0 +1,66 @@
+From: Eugene <eugene@particle.io>
+Date: Wed, 23 Sep 2026 11:21:50 +0800
+Subject: adb: daemon: usb: stop worker via exit flag, not pthread_kill(tid, 0)
+
+UsbFfsConnection::StopWorker() decided that the worker thread had exited
+when pthread_kill(tid, 0) returned ESRCH. That is bionic behaviour; glibc
+(pthread_kill@GLIBC_2.34) returns 0 for a thread that has exited but has
+not been joined, so the loop never ended and adbd hung in the connection
+destructor after every USB disconnect, reset, role switch or suspend.
+Track the exit with a flag set by the worker itself.
+
+--- a/packages/modules/adb/daemon/usb.cpp
++++ b/packages/modules/adb/daemon/usb.cpp
+@@ -406,6 +406,14 @@
+             adb_thread_setname("UsbFfs-worker");
+             LOG(INFO) << "UsbFfs-worker thread spawned";
+ 
++            // Set on every exit path; StopWorker() waits on it instead of probing the thread
++            // with pthread_kill(tid, 0), which returns 0 (not ESRCH) on glibc for a thread that
++            // has exited but has not been joined yet.
++            struct ExitFlag {
++                std::atomic<bool>& flag;
++                ~ExitFlag() { flag = true; }
++            } exit_flag{worker_exited_};
++
+             for (size_t i = 0; i < kUsbReadQueueDepth; ++i) {
+                 read_requests_[i] = CreateReadBlock(next_read_id_++);
+                 if (!SubmitRead(&read_requests_[i])) {
+@@ -435,24 +443,18 @@
+             return;
+         }
+ 
++        // Interrupt the worker's blocking syscalls until it has exited. bionic's pthread_kill()
++        // returns ESRCH once the thread is gone; glibc's (GLIBC_2.34 symbol) returns 0 for an
++        // exited, not yet joined thread, so the exit flag is the only reliable condition here.
+         pthread_t worker_thread_handle = worker_thread_.native_handle();
+-        while (true) {
++        while (!worker_exited_) {
+             int rc = pthread_kill(worker_thread_handle, kInterruptionSignal);
+-            if (rc != 0) {
++            if (rc != 0 && rc != ESRCH) {
+                 LOG(ERROR) << "failed to send interruption signal to worker: " << strerror(rc);
+                 break;
+             }
+ 
+             std::this_thread::sleep_for(100ms);
+-
+-            rc = pthread_kill(worker_thread_handle, 0);
+-            if (rc == 0) {
+-                continue;
+-            } else if (rc == ESRCH) {
+-                break;
+-            } else {
+-                LOG(ERROR) << "failed to send interruption signal to worker: " << strerror(rc);
+-            }
+         }
+ 
+         worker_thread_.join();
+@@ -709,6 +711,7 @@
+ 
+     bool worker_started_;
+     std::thread worker_thread_;
++    std::atomic<bool> worker_exited_{false};
+ 
+     std::atomic<bool> stopped_;
+     std::promise<void> destruction_notifier_;
