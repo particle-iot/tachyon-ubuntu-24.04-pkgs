@@ -1,3 +1,14 @@
+android-platform-tools (34.0.5-11particle4) unstable; urgency=medium
+
+  * adbd: leave FunctionFS alone while there is no UDC. In host role
+    (monitor or USB peripheral on the Type-C port) adbd wrote the
+    descriptors, failed to bind and closed ep0 once a second, and f_fs
+    logged four lines for every round.
+  * adbd: set the MS OS descriptor bcdVersion to 0x0100 instead of 0x0001,
+    which f_fs warns about on every descriptor write.
+
+ -- Eugene <eugene@particle.io>  Sat, 07 Nov 2026 11:39:53 +0800
+
 android-platform-tools (34.0.5-11particle3) unstable; urgency=medium
 
   * adbd: fix hang after any USB disconnect. UsbFfsConnection::StopWorker()

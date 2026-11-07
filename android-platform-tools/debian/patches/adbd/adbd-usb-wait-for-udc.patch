@@ -1,0 +1,74 @@
+From: Eugene <eugene@particle.io>
+Date: Sat, 07 Nov 2026 11:39:17 +0800
+Subject: adb: daemon: usb: wait for a UDC before writing the FunctionFS descriptors
+
+While the dual-role port is in host role there is no UDC, so the bind
+after the descriptor write fails, ep0 is closed and usb_ffs_open_thread()
+retries a second later. Every round writes the descriptors again and
+f_fs logs four lines for it ("read descriptors", two bcdVersion warnings,
+"read strings"), about once a second for as long as a monitor or a USB
+peripheral holds the port in host role: some 330,000 lines a day that
+push everything else out of the kernel log. Android does not loop here:
+it writes the descriptors once and keeps ep0 open while init has
+sys.usb.adb.disabled set. The Linux build drops that property monitor.
+
+Check for the UDC before opening ep0 and leave FunctionFS alone until it
+exists, logging once when the wait starts. Device role is unchanged:
+once the UDC is back the next round writes the descriptors and binds as
+before.
+
+--- a/packages/modules/adb/daemon/usb_ffs.cpp
++++ b/packages/modules/adb/daemon/usb_ffs.cpp
+@@ -280,14 +280,24 @@
+     return "";
+ }
+ 
++// The UDC adbd binds to, or "" when it does not exist: a dual-role port has no UDC while it is in
++// host role.
++static std::string PresentUdc() {
++    std::string udc = GadgetUdcName();
++    if (udc.empty() || access(("/sys/class/udc/" + udc).c_str(), F_OK) != 0) {
++        return "";
++    }
++    return udc;
++}
++
+ // Returns false when the gadget could not be bound so that the caller backs off before
+ // retrying. Binding is synchronous: after the UDC write the controller's "function"
+ // attribute names the bound gadget. A failed UDC start (for example a PHY that does not
+ // come up) still leaves the driver registered, so the write itself does not report it.
+ static bool BindGadgetToUdc() {
+-    std::string udc = GadgetUdcName();
+-    if (udc.empty() || access(("/sys/class/udc/" + udc).c_str(), F_OK) != 0) {
+-        // No UDC while the port is in host role.
++    std::string udc = PresentUdc();
++    if (udc.empty()) {
++        // The port went to host role after open_functionfs() checked.
+         LOG(DEBUG) << "no UDC available, gadget not bound";
+         return false;
+     }
+@@ -333,6 +343,24 @@
+     v2_descriptor.os_prop_values = os_prop_values;
+ 
+     if (out_control->get() < 0) {  // might have already done this before
++#if !defined(__ANDROID__)
++        // Without a UDC (host role) nothing can bind: the descriptors would be written, the bind
++        // would fail and ep0 would be closed again, once a second for as long as the port stays
++        // in host role, with the kernel logging every descriptor write. Android writes the
++        // descriptors once and keeps ep0 open while sys.usb.adb.disabled is set; that property
++        // does not exist on Linux, so wait for the UDC before opening ep0 instead.
++        static bool waiting_for_udc = false;  // only usb_ffs_open_thread() calls this
++        if (PresentUdc().empty()) {
++            if (!waiting_for_udc) {
++                std::string udc = GadgetUdcName();
++                LOG(INFO) << "waiting for UDC " << (udc.empty() ? "(none present)" : udc)
++                          << " before opening " << USB_FFS_ADB_EP0;
++                waiting_for_udc = true;
++            }
++            return false;  // usb_ffs_open_thread() looks again in a second
++        }
++        waiting_for_udc = false;
++#endif
+         LOG(INFO) << "opening control endpoint " << USB_FFS_ADB_EP0;
+         control.reset(adb_open(USB_FFS_ADB_EP0, O_RDWR));
+         if (control < 0) {

@@ -29,3 +29,5 @@ adbd/adbd-usb-drop-property-monitor.patch
 adbd/adbd-don-t-require-authorization-on-Linux.patch
 adbd/adbd-usb-stop-worker-exit-flag.patch
 adbd/adbd-usb-bind-gadget-udc-on-linux.patch
+adbd/adbd-usb-wait-for-udc.patch
+adbd/adbd-usb-os-desc-bcdversion.patch
