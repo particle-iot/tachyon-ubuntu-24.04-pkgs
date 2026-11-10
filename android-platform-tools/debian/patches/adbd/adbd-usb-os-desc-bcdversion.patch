@@ -1,0 +1,43 @@
+From: Eugene <eugene@particle.io>
+Date: Sat, 07 Nov 2026 11:39:17 +0800
+Subject: adb: daemon: usb: set the MS OS descriptor bcdVersion to 0x0100
+
+The OS descriptor headers adbd writes to ep0 carry bcdVersion = 1
+(0x0001). MS OS descriptor version 1.00 is 0x0100; f_fs still accepts
+0x0001 for compatibility but warns every time it parses the headers,
+which is on every descriptor write and again when the function binds:
+
+  bcdVersion must be 0x0100, stored in Little Endian order. Userspace
+  driver should be fixed, accepting 0x0001 for compatibility.
+
+The value is only checked by f_fs; the composite driver builds the OS
+descriptor the host reads with its own header, so the host sees no
+change.
+
+Needs f_fs from Linux 6.4 or later (or a backport of "usb: gadget: f_fs:
+Fix incorrect version checking of OS descs"): older kernels accept only
+0x0001 and reject the v2 descriptors, and adbd falls back to v1 ones
+without OS descriptors.
+
+--- a/packages/modules/adb/daemon/usb_ffs.cpp
++++ b/packages/modules/adb/daemon/usb_ffs.cpp
+@@ -219,7 +219,9 @@
+ static struct usb_os_desc_header os_desc_header = {
+     .interface = cpu_to_le32(0),
+     .dwLength = cpu_to_le32(sizeof(os_desc_header) + sizeof(os_desc_compat)),
+-    .bcdVersion = cpu_to_le32(1),
++    // MS OS descriptor version 1.00 in BCD; f_fs accepts 0x0001 only for compatibility, with a
++    // warning on every descriptor write.
++    .bcdVersion = cpu_to_le16(0x0100),
+     .wIndex = cpu_to_le32(4),
+     .bCount = cpu_to_le32(1),
+     .Reserved = cpu_to_le32(0),
+@@ -228,7 +230,7 @@
+ static struct usb_os_desc_header os_prop_header = {
+     .interface = cpu_to_le32(0),
+     .dwLength = cpu_to_le32(sizeof(os_desc_header) + sizeof(os_prop_values)),
+-    .bcdVersion = cpu_to_le32(1),
++    .bcdVersion = cpu_to_le16(0x0100),
+     .wIndex = cpu_to_le32(5),
+     .wCount = cpu_to_le16(1),
+ };
